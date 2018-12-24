@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ ! -d "$SNAP_USER_DATA/etc" ]; then
+  mkdir $SNAP_USER_DATA/etc/
+  cp -R $SNAP/etc/cutcoind.conf $SNAP_USER_DATA/etc/cutcoind.conf
+fi
+
+exec "$SNAP/bin/cutcoind" "$@"

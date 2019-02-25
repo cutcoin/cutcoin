@@ -55,6 +55,7 @@ using namespace epee;
 #include "blockchain_db/blockchain_db.h"
 #include "ringct/rctSigs.h"
 #include "common/notify.h"
+#include "mining/miningutil.h"
 #include "version.h"
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
@@ -388,6 +389,11 @@ namespace cryptonote
   size_t core::get_alternative_blocks_count() const
   {
     return m_blockchain_storage.get_alternative_blocks_count();
+  }
+  //-----------------------------------------------------------------------------------------------
+  bool core::get_block_pos_hash(const block& b, crypto::hash& res) const
+  {
+    return m_blockchain_storage.get_block_pos_hash(b, res);
   }
   //-----------------------------------------------------------------------------------------------
   bool core::init(const boost::program_options::variables_map& vm, const char *config_subdir, const cryptonote::test_options *test_options)
@@ -1065,13 +1071,13 @@ namespace cryptonote
       std::vector<transaction> txs;
       std::vector<crypto::hash> missed_txs;
       uint64_t coinbase_amount = get_outs_money_amount(b.miner_tx);
-      this->get_transactions(b.tx_hashes, txs, missed_txs);      
+      this->get_transactions(b.tx_hashes, txs, missed_txs);
       uint64_t tx_fee_amount = 0;
       for(const auto& tx: txs)
       {
         tx_fee_amount += get_tx_fee(tx);
       }
-      
+
       emission_amount += coinbase_amount - tx_fee_amount;
       total_fee_amount += tx_fee_amount;
       return true;
@@ -1195,6 +1201,16 @@ namespace cryptonote
     return m_blockchain_storage.create_block_template(b, adr, diffic, height, expected_reward, ex_nonce);
   }
   //-----------------------------------------------------------------------------------------------
+  bool core::get_pos_block_template(block& b, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward,
+                                    size_t reserve, uint64_t timestamp, crypto::hash &prev_crypto_hash)
+  {
+    return m_blockchain_storage.create_pos_block_template(b, adr, diffic, height, expected_reward, reserve, timestamp, prev_crypto_hash);
+  }
+  //-----------------------------------------------------------------------------------------------
+  bool core::get_prev_hash(const block &blk, crypto::hash &h) const {
+    return m_blockchain_storage.get_prev_hash(blk, h);
+  }
+  //-----------------------------------------------------------------------------------------------
   bool core::find_blockchain_supplement(const std::list<crypto::hash>& qblock_ids, NOTIFY_RESPONSE_CHAIN_ENTRY::request& resp) const
   {
     return m_blockchain_storage.find_blockchain_supplement(qblock_ids, resp);
@@ -1257,6 +1273,76 @@ namespace cryptonote
       m_miner.resume();
       return false;
     }
+    prepare_handle_incoming_blocks(blocks);
+    m_blockchain_storage.add_new_block(b, bvc);
+    cleanup_handle_incoming_blocks(true);
+    //anyway - update miner template
+    update_miner_block_template();
+    m_miner.resume();
+
+
+    CHECK_AND_ASSERT_MES(!bvc.m_verifivation_failed, false, "mined block failed verification");
+    if(bvc.m_added_to_main_chain)
+    {
+      cryptonote_connection_context exclude_context = boost::value_initialized<cryptonote_connection_context>();
+      NOTIFY_NEW_BLOCK::request arg = AUTO_VAL_INIT(arg);
+      arg.current_blockchain_height = m_blockchain_storage.get_current_blockchain_height();
+      std::vector<crypto::hash> missed_txs;
+      std::vector<cryptonote::blobdata> txs;
+      m_blockchain_storage.get_transactions_blobs(b.tx_hashes, txs, missed_txs);
+      if(missed_txs.size() &&  m_blockchain_storage.get_block_id_by_height(get_block_height(b)) != get_block_hash(b))
+      {
+        LOG_PRINT_L1("Block found but, seems that reorganize just happened after that, do not relay this block");
+        return true;
+      }
+      CHECK_AND_ASSERT_MES(txs.size() == b.tx_hashes.size() && !missed_txs.size(), false, "can't find some transactions in found block:" << get_block_hash(b) << " txs.size()=" << txs.size()
+        << ", b.tx_hashes.size()=" << b.tx_hashes.size() << ", missed_txs.size()" << missed_txs.size());
+
+      block_to_blob(b, arg.b.block);
+      //pack transactions
+      for(auto& tx:  txs)
+        arg.b.txs.push_back(tx);
+
+      m_pprotocol->relay_block(arg, exclude_context);
+    }
+    return bvc.m_added_to_main_chain;
+  }
+  //-----------------------------------------------------------------------------------------------
+  block_complete_entry get_pos_block_complete_entry(block& b, tx_memory_pool &pool, const cryptonote::blobdata &pos_tx)
+  {
+    block_complete_entry bce;
+    bce.block = cryptonote::block_to_blob(b);
+    bce.txs.push_back(pos_tx);
+    for (const auto &tx_hash: b.tx_hashes)
+    {
+      cryptonote::blobdata txblob;
+      CHECK_AND_ASSERT_THROW_MES(pool.get_transaction(tx_hash, txblob), "Transaction not found in pool");
+      bce.txs.push_back(txblob);
+    }
+    return bce;
+  }
+  //-----------------------------------------------------------------------------------------------
+  bool core::handle_pos_block_found(block& b, const cryptonote::blobdata &pos_tx)
+  {
+    block_verification_context bvc = boost::value_initialized<block_verification_context>();
+    m_miner.pause();
+    std::vector<block_complete_entry> blocks;
+    try
+    {
+      blocks.push_back(get_pos_block_complete_entry(b, m_mempool, pos_tx));
+    }
+    catch (const std::exception &e)
+    {
+      m_miner.resume();
+      return false;
+    }
+    transaction tx;
+    crypto::hash tx_hash, prefix_hash;
+    CHECK_AND_ASSERT_MES(parse_tx_from_blob(tx, tx_hash, prefix_hash, pos_tx), false, "failed to parse PoS transaction");
+    tx_verification_context tvc;
+    CHECK_AND_ASSERT_MES(m_mempool.add_tx(tx, tx_hash, get_transaction_weight(tx, pos_tx.size()), tvc, true, false, true, b.major_version),
+                         false, "failed to add PoS transaction to pool");
+    b.tx_hashes.insert(b.tx_hashes.begin(), tx_hash);
     prepare_handle_incoming_blocks(blocks);
     m_blockchain_storage.add_new_block(b, bvc);
     cleanup_handle_incoming_blocks(true);
@@ -1422,7 +1508,7 @@ namespace cryptonote
   bool core::get_pool_transaction(const crypto::hash &id, cryptonote::blobdata& tx) const
   {
     return m_mempool.get_transaction(id, tx);
-  }  
+  }
   //-----------------------------------------------------------------------------------------------
   bool core::pool_has_tx(const crypto::hash &id) const
   {

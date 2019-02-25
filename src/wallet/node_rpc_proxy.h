@@ -29,6 +29,7 @@
 
 #pragma once
 
+#include <memory>
 #include <string>
 #include <boost/thread/mutex.hpp>
 #include "include_base_utils.h"
@@ -40,7 +41,7 @@ namespace tools
 class NodeRPCProxy
 {
 public:
-  NodeRPCProxy(epee::net_utils::http::http_simple_client &http_client, boost::mutex &mutex);
+  NodeRPCProxy(std::shared_ptr<epee::net_utils::http::http_simple_client> client, boost::mutex &mutex);
 
   void invalidate();
 
@@ -56,7 +57,7 @@ public:
 private:
   boost::optional<std::string> get_info() const;
 
-  epee::net_utils::http::http_simple_client &m_http_client;
+  std::shared_ptr<epee::net_utils::http::http_simple_client> m_http_client;
   boost::mutex &m_daemon_rpc_mutex;
 
   mutable uint64_t m_height;

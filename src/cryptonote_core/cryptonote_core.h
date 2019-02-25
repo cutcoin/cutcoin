@@ -167,7 +167,7 @@ namespace cryptonote
       * @note see Blockchain::cleanup_handle_incoming_blocks
       */
      bool cleanup_handle_incoming_blocks(bool force_sync = false);
-     	     	
+
      /**
       * @brief check the size of a block against the current maximum
       *
@@ -199,12 +199,19 @@ namespace cryptonote
       */
      virtual bool handle_block_found( block& b);
 
+     virtual bool handle_pos_block_found(block& b, const cryptonote::blobdata &pos_tx);
+
      /**
       * @copydoc Blockchain::create_block_template
       *
       * @note see Blockchain::create_block_template
       */
      virtual bool get_block_template(block& b, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce);
+
+     virtual bool get_pos_block_template(block& b, const account_public_address& adr, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward,
+                                         size_t reserve, uint64_t timestamp, crypto::hash &prev_crypto_hash);
+
+     virtual bool get_prev_hash(const block &blk, crypto::hash &h) const;
 
      /**
       * @brief called when a transaction is relayed
@@ -377,6 +384,13 @@ namespace cryptonote
       */
      bool get_alternative_blocks(std::vector<block>& blocks) const;
 
+      /**
+      * @copydoc Blockchain::get_block_pos_hash
+      *
+      * @note see Blockchain::get_block_pos_hash() const
+      */
+     bool get_block_pos_hash(const block& b, crypto::hash& res) const;
+
      /**
       * @copydoc Blockchain::get_alternative_blocks_count
       *
@@ -440,7 +454,7 @@ namespace cryptonote
       * @note see tx_memory_pool::get_txpool_backlog
       */
      bool get_txpool_backlog(std::vector<tx_backlog_entry>& backlog) const;
-     
+
      /**
       * @copydoc tx_memory_pool::get_transactions
       * @param include_unrelayed_txes include unrelayed txes in result
@@ -731,12 +745,12 @@ namespace cryptonote
       * @return the number of blocks to sync in one go
       */
      std::pair<uint64_t, uint64_t> get_coinbase_tx_sum(const uint64_t start_offset, const size_t count);
-     
+
      /**
       * @brief get the network type we're on
       *
       * @return which network are we on?
-      */     
+      */
      network_type get_nettype() const { return m_nettype; };
 
      /**

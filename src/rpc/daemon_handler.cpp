@@ -554,6 +554,30 @@ namespace rpc
     res.status = Message::STATUS_OK;
   }
 
+void DaemonHandler::handle(const GetMiningInfo::Request& req, GetMiningInfo::Response& res)
+{
+  res.mining_info.height = 10;
+  res.mining_info.cumulative_difficulty = 300;
+  res.mining_info.difficulty = 3;
+  res.mining_info.hash = "123";
+  res.mining_info.pos_hash = "456";
+  res.mining_info.major_version = 1;
+  res.mining_info.minor_version = 2;
+  res.mining_info.timestamp = 500;
+
+
+//  const crypto::hash block_hash = m_core.get_block_id_by_height(req.height);
+//
+//  if (!getBlockHeaderByHash(block_hash, res.header))
+//  {
+//    res.status = Message::STATUS_FAILED;
+//    res.error_details = "Requested block does not exist";
+//    return;
+//  }
+
+  res.status = Message::STATUS_OK;
+}
+
   void DaemonHandler::handle(const GetBlockHeadersByHeight::Request& req, GetBlockHeadersByHeight::Response& res)
   {
     res.headers.resize(req.heights.size());
@@ -798,6 +822,7 @@ namespace rpc
       REQ_RESP_TYPES_MACRO(request_type, GetBlockHeaderByHash, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetBlockHeaderByHeight, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetBlockHeadersByHeight, req_json, resp_message, handle);
+      REQ_RESP_TYPES_MACRO(request_type, GetMiningInfo, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetPeerList, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, SetLogLevel, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetTransactionPool, req_json, resp_message, handle);

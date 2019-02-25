@@ -214,8 +214,14 @@ namespace tools
     struct password_needed : public wallet_runtime_error
     {
       explicit password_needed(std::string&& loc, const std::string &msg = "Password needed")
-        : wallet_runtime_error(std::move(loc), msg)
-      {
+        : wallet_runtime_error(std::move(loc), msg) {
+      }
+    };
+    //----------------------------------------------------------------------------------------------------
+    struct wallet_pos_mining_error: public wallet_runtime_error
+    {
+      explicit wallet_pos_mining_error(std::string&& loc, const std::string& message)
+      : wallet_runtime_error(std::move(loc), message) {
       }
     };
     //----------------------------------------------------------------------------------------------------

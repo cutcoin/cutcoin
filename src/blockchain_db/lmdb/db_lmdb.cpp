@@ -694,12 +694,15 @@ void BlockchainLMDB::add_block(const block& blk, size_t block_weight, const diff
 
   if (m_height > 0)
   {
-    MDB_val_set(parent_key, blk.prev_id);
+    crypto::hash prev_id;
+    if (!get_prev_hash(blk, prev_id))
+      throw0(BLOCK_PARENT_DNE("Could not get parent block hash"));
+    MDB_val_set(parent_key, prev_id);
     int result = mdb_cursor_get(m_cur_block_heights, (MDB_val *)&zerokval, &parent_key, MDB_GET_BOTH);
     if (result)
     {
       LOG_PRINT_L3("m_height: " << m_height);
-      LOG_PRINT_L3("parent_key: " << blk.prev_id);
+      LOG_PRINT_L3("parent_key: " << prev_id);
       throw0(DB_ERROR(lmdb_error("Failed to get top block hash to check for new block's parent: ", result).c_str()));
     }
     blk_height *prev = (blk_height *)parent_key.mv_data;

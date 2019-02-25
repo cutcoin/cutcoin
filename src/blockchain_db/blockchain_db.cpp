@@ -1,22 +1,22 @@
 // Copyright (c) 2018-2019, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -88,7 +88,7 @@ const command_line::arg_descriptor<std::string> arg_db_type = {
 };
 const command_line::arg_descriptor<std::string> arg_db_sync_mode = {
   "db-sync-mode"
-, "Specify sync option, using format [safe|fast|fastest]:[sync|async]:[<nblocks_per_sync>[blocks]|<nbytes_per_sync>[bytes]]." 
+, "Specify sync option, using format [safe|fast|fastest]:[sync|async]:[<nblocks_per_sync>[blocks]|<nbytes_per_sync>[bytes]]."
 , "fast:async:250000000bytes"
 };
 const command_line::arg_descriptor<bool> arg_db_salvage  = {
@@ -253,6 +253,33 @@ uint64_t BlockchainDB::add_block( const block& blk
   ++num_calls;
 
   return prev_height;
+}
+
+bool BlockchainDB::get_prev_hash(const block &blk, crypto::hash &h) const {
+  if (blk.major_version < HF_VERSION_POS)
+  {
+    h = blk.prev_id;
+    return true;
+  }
+  if (!blk.tx_hashes.size())
+  {
+    LOG_ERROR("PoS block with no coinstake transaction");
+    return false;
+  }
+  transaction tx;
+  if (!get_tx(blk.tx_hashes[0], tx))
+  {
+    LOG_ERROR("Could not find coinstake transaction in db");
+    return false;
+  }
+  tx_extra_pos_stamp ps;
+  if (!get_pos_stamp(tx, ps))
+  {
+    LOG_ERROR("Could not find pos stamp in coinstake transaction");
+    return false;
+  }
+  h=ps.crypto_hash;
+  return true;
 }
 
 void BlockchainDB::set_hard_fork(HardFork* hf)

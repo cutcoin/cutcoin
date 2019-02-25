@@ -59,7 +59,7 @@ set(cryptonote_basic_private_headers
   difficulty.h
   hardfork.h
   miner.h
-  tx_extra.h
+        tx_extra.h
   verification_context.h)
 
 cutcoin_private_headers(cryptonote_basic

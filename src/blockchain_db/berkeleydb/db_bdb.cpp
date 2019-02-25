@@ -236,12 +236,15 @@ void BlockchainBDB::add_block(const block& blk, size_t block_weight, const diffi
 
     if (m_height > 0)
     {
-        Dbt_copy<crypto::hash> parent_key(blk.prev_id);
+        crypto::hash prev_id;
+        if (!get_prev_hash(blk, prev_id))
+          throw0(BLOCK_PARENT_DNE("Could not get parent block hash"));
+        Dbt_copy<crypto::hash> parent_key(prev_id);
         Dbt_copy<uint32_t> parent_h;
         if (m_block_heights->get(DB_DEFAULT_TX, &parent_key, &parent_h, 0))
         {
             LOG_PRINT_L3("m_height: " << m_height);
-            LOG_PRINT_L3("parent_key: " << blk.prev_id);
+            LOG_PRINT_L3("parent_key: " << prev_id);
             throw0(DB_ERROR("Failed to get top block hash to check for new block's parent"));
         }
         uint32_t parent_height = parent_h;

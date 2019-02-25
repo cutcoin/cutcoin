@@ -42,6 +42,7 @@ using namespace epee;
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
 #include "ringct/rctSigs.h"
+#include "mining/miningutil.h"
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "cn"
@@ -493,6 +494,20 @@ namespace cryptonote
     return get_additional_tx_pub_keys_from_extra(tx.extra);
   }
   //---------------------------------------------------------------
+  bool get_pos_stamp(const std::vector<uint8_t>& tx_extra, tx_extra_pos_stamp &stamp)
+  {
+    // parse
+    std::vector<tx_extra_field> tx_extra_fields;
+    if (!parse_tx_extra(tx_extra, tx_extra_fields))
+      return false;
+    return find_tx_extra_field_by_type(tx_extra_fields, stamp);
+  }
+  //---------------------------------------------------------------
+  bool get_pos_stamp(const transaction_prefix& tx, tx_extra_pos_stamp &stamp)
+  {
+    return get_pos_stamp(tx.extra, stamp);
+  }
+  //---------------------------------------------------------------
   bool add_additional_tx_pub_keys_to_extra(std::vector<uint8_t>& tx_extra, const std::vector<crypto::public_key>& additional_pub_keys)
   {
     // convert to variant
@@ -523,6 +538,25 @@ namespace cryptonote
     //write data
     ++start_pos;
     memcpy(&tx_extra[start_pos], extra_nonce.data(), extra_nonce.size());
+    return true;
+  }
+  //---------------------------------------------------------------
+  bool add_pos_stamp_to_tx_extra(std::vector<uint8_t>& tx_extra, const cryptonote::tx_extra_pos_stamp& pos_stamp)
+  {
+    // convert to variant
+    tx_extra_field field = pos_stamp;
+
+    // serialize
+    std::ostringstream oss;
+    binary_archive<true> ar(oss);
+    bool r = ::do_serialize(ar, field);
+    CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize POS stamp to tx extra");
+
+    // append
+    std::string tx_extra_str = oss.str();
+    size_t pos = tx_extra.size();
+    tx_extra.resize(tx_extra.size() + tx_extra_str.size());
+    memcpy(&tx_extra[pos], tx_extra_str.data(), tx_extra_str.size());
     return true;
   }
   //---------------------------------------------------------------

@@ -5,9 +5,9 @@ Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
 ## Development resources
 
-- Web: [cutcoin.org](https://cutcoin.org/)
-- Mail: [info@cutcoin.org](info@cutcoin.org)
-- GitHub: [https://github.com/cutcoin](https://github.com/cutcoin)
+- Web: [cutcoin.io](https://cutcoin.io)
+- Mail: [dev@cutcoin.io](mailto:dev@cutcoin.io)
+- GitHub: [https://github.com/cutcoin/cutcoin](https://github.com/cutcoin/cutcoin)
 
 ## Build
 
@@ -15,7 +15,7 @@ Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
 ## Introduction
 
-Concealed untraceable transactions coin that establishes a new level of privacy and usability.
+Cutcoin is...
 
 ## License
 

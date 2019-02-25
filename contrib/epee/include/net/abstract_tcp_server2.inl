@@ -1122,7 +1122,7 @@ POP_WARNINGS
     }
 
     /*
-    NOTICE: be careful to make sync connection from event handler: in case if all threads suddenly do sync connect, there will be no thread to dispatch events from io service.
+    NOTICE: be careful to make sync connection from event handler: in case if all threads suddenly do sync connect, there will be no thread to addTask events from io service.
     */
 
     boost::system::error_code ec = boost::asio::error::would_block;

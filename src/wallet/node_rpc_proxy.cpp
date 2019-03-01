@@ -39,8 +39,8 @@ namespace tools
 
 static const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
 
-NodeRPCProxy::NodeRPCProxy(epee::net_utils::http::http_simple_client &http_client, boost::mutex &mutex)
-  : m_http_client(http_client)
+NodeRPCProxy::NodeRPCProxy(std::shared_ptr<epee::net_utils::http::http_simple_client> client, boost::mutex &mutex)
+  : m_http_client(client)
   , m_daemon_rpc_mutex(mutex)
 {
   invalidate();
@@ -68,7 +68,7 @@ boost::optional<std::string> NodeRPCProxy::get_rpc_version(uint32_t &rpc_version
     cryptonote::COMMAND_RPC_GET_VERSION::request req_t = AUTO_VAL_INIT(req_t);
     cryptonote::COMMAND_RPC_GET_VERSION::response resp_t = AUTO_VAL_INIT(resp_t);
     m_daemon_rpc_mutex.lock();
-    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_version", req_t, resp_t, m_http_client, rpc_timeout);
+    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_version", req_t, resp_t, *m_http_client, rpc_timeout);
     m_daemon_rpc_mutex.unlock();
     CHECK_AND_ASSERT_MES(r, std::string("Failed to connect to daemon"), "Failed to connect to daemon");
     CHECK_AND_ASSERT_MES(resp_t.status != CORE_RPC_STATUS_BUSY, resp_t.status, "Failed to connect to daemon");
@@ -93,7 +93,7 @@ boost::optional<std::string> NodeRPCProxy::get_info() const
     cryptonote::COMMAND_RPC_GET_INFO::response resp_t = AUTO_VAL_INIT(resp_t);
 
     m_daemon_rpc_mutex.lock();
-    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_info", req_t, resp_t, m_http_client, rpc_timeout);
+    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_info", req_t, resp_t, *m_http_client, rpc_timeout);
     m_daemon_rpc_mutex.unlock();
 
     CHECK_AND_ASSERT_MES(r, std::string("Failed to connect to daemon"), "Failed to connect to daemon");
@@ -143,7 +143,7 @@ boost::optional<std::string> NodeRPCProxy::get_earliest_height(uint8_t version, 
 
     m_daemon_rpc_mutex.lock();
     req_t.version = version;
-    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "hard_fork_info", req_t, resp_t, m_http_client, rpc_timeout);
+    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "hard_fork_info", req_t, resp_t, *m_http_client, rpc_timeout);
     m_daemon_rpc_mutex.unlock();
     CHECK_AND_ASSERT_MES(r, std::string("Failed to connect to daemon"), "Failed to connect to daemon");
     CHECK_AND_ASSERT_MES(resp_t.status != CORE_RPC_STATUS_BUSY, resp_t.status, "Failed to connect to daemon");
@@ -170,7 +170,7 @@ boost::optional<std::string> NodeRPCProxy::get_dynamic_base_fee_estimate(uint64_
 
     m_daemon_rpc_mutex.lock();
     req_t.grace_blocks = grace_blocks;
-    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_fee_estimate", req_t, resp_t, m_http_client, rpc_timeout);
+    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_fee_estimate", req_t, resp_t, *m_http_client, rpc_timeout);
     m_daemon_rpc_mutex.unlock();
     CHECK_AND_ASSERT_MES(r, std::string("Failed to connect to daemon"), "Failed to connect to daemon");
     CHECK_AND_ASSERT_MES(resp_t.status != CORE_RPC_STATUS_BUSY, resp_t.status, "Failed to connect to daemon");
@@ -200,7 +200,7 @@ boost::optional<std::string> NodeRPCProxy::get_fee_quantization_mask(uint64_t &f
 
     m_daemon_rpc_mutex.lock();
     req_t.grace_blocks = m_dynamic_base_fee_estimate_grace_blocks;
-    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_fee_estimate", req_t, resp_t, m_http_client, rpc_timeout);
+    bool r = net_utils::invoke_http_json_rpc("/json_rpc", "get_fee_estimate", req_t, resp_t, *m_http_client, rpc_timeout);
     m_daemon_rpc_mutex.unlock();
     CHECK_AND_ASSERT_MES(r, std::string("Failed to connect to daemon"), "Failed to connect to daemon");
     CHECK_AND_ASSERT_MES(resp_t.status != CORE_RPC_STATUS_BUSY, resp_t.status, "Failed to connect to daemon");

@@ -1,22 +1,22 @@
 // Copyright (c) 2018-2019, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -26,11 +26,13 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
 
+
+#include <ringct/rctTypes.h>
 
 #define TX_EXTRA_PADDING_MAX_COUNT          255
 #define TX_EXTRA_NONCE_MAX_COUNT            255
@@ -41,6 +43,8 @@
 #define TX_EXTRA_MERGE_MINING_TAG           0x03
 #define TX_EXTRA_TAG_ADDITIONAL_PUBKEYS     0x04
 #define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG   0xDE
+
+#define TX_EXTRA_POS_STAMP_TAG              0x05
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 #define TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID 0x01
@@ -180,11 +184,32 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+  struct tx_extra_pos_stamp
+  {
+    rct::key key;
+    crypto::hash crypto_hash;
+    crypto::hash merkle_root;
+    uint64_t amount;
+
+    BEGIN_SERIALIZE()
+      FIELD(key)
+      FIELD(crypto_hash)
+      FIELD(merkle_root)
+      FIELD(amount)
+    END_SERIALIZE()
+  };
+
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;
   //   varint size;
   //   varint data[];
-  typedef boost::variant<tx_extra_padding, tx_extra_pub_key, tx_extra_nonce, tx_extra_merge_mining_tag, tx_extra_additional_pub_keys, tx_extra_mysterious_minergate> tx_extra_field;
+  typedef boost::variant<tx_extra_padding,
+                         tx_extra_pub_key,
+                         tx_extra_nonce,
+                         tx_extra_merge_mining_tag,
+                         tx_extra_additional_pub_keys,
+                         tx_extra_mysterious_minergate,
+                         tx_extra_pos_stamp> tx_extra_field;
 }
 
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_padding, TX_EXTRA_TAG_PADDING);
@@ -193,3 +218,5 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_nonce, TX_EXTRA_NONCE);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_merge_mining_tag, TX_EXTRA_MERGE_MINING_TAG);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_additional_pub_keys, TX_EXTRA_TAG_ADDITIONAL_PUBKEYS);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_mysterious_minergate, TX_EXTRA_MYSTERIOUS_MINERGATE_TAG);
+
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_pos_stamp, TX_EXTRA_POS_STAMP_TAG);

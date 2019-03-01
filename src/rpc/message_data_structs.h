@@ -31,6 +31,7 @@
 
 #include "crypto/hash.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_basic/difficulty.h"
 #include "ringct/rctSigs.h"
 
 #include <unordered_map>
@@ -166,6 +167,21 @@ namespace rpc
     uint64_t difficulty;
     uint64_t reward;
   };
+
+  struct MiningInfoResponse
+  {
+    uint8_t major_version;
+    uint8_t minor_version;
+    uint64_t timestamp;
+    uint64_t height;
+    std::string hash;
+    std::string pos_hash;
+    difficulty_type difficulty;
+    difficulty_type cumulative_difficulty;
+  };
+
+  struct PosBlockResponse
+  {};
 
   struct DaemonInfo
   {

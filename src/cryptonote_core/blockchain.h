@@ -210,6 +210,10 @@ namespace cryptonote
      */
     bool get_block_by_hash(const crypto::hash &h, block &blk, bool *orphan = NULL) const;
 
+    crypto::hash get_prev_hash(const block &blk) const;
+
+    bool get_prev_hash(const block &blk, crypto::hash &h) const;
+
     /**
      * @brief performs some preprocessing on a group of incoming blocks to speed up verification
      *
@@ -305,6 +309,8 @@ namespace cryptonote
      */
     bool add_new_block(const block& bl_, block_verification_context& bvc);
 
+    bool get_block_pos_hash(const block& b, crypto::hash& res) const;
+
     /**
      * @brief clears the blockchain and starts a new one
      *
@@ -328,6 +334,8 @@ namespace cryptonote
      */
     bool create_block_template(block& b, const account_public_address& miner_address, difficulty_type& di, uint64_t& height, uint64_t& expected_reward, const blobdata& ex_nonce);
 
+    bool create_pos_block_template(block& b, const account_public_address& miner_address, difficulty_type& diffic, uint64_t& height, uint64_t& expected_reward,
+                                   size_t reserve, uint64_t timestamp, crypto::hash &prev_crypto_hash);
     /**
      * @brief checks if a block is known about with a given hash
      *
@@ -798,7 +806,7 @@ namespace cryptonote
      * @param earliest_height the earliest height at which <version> is allowed
      * @param voting which version this node is voting for/using
      *
-     * @return whether the version queried is enabled 
+     * @return whether the version queried is enabled
      */
     bool get_hard_fork_voting_info(uint8_t version, uint32_t &window, uint32_t &votes, uint32_t &threshold, uint64_t &earliest_height, uint8_t &voting) const;
 
@@ -1144,6 +1152,8 @@ namespace cryptonote
      * @return true if the block was added successfully, otherwise false
      */
     bool handle_block_to_main_chain(const block& bl, block_verification_context& bvc);
+
+    bool check_pos_block(const block& bl, difficulty_type difficulty, crypto::hash& pos_hash);
 
     /**
      * @brief validate and add a new block to the end of the blockchain

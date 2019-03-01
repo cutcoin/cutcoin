@@ -43,6 +43,7 @@
 
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
+#include "plant/plant.h"
 #include "wallet/wallet2.h"
 #include "console_handler.h"
 #include "wipeable_string.h"
@@ -52,8 +53,8 @@
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "wallet.simplewallet"
-// Hardcode Monero's donation address (see #1447)
-constexpr const char MONERO_DONATION_ADDR[] = "44AFFq5kSiGBoZ4NMDwYtN18obc8AemS33DBLWs3H7otXft3XjrpDtQGv7SqSsaBYBb98uNbr2VBBEt7f2wfn3RVGQBEP3A";
+// Hardcode Cutcoin's donation address
+constexpr const char CUTCOIN_DONATION_ADDR[] = "cutb9vuXgqtS2fDGRRptm8QHdQb4NQv1ZWBDhUCzQAjYcCggvgTcvSsZX6WetiXw1p3HpTgAhTdmniSRwzqKNPDW4mUQt5FZsW";
 
 /*!
  * \namespace cryptonote
@@ -346,7 +347,7 @@ namespace cryptonote
 
     epee::console_handlers_binder m_cmd_binder;
 
-    std::unique_ptr<tools::wallet2> m_wallet;
+    std::shared_ptr<tools::wallet2> m_wallet;
     refresh_progress_reporter_t m_refresh_progress_reporter;
 
     std::atomic<bool> m_idle_run;
@@ -358,5 +359,8 @@ namespace cryptonote
     bool m_auto_refresh_refreshing;
     std::atomic<bool> m_in_manual_refresh;
     uint32_t m_current_subaddress_account;
+    std::shared_ptr<plant::Plant> m_plant;
+    tools::wallet2::AskPasswordType m_ask_password_type;
+    boost::optional<tools::password_container> m_pwd_container;
   };
 }

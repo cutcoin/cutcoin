@@ -78,12 +78,14 @@ file(COPY
   data/signed_cutcoin_tx
   DESTINATION data)
 
+add_subdirectory(common_tests)
 add_subdirectory(core_tests)
 add_subdirectory(fuzz)
 add_subdirectory(crypto)
 add_subdirectory(functional_tests)
+add_subdirectory(mining_tests)
 add_subdirectory(performance_tests)
-add_subdirectory(core_proxy)
+#add_subdirectory(core_proxy)
 add_subdirectory(unit_tests)
 add_subdirectory(difficulty)
 add_subdirectory(hash)
@@ -114,9 +116,11 @@ add_test(
   COMMAND hash-target-tests)
 
 set(enabled_tests
+    common_tests
     core_tests
     difficulty
     hash
+    mining_tests
     performance_tests
     core_proxy
     fuzz

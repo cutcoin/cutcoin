@@ -1,22 +1,22 @@
 // Copyright (c) 2018-2019, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -26,7 +26,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "include_base_utils.h"
@@ -826,7 +826,7 @@ namespace cryptonote
     const miner& lMiner = m_core.get_miner();
     res.active = lMiner.is_mining();
     res.is_background_mining_enabled = lMiner.get_is_background_mining_enabled();
-    
+
     if ( lMiner.is_mining() ) {
       res.speed = lMiner.get_speed();
       res.threads_count = lMiner.get_threads_count();
@@ -1120,6 +1120,53 @@ namespace cryptonote
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
+  bool core_rpc_server::on_getposblocktemplate(const COMMAND_RPC_GETPOSBLOCKTEMPLATE::request& req, COMMAND_RPC_GETPOSBLOCKTEMPLATE::response& res, epee::json_rpc::error& error_resp)
+  {
+    PERF_TIMER(on_getblocktemplate);
+    bool r;
+    if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GETPOSBLOCKTEMPLATE>(invoke_http_mode::JON_RPC, "getposblocktemplate", req, res, r))
+      return r;
+
+    if(!check_core_ready())
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_CORE_BUSY;
+      error_resp.message = "Core is busy";
+      return false;
+    }
+
+    cryptonote::address_parse_info info;
+
+    if(!req.wallet_address.size() || !cryptonote::get_account_address_from_str(info, m_nettype, req.wallet_address))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_WRONG_WALLET_ADDRESS;
+      error_resp.message = "Failed to parse wallet address";
+      return false;
+    }
+    if (info.is_subaddress)
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_MINING_TO_SUBADDRESS;
+      error_resp.message = "Mining to subaddress is not supported yet";
+      return false;
+    }
+
+    block b = AUTO_VAL_INIT(b);
+    crypto::hash prev_crypto_hash;
+    if(!m_core.get_pos_block_template(b, info.address, res.difficulty, res.height, res.expected_reward, req.pos_tx_size, req.timestamp, prev_crypto_hash))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
+      error_resp.message = "Internal error: failed to create block template";
+      LOG_ERROR("Failed to create block template");
+      return false;
+    }
+    blobdata block_blob = t_serializable_object_to_blob(b);
+    res.prev_hash = string_tools::pod_to_hex(b.prev_id);
+    res.prev_crypto_hash = string_tools::pod_to_hex(prev_crypto_hash);
+    res.blocktemplate_blob = string_tools::buff_to_hex_nodelimer(block_blob);
+    res.merkleroot = string_tools::pod_to_hex(get_tx_tree_hash(b));
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::on_submitblock(const COMMAND_RPC_SUBMITBLOCK::request& req, COMMAND_RPC_SUBMITBLOCK::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_submitblock);
@@ -1145,7 +1192,7 @@ namespace cryptonote
       error_resp.message = "Wrong block blob";
       return false;
     }
-    
+
     // Fixing of high orphan issue for most pools
     // Thanks Boolberry!
     block b = AUTO_VAL_INIT(b);
@@ -1175,18 +1222,73 @@ namespace cryptonote
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
+  bool core_rpc_server::on_submitposblock(const COMMAND_RPC_SUBMITPOSBLOCK::request& req, COMMAND_RPC_SUBMITPOSBLOCK::response& res, epee::json_rpc::error& error_resp)
+  {
+    PERF_TIMER(on_submitblock);
+    {
+      boost::shared_lock<boost::shared_mutex> lock(m_bootstrap_daemon_mutex);
+      if (m_should_use_bootstrap_daemon)
+      {
+        res.status = "This command is unsupported for bootstrap daemon";
+        return false;
+      }
+    }
+    CHECK_CORE_READY();
+    blobdata blockblob, pos_tx_blob;
+    if(!string_tools::parse_hexstr_to_binbuff(req.block_blob, blockblob))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB;
+      error_resp.message = "Wrong block blob";
+      return false;
+    }
+    if(!string_tools::parse_hexstr_to_binbuff(req.pos_tx_blob, pos_tx_blob))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB;
+      error_resp.message = "Wrong block blob";
+      return false;
+    }
+
+    // Fixing of high orphan issue for most pools
+    // Thanks Boolberry!
+    block b = AUTO_VAL_INIT(b);
+    if(!parse_and_validate_block_from_blob(blockblob, b))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB;
+      error_resp.message = "Wrong block blob";
+      return false;
+    }
+
+    // Fix from Boolberry neglects to check block
+    // size, do that with the function below
+    if(!m_core.check_incoming_block_size(blockblob))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_WRONG_BLOCKBLOB_SIZE;
+      error_resp.message = "Block bloc size is too big, rejecting block";
+      return false;
+    }
+
+    if(!m_core.handle_pos_block_found(b, pos_tx_blob))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_BLOCK_NOT_ACCEPTED;
+      error_resp.message = "Block not accepted";
+      return false;
+    }
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::on_generateblocks(const COMMAND_RPC_GENERATEBLOCKS::request& req, COMMAND_RPC_GENERATEBLOCKS::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_generateblocks);
 
     CHECK_CORE_READY();
-    
+
     res.status = CORE_RPC_STATUS_OK;
 
     if(m_core.get_nettype() != FAKECHAIN)
     {
       error_resp.code = CORE_RPC_ERROR_CODE_REGTEST_REQUIRED;
-      error_resp.message = "Regtest required when generating blocks";      
+      error_resp.message = "Regtest required when generating blocks";
       return false;
     }
 
@@ -1206,7 +1308,7 @@ namespace cryptonote
     {
       r = on_getblocktemplate(template_req, template_res, error_resp);
       res.status = template_res.status;
-      
+
       if (!r) return false;
 
       blobdata blockblob;
@@ -1484,6 +1586,44 @@ namespace cryptonote
       error_resp.message = "Internal error: can't produce valid response.";
       return false;
     }
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
+  bool core_rpc_server::on_get_mining_info(const COMMAND_GET_BLOCK_MINING_INFO::request& req, COMMAND_GET_BLOCK_MINING_INFO::response& res, epee::json_rpc::error& error_resp)
+  {
+    PERF_TIMER(on_get_mining_info);
+
+    COMMAND_RPC_GET_BLOCK_HEADER_BY_HEIGHT::request header_request{0, true};
+    COMMAND_RPC_GET_BLOCK_HEADER_BY_HEIGHT::response header_response;
+
+    bool r;
+    if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_BLOCK_HEADER_BY_HEIGHT>(invoke_http_mode::JON_RPC, "getblockheaderbyheight", header_request, header_response, r))
+      return r;
+
+    uint64_t last_block_height;
+    crypto::hash last_block_hash, pos_hash;
+    m_core.get_blockchain_top(last_block_height, last_block_hash);
+    block last_block;
+    bool have_last_block = m_core.get_block_by_hash(last_block_hash, last_block);
+    if (!have_last_block)
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
+      error_resp.message = "Internal error: can't get last block.";
+      return false;
+    }
+
+    res.block_mining_info.difficulty = m_core.get_blockchain_storage().get_difficulty_for_next_block();
+    res.block_mining_info.height = last_block_height;
+    if (!m_core.get_block_pos_hash(last_block, pos_hash))
+    {
+      error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
+      error_resp.message = "Internal error: can't get last block's PoS hash.";
+      return false;
+    }
+    res.block_mining_info.pos_hash = string_tools::pod_to_hex(pos_hash);
+    res.block_mining_info.timestamp = last_block.timestamp;
+
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }

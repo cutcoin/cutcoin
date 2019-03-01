@@ -586,13 +586,33 @@ namespace cryptonote
       for (size_t i = 0; i < tx.vout.size(); ++i)
         tx.vout[i].amount = 0;
 
-      crypto::hash tx_prefix_hash;
-      get_transaction_prefix_hash(tx, tx_prefix_hash);
       rct::ctkeyV outSk;
+      crypto::hash tx_prefix_hash;
+
+      auto calc_message = [&](const rct::key aG)-> rct::key {
+        tx_extra_pos_stamp pos_stamp{};
+        if (find_tx_extra_field_by_type(tx_extra_fields, pos_stamp)) {
+          remove_field_from_tx_extra(tx.extra, typeid(tx_extra_pos_stamp));
+
+          pos_stamp.key = aG;
+
+          if (!add_pos_stamp_to_tx_extra(tx.extra, pos_stamp)) {
+            LOG_ERROR("Failed to add POS stamp to tx extra");
+          } else {
+            LOG_PRINT_L1("Constructed stake transaction");
+          }
+        }
+
+        get_transaction_prefix_hash(tx, tx_prefix_hash);
+        return rct::hash2rct(tx_prefix_hash);
+      };
+
       if (use_simple_rct)
-        tx.rct_signatures = rct::genRctSimple(rct::hash2rct(tx_prefix_hash), inSk, destinations, inamounts, outamounts, amount_in - amount_out, mixRing, amount_keys, msout ? &kLRki : NULL, msout, index, outSk, range_proof_type, hwdev);
-      else
+        tx.rct_signatures = rct::genRctSimple(calc_message, inSk, destinations, inamounts, outamounts, amount_in - amount_out, mixRing, amount_keys, msout ? &kLRki : NULL, msout, index, outSk, range_proof_type, hwdev);
+      else {
+        get_transaction_prefix_hash(tx, tx_prefix_hash);
         tx.rct_signatures = rct::genRct(rct::hash2rct(tx_prefix_hash), inSk, destinations, outamounts, mixRing, amount_keys, msout ? &kLRki[0] : NULL, msout, sources[0].real_output, outSk, hwdev); // same index assumption
+      }
       memwipe(inSk.data(), inSk.size() * sizeof(rct::ctkey));
 
       CHECK_AND_ASSERT_MES(tx.vout.size() == outSk.size(), false, "outSk size does not match vout");

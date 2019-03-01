@@ -261,6 +261,9 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::error& error);
 void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::BlockHeaderResponse& response, rapidjson::Value& val);
 void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::BlockHeaderResponse& response);
 
+void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::MiningInfoResponse& response, rapidjson::Value& val);
+void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::MiningInfoResponse& response);
+
 void toJsonValue(rapidjson::Document& doc, const rct::rctSig& i, rapidjson::Value& val);
 void fromJsonValue(const rapidjson::Value& i, rct::rctSig& sig);
 

@@ -41,16 +41,21 @@ set(common_sources
   notify.cpp
   password.cpp
   perf_timer.cpp
+  scheduler.cpp
   spawn.cpp
   threadpool.cpp
   updates.cpp
-  aligned.c)
+  aligned.c
+  uint128.cpp)
 
 if (STACK_TRACE)
   list(APPEND common_sources stack_trace.cpp)
 endif()
 
-set(common_headers)
+set(common_headers
+  scheduler.h
+  threadpool.h
+  uint128.hpp)
 
 set(common_private_headers
   apply_permutation.h
@@ -76,7 +81,6 @@ set(common_private_headers
   perf_timer.h
   spawn.h
   stack_trace.h
-  threadpool.h
   updates.h
   aligned.h)
 

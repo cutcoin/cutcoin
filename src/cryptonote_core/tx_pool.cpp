@@ -220,7 +220,8 @@ namespace cryptonote
     // assume failure during verification steps until success is certain
     tvc.m_verifivation_failed = true;
 
-    time_t receive_time = time(nullptr);
+    time_t receive_time = fee ? time(nullptr) : time(NULL) - (kept_by_block ? CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME :
+                                                              CRYPTONOTE_MEMPOOL_TX_LIVETIME) + 30 * 60;
 
     crypto::hash max_used_block_id = null_hash;
     uint64_t max_used_block_height = 0;
@@ -1139,13 +1140,14 @@ namespace cryptonote
   }
   //---------------------------------------------------------------------------------
   //TODO: investigate whether boolean return is appropriate
-  bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &fee, uint64_t &expected_reward, uint8_t version)
+  bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &fee,
+                                           uint64_t &expected_reward, uint8_t version, size_t reserve_weight)
   {
     CRITICAL_REGION_LOCAL(m_transactions_lock);
     CRITICAL_REGION_LOCAL1(m_blockchain);
 
     uint64_t best_coinbase = 0, coinbase = 0;
-    total_weight = 0;
+    total_weight = reserve_weight;
     fee = 0;
 
     //baseline empty block
@@ -1167,6 +1169,11 @@ namespace cryptonote
         continue;
       }
       LOG_PRINT_L2("Considering " << sorted_it->second << ", weight " << meta.weight << ", current block weight " << total_weight << "/" << max_total_weight << ", current coinbase " << print_money(best_coinbase));
+      if (!meta.fee)
+      {
+        LOG_PRINT_L2("  skipping zero fee transactions");
+        break;
+      }
 
       // Can not exceed maximum block weight
       if (max_total_weight < total_weight + meta.weight)
@@ -1209,15 +1216,13 @@ namespace cryptonote
       }
       if (memcmp(&original_meta, &meta, sizeof(meta)))
       {
-        try
-	{
-	  m_blockchain.update_txpool_tx(sorted_it->second, meta);
-	}
-        catch (const std::exception &e)
-	{
-	  MERROR("Failed to update tx meta: " << e.what());
-	  // continue, not fatal
-	}
+        try {
+          m_blockchain.update_txpool_tx(sorted_it->second, meta);
+        }
+        catch (const std::exception &e) {
+          MERROR("Failed to update tx meta: " << e.what());
+          // continue, not fatal
+        }
       }
       if (!ready)
       {

@@ -949,6 +949,37 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::BlockHeaderResp
   GET_FROM_JSON_OBJECT(val, response.reward, reward);
 }
 
+void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::MiningInfoResponse& response, rapidjson::Value& val)
+{
+  val.SetObject();
+
+  INSERT_INTO_JSON_OBJECT(val, doc, timestamp, response.timestamp);
+  INSERT_INTO_JSON_OBJECT(val, doc, minor_version, response.minor_version);
+  INSERT_INTO_JSON_OBJECT(val, doc, major_version, response.major_version);
+  INSERT_INTO_JSON_OBJECT(val, doc, pos_hash, response.pos_hash);
+  INSERT_INTO_JSON_OBJECT(val, doc, hash, response.hash);
+  INSERT_INTO_JSON_OBJECT(val, doc, difficulty, response.difficulty);
+  INSERT_INTO_JSON_OBJECT(val, doc, cumulative_difficulty, response.cumulative_difficulty);
+  INSERT_INTO_JSON_OBJECT(val, doc, height, response.height);
+}
+
+void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::MiningInfoResponse& response)
+{
+  if (!val.IsObject())
+  {
+    throw WRONG_TYPE("json object");
+  }
+
+  GET_FROM_JSON_OBJECT(val, response.timestamp, timestamp);
+  GET_FROM_JSON_OBJECT(val, response.minor_version, minor_version);
+  GET_FROM_JSON_OBJECT(val, response.major_version, major_version);
+  GET_FROM_JSON_OBJECT(val, response.pos_hash, pos_hash);
+  GET_FROM_JSON_OBJECT(val, response.hash, hash);
+  GET_FROM_JSON_OBJECT(val, response.difficulty, difficulty);
+  GET_FROM_JSON_OBJECT(val, response.cumulative_difficulty, cumulative_difficulty);
+  GET_FROM_JSON_OBJECT(val, response.height, height);
+}
+
 void toJsonValue(rapidjson::Document& doc, const rct::rctSig& sig, rapidjson::Value& val)
 {
   using boost::adaptors::transform;

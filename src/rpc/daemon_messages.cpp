@@ -53,6 +53,8 @@ const char* const GetLastBlockHeader::name = "get_last_block_header";
 const char* const GetBlockHeaderByHash::name = "get_block_header_by_hash";
 const char* const GetBlockHeaderByHeight::name = "get_block_header_by_height";
 const char* const GetBlockHeadersByHeight::name = "get_block_headers_by_height";
+const char* const GetMiningInfo::name = "get_mining_info";
+const char* const SubmitPosBlock::name = "submit_pos_block";
 const char* const GetPeerList::name = "get_peer_list";
 const char* const SetLogLevel::name = "set_log_level";
 const char* const GetTransactionPool::name = "get_transaction_pool";
@@ -607,6 +609,31 @@ void GetBlockHeadersByHeight::Response::fromJson(rapidjson::Value& val)
   GET_FROM_JSON_OBJECT(val, headers, headers);
 }
 
+rapidjson::Value GetMiningInfo::Request::toJson(rapidjson::Document& doc) const
+{
+  auto val = Message::toJson(doc);
+  return val;
+}
+
+void GetMiningInfo::Request::fromJson(rapidjson::Value& val)
+{
+}
+
+rapidjson::Value GetMiningInfo::Response::toJson(rapidjson::Document& doc) const
+{
+  auto val = Message::toJson(doc);
+
+  auto& al = doc.GetAllocator();
+
+  INSERT_INTO_JSON_OBJECT(val, doc, mining_info, mining_info);
+
+  return val;
+}
+
+void GetMiningInfo::Response::fromJson(rapidjson::Value& val)
+{
+  GET_FROM_JSON_OBJECT(val, mining_info, mining_info);
+}
 
 rapidjson::Value GetPeerList::Request::toJson(rapidjson::Document& doc) const
 {

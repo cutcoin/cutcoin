@@ -68,7 +68,7 @@ namespace {
     // Default refresh interval when connected to remote node
     static const int    DEFAULT_REMOTE_NODE_REFRESH_INTERVAL_MILLIS = 1000 * 10;
     // Connection timeout 30 sec
-    static const int    DEFAULT_CONNECTION_TIMEOUT_MILLIS = 1000 * 30;
+    static const int    DEFAULT_CONNECTION_TIMEOUT_MILLIS = 1000 * 60;
 
     std::string get_default_ringdb_path(cryptonote::network_type nettype)
     {
@@ -1903,6 +1903,7 @@ bool WalletImpl::verifyMessageWithPublicKey(const std::string &message, const st
 bool WalletImpl::connectToDaemon()
 {
     bool result = m_wallet->check_connection(NULL, DEFAULT_CONNECTION_TIMEOUT_MILLIS);
+    LOG_ERROR("m: check connected ") << result;
     if (!result) {
         setStatusError("Error connecting to daemon at " + m_wallet->get_daemon_address());
     } else {
@@ -1916,11 +1917,15 @@ Wallet::ConnectionStatus WalletImpl::connected() const
 {
     uint32_t version = 0;
     m_is_connected = m_wallet->check_connection(&version, DEFAULT_CONNECTION_TIMEOUT_MILLIS);
+
+    LOG_ERROR("m: connected ") << m_is_connected;
+
     if (!m_is_connected)
         return Wallet::ConnectionStatus_Disconnected;
     // Version check is not implemented in light wallets nodes/wallets
-    if (!m_wallet->light_wallet() && (version >> 16) != CORE_RPC_VERSION_MAJOR)
-        return Wallet::ConnectionStatus_WrongVersion;
+//    if (!m_wallet->light_wallet() && (version >> 16) != CORE_RPC_VERSION_MAJOR)
+//        return Wallet::ConnectionStatus_WrongVersion;
+
     return Wallet::ConnectionStatus_Connected;
 }
 

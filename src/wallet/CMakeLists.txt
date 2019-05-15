@@ -110,6 +110,8 @@ if (BUILD_GUI_DEPS)
     set(libs_to_merge
             wallet_api
             wallet
+            plant
+            mining
             multisig
             cryptonote_core
             cryptonote_basic

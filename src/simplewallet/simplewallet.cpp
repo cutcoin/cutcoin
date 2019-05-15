@@ -52,6 +52,7 @@
 #include "common/dns_utils.h"
 #include "common/base58.h"
 #include "common/scoped_message_writer.h"
+#include <common/sharedlock.h>
 #include "cryptonote_protocol/cryptonote_protocol_handler.h"
 #include "simplewallet.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
@@ -67,6 +68,8 @@
 #include "multisig/multisig.h"
 #include "wallet/wallet_args.h"
 #include "version.h"
+
+#include <chrono>
 #include <stdexcept>
 
 #ifdef WIN32
@@ -2283,14 +2286,14 @@ simple_wallet::simple_wallet()
 {
   m_cmd_binder.set_handler("start_mining",
                            boost::bind(&simple_wallet::start_mining, this, _1),
-                           tr("start_mining [verbose]"),
+                           tr("start_mining [verbose] [wallet=<address>]"),
                            tr("Start PoS mining in the wallet, 'verbose' enables staking output."));
   m_cmd_binder.set_handler("stop_mining",
                            boost::bind(&simple_wallet::stop_mining, this, _1),
                            tr("Stop PoS mining in the wallet."));
   m_cmd_binder.set_handler("start_staking",
                            boost::bind(&simple_wallet::start_mining, this, _1),
-                           tr("start_staking [verbose]"),
+                           tr("start_staking [verbose] [wallet <address>]"),
                            tr("Start PoS mining in the wallet, 'verbose' enables staking output."));
   m_cmd_binder.set_handler("stop_staking",
                            boost::bind(&simple_wallet::stop_mining, this, _1),
@@ -3462,7 +3465,7 @@ bool simple_wallet::init(const boost::program_options::variables_map& vm)
 
   m_wallet->callback(this);
 
-  m_plant = std::make_shared<plant::Plant>(m_wallet, m_wallet->get_http_client(), m_idle_mutex, m_idle_cond);
+  m_plant = std::make_shared<plant::Plant>(m_wallet, m_wallet->get_http_client(), m_idle_mutex, m_idle_cond, std::shared_ptr<plant::PlantCallbacks>());
 
   return true;
 }
@@ -4001,10 +4004,10 @@ bool simple_wallet::save_watch_only(const std::vector<std::string> &args/* = std
 }
 
 //----------------------------------------------------------------------------------------------------
-bool simple_wallet::start_mining(const std::vector<std::string>& args)
+bool simple_wallet::start_mining(const std::vector<std::string> &args)
 {
   if (!m_wallet) {
-    fail_msg_writer() << tr("wallet is null");
+    fail_msg_writer() << tr("Internal error: wallet object is null");
     return true;
   }
 
@@ -4013,89 +4016,59 @@ bool simple_wallet::start_mining(const std::vector<std::string>& args)
     return true;
   }
 
-  if (m_wallet->use_fork_rules(HF_VERSION_POS)) {
-    if (args.size() > 1)
-    {
-      fail_msg_writer() << tr("PoS mining usage: [verbose]");
-      return true;
-    }
+  if (!m_wallet->use_fork_rules(HF_VERSION_POS)) {
+    fail_msg_writer() << tr("Need hard fork version >= HF_VERSION_POS to have staking started");
+    return true;
+  }
 
-    auto local_args = args;
+  auto local_args = args;
+  if(local_args.size() > 3)
+  {
+    fail_msg_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
+    return true;
+  }
 
-    bool verbose = false;
-    if (local_args.size() > 0)
-    {
-      if (local_args.size() > 0 && local_args[0] == "verbose")
-      {
-        verbose = true;
-        local_args.erase(local_args.begin());
+  bool verbose                      = false;
+  std::string reward_wallet_address = "";
+
+  while(!local_args.empty()) {
+    if (local_args[0] == "verbose") {
+      verbose = true;
+      local_args.erase(local_args.begin());
+    } else if(local_args[0] == "wallet") {
+      local_args.erase(local_args.begin());
+
+      if(local_args.empty()) {
+        fail_msg_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
+        return true;
       }
+
+      reward_wallet_address = local_args[0];
+      local_args.erase(local_args.begin());
     }
+  }
 
-    plant::verbosity::verbose() = verbose;
+  plant::verbosity::verbose() = verbose;
 
-    if (m_wallet->watch_only()) {
-      fail_msg_writer() << tr("This command requires that the wallet mode is not 'watch only'");
-      return true;
-    }
-
-    m_pwd_container = get_and_verify_password();
-    if (!m_pwd_container) {
-      fail_msg_writer() << tr("Could not get a password");
-      return true;
-    }
-
-    m_ask_password_type = m_wallet->ask_password();
-    m_wallet->ask_password(tools::wallet2::AskPasswordNever);
-
-    if (m_ask_password_type == tools::wallet2::AskPasswordToDecrypt) {
-      m_wallet->decrypt_keys(m_pwd_container->password());
-    }
-
-    m_plant->start_mining();
+  if (m_wallet->watch_only()) {
+    fail_msg_writer() << tr("This command requires that the wallet mode is not 'watch only'");
     return true;
   }
 
-  COMMAND_RPC_START_MINING::request req = AUTO_VAL_INIT(req);
-  req.miner_address = m_wallet->get_account().get_public_address_str(m_wallet->nettype());
-
-  bool ok = true;
-  size_t arg_size = args.size();
-  if(arg_size >= 3)
-  {
-    if (!parse_bool_and_use(args[2], [&](bool r) { req.ignore_battery = r; }))
-      return true;
-  }
-  if(arg_size >= 2)
-  {
-    if (!parse_bool_and_use(args[1], [&](bool r) { req.do_background_mining = r; }))
-      return true;
-  }
-  if(arg_size >= 1)
-  {
-    uint16_t num = 1;
-    ok = string_tools::get_xtype_from_string(num, args[0]);
-    ok = ok && 1 <= num;
-    req.threads_count = num;
-  }
-  else
-  {
-    req.threads_count = 1;
-  }
-
-  if (!ok)
-  {
-    fail_msg_writer() << tr("invalid arguments. Please use start_mining [<number_of_threads>] [do_bg_mining] [ignore_battery]");
+  m_pwd_container = get_and_verify_password();
+  if (!m_pwd_container) {
+    fail_msg_writer() << tr("Could not get a password");
     return true;
   }
 
-  COMMAND_RPC_START_MINING::response res;
-  bool r = m_wallet->invoke_http_json("/start_mining", req, res);
-  std::string err = interpret_rpc_response(r, res.status);
-  if (err.empty())
-    success_msg_writer() << tr("Mining started in daemon");
-  else
-    fail_msg_writer() << tr("mining has NOT been started: ") << err;
+  m_ask_password_type = m_wallet->ask_password();
+  m_wallet->ask_password(tools::wallet2::AskPasswordNever);
+
+  if (m_ask_password_type == tools::wallet2::AskPasswordToDecrypt) {
+    m_wallet->decrypt_keys(m_pwd_container->password());
+  }
+
+  m_plant->start_mining(reward_wallet_address);
   return true;
 }
 //----------------------------------------------------------------------------------------------------
@@ -4129,14 +4102,8 @@ bool simple_wallet::stop_mining(const std::vector<std::string>& args)
     return true;
   }
 
-  COMMAND_RPC_STOP_MINING::request req;
-  COMMAND_RPC_STOP_MINING::response res;
-  bool r = m_wallet->invoke_http_json("/stop_mining", req, res);
-  std::string err = interpret_rpc_response(r, res.status);
-  if (err.empty())
-    success_msg_writer() << tr("Mining stopped in daemon");
-  else
-    fail_msg_writer() << tr("mining has NOT been stopped: ") << err;
+  fail_msg_writer() << tr("mining has NOT been stopped: ");
+
   return true;
 }
 //----------------------------------------------------------------------------------------------------

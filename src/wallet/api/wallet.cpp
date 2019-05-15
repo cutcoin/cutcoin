@@ -38,11 +38,17 @@
 #include "subaddress.h"
 #include "subaddress_account.h"
 #include "common_defines.h"
+#include "common/sharedlock.h"
 #include "common/util.h"
+#include "plant/plant.h"
+#include "plant/plantcallbacks.h"
+#include "plant/posmetrics.h"
 
 #include "mnemonics/electrum-words.h"
 #include "mnemonics/english.h"
 #include <boost/format.hpp>
+
+#include <memory>
 #include <sstream>
 #include <unordered_map>
 
@@ -68,7 +74,7 @@ namespace {
     // Default refresh interval when connected to remote node
     static const int    DEFAULT_REMOTE_NODE_REFRESH_INTERVAL_MILLIS = 1000 * 10;
     // Connection timeout 30 sec
-    static const int    DEFAULT_CONNECTION_TIMEOUT_MILLIS = 1000 * 60;
+    static const int    DEFAULT_CONNECTION_TIMEOUT_MILLIS = 1000 * 30;
 
     std::string get_default_ringdb_path(cryptonote::network_type nettype)
     {
@@ -97,7 +103,7 @@ namespace {
             throw runtime_error("Multisig wallet is not finalized yet");
         }
     }
-    void checkMultisigWalletReady(const std::unique_ptr<tools::wallet2> &wallet) {
+    void checkMultisigWalletReady(const std::shared_ptr<tools::wallet2> &wallet) {
         return checkMultisigWalletReady(wallet.get());
     }
 
@@ -115,12 +121,12 @@ namespace {
             throw runtime_error("Multisig wallet is already finalized");
         }
     }
-    void checkMultisigWalletNotReady(const std::unique_ptr<tools::wallet2> &wallet) {
+    void checkMultisigWalletNotReady(const std::shared_ptr<tools::wallet2> &wallet) {
         return checkMultisigWalletNotReady(wallet.get());
     }
 }
 
-struct Wallet2CallbackImpl : public tools::i_wallet2_callback
+struct Wallet2CallbackImpl : public tools::i_wallet2_callback, plant::PlantCallbacks
 {
 
     Wallet2CallbackImpl(WalletImpl * wallet)
@@ -241,6 +247,14 @@ struct Wallet2CallbackImpl : public tools::i_wallet2_callback
         std::string tx_hash =  epee::string_tools::pod_to_hex(txid);
         m_listener->moneySpent(tx_hash, amount);
       }
+    }
+
+    // Plant callbacks
+    virtual void on_pos_metrics_updated()
+    {
+        if (m_listener) {
+            m_listener->posMetricsUpdated();
+        }
     }
 
     WalletListener * m_listener;
@@ -373,19 +387,20 @@ void Wallet::error(const std::string &category, const std::string &str) {
 }
 
 ///////////////////////// WalletImpl implementation ////////////////////////
-WalletImpl::WalletImpl(NetworkType nettype, uint64_t kdf_rounds)
-    :m_wallet(nullptr)
-    , m_status(Wallet::Status_Ok)
-    , m_wallet2Callback(nullptr)
-    , m_recoveringFromSeed(false)
-    , m_recoveringFromDevice(false)
-    , m_synchronized(false)
-    , m_rebuildWalletCache(false)
-    , m_is_connected(false)
+WalletImpl::WalletImpl(std::shared_ptr<epee::net_utils::http::http_simple_client> http_client,
+                       NetworkType nettype,
+                       uint64_t kdf_rounds)
+: m_wallet(std::make_shared<tools::wallet2>(static_cast<cryptonote::network_type>(nettype), kdf_rounds, true))
+, m_status(Wallet::Status_Ok)
+, m_wallet2Callback(std::make_shared<Wallet2CallbackImpl>(this))
+, m_recoveringFromSeed(false)
+, m_recoveringFromDevice(false)
+, m_synchronized(false)
+, m_rebuildWalletCache(false)
+, m_is_connected(false)
+, m_plant(std::make_shared<plant::Plant>(m_wallet, http_client, m_refreshMutex, m_refreshCV, m_wallet2Callback))
 {
-    m_wallet.reset(new tools::wallet2(static_cast<cryptonote::network_type>(nettype), kdf_rounds, true));
     m_history.reset(new TransactionHistoryImpl(this));
-    m_wallet2Callback.reset(new Wallet2CallbackImpl(this));
     m_wallet->callback(m_wallet2Callback.get());
     m_refreshThreadDone = false;
     m_refreshEnabled = false;
@@ -1109,6 +1124,11 @@ bool WalletImpl::importKeyImages(const string &filename)
   }
 
   return true;
+}
+
+std::shared_ptr<tools::wallet2> WalletImpl::get_wallet()
+{
+  return m_wallet;
 }
 
 void WalletImpl::addSubaddressAccount(const std::string& label)
@@ -1903,7 +1923,6 @@ bool WalletImpl::verifyMessageWithPublicKey(const std::string &message, const st
 bool WalletImpl::connectToDaemon()
 {
     bool result = m_wallet->check_connection(NULL, DEFAULT_CONNECTION_TIMEOUT_MILLIS);
-    LOG_ERROR("m: check connected ") << result;
     if (!result) {
         setStatusError("Error connecting to daemon at " + m_wallet->get_daemon_address());
     } else {
@@ -1917,15 +1936,11 @@ Wallet::ConnectionStatus WalletImpl::connected() const
 {
     uint32_t version = 0;
     m_is_connected = m_wallet->check_connection(&version, DEFAULT_CONNECTION_TIMEOUT_MILLIS);
-
-    LOG_ERROR("m: connected ") << m_is_connected;
-
     if (!m_is_connected)
         return Wallet::ConnectionStatus_Disconnected;
     // Version check is not implemented in light wallets nodes/wallets
-//    if (!m_wallet->light_wallet() && (version >> 16) != CORE_RPC_VERSION_MAJOR)
-//        return Wallet::ConnectionStatus_WrongVersion;
-
+    if (!m_wallet->light_wallet() && (version >> 16) != CORE_RPC_VERSION_MAJOR)
+        return Wallet::ConnectionStatus_WrongVersion;
     return Wallet::ConnectionStatus_Connected;
 }
 
@@ -2302,6 +2317,61 @@ bool WalletImpl::isKeysFileLocked()
 {
     return m_wallet->is_keys_file_locked();
 }
+
+void WalletImpl::posMetrics(int &height,
+                            int &difficulty,
+                            int &on_stake,
+                            int &maturing,
+                            int &pos_outputs_count,
+                            int &last_block_age,
+                            int &forged_in_last_24,
+                            int &forged_in_last_48,
+                            double   &expected_time_till_block,
+                            double   &expected_reward_per_week,
+                            double   &chance_to_mine_next_block)
+{
+    plant::PosMetrics pos_metrics = m_plant->pos_metrics();
+    height                    = (int)pos_metrics.d_height;
+    difficulty                = (int)pos_metrics.d_difficulty;
+    on_stake                  = (int)pos_metrics.d_on_stake;
+    maturing                  = (int)pos_metrics.d_maturing;
+    pos_outputs_count         = (int)pos_metrics.d_pos_outputs_count;
+    last_block_age            = (int)pos_metrics.d_last_block_age;
+    forged_in_last_24         = (int)pos_metrics.d_forged_in_last_24;
+    forged_in_last_48         = (int)pos_metrics.d_forged_in_last_48;
+    expected_time_till_block  = pos_metrics.d_expected_time_till_block;
+    expected_reward_per_week  = pos_metrics.d_expected_reward_per_week;
+    chance_to_mine_next_block = pos_metrics.d_chance_to_mine_next_block;
+}
+
+bool WalletImpl::isStaking()
+{
+    return m_plant->is_mining();
+}
+
+bool WalletImpl::startStaking()
+{
+    if(m_plant.get() == nullptr) {
+        MGINFO("m_plant is nullptr");
+        return false;
+    }
+
+    if (!m_plant->is_mining()) {
+        m_plant->start_mining("");
+        return true;
+    }
+    return false;
+}
+
+bool WalletImpl::stopStaking()
+{
+    if (m_plant->is_mining()) {
+        m_plant->stop_mining();
+        return true;
+    }
+    return false;
+}
+
 } // namespace
 
 namespace Bitmonero = Monero;

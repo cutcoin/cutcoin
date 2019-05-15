@@ -102,17 +102,6 @@ t_command_server::t_command_server(
     , "Print whether a given key image is in the spent key images set."
     );
   m_command_lookup.set_handler(
-      "start_mining"
-    , std::bind(&t_command_parser_executor::start_mining, &m_parser, p::_1)
-    , "start_mining <addr> [<threads>] [do_background_mining] [ignore_battery]"
-    , "Start mining for specified address. Defaults to 1 thread and no background mining."
-    );
-  m_command_lookup.set_handler(
-      "stop_mining"
-    , std::bind(&t_command_parser_executor::stop_mining, &m_parser, p::_1)
-    , "Stop mining."
-    );
-  m_command_lookup.set_handler(
       "print_pool"
     , std::bind(&t_command_parser_executor::print_transaction_pool_long, &m_parser, p::_1)
     , "Print the transaction pool using a long format."

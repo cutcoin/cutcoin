@@ -31,6 +31,7 @@
 #include "logging.h"
 
 #include <common/lightthreadpool.h>
+#include <common/sharedlock.h>
 #include <crypto/hash.h>
 #include <cryptonote_basic/blobdatatype.h>
 #include <cryptonote_basic/cryptonote_basic.h>
@@ -45,6 +46,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <limits>
 #include <string>
 #include <utility>
 
@@ -55,7 +57,11 @@ namespace plant {
 
 static const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
 
-Plant::Plant(std::shared_ptr<tools::wallet2> wallet, Client client, boost::mutex &idle_mutex, boost::condition_variable &idle_cond)
+Plant::Plant(std::shared_ptr<tools::wallet2> wallet,
+             Client client,
+             boost::mutex &idle_mutex,
+             boost::condition_variable &idle_cond,
+             std::shared_ptr<plant::PlantCallbacks> plant_callbacks)
 : d_wallet(wallet)
 , d_http_client(client)
 , d_threadpool(d_num_threads)
@@ -66,6 +72,9 @@ Plant::Plant(std::shared_ptr<tools::wallet2> wallet, Client client, boost::mutex
 , d_block_hash{}
 , d_idle_mutex(idle_mutex)
 , d_idle_cond(idle_cond)
+, d_pos_metrics{}
+, d_reward_wallet_address{}
+, d_plant_callbacks{plant_callbacks}
 {
   d_scheduler.start();
 }
@@ -80,28 +89,31 @@ bool Plant::is_mining()
   return d_is_mining;
 }
 
-bool Plant::start_mining()
+bool Plant::start_mining(const std::string &reward_wallet_address)
 {
-  if (is_mining()) {
+  bool started = false;
+  if (!d_is_mining.compare_exchange_strong(started, true)) {
     message_writer() << tr("Mining is already started");
     return false;
   }
 
-  d_blockchain_height = 0;
-  d_block_hash = {};
-
   if (!d_http_client) {
     MINE_ERROR("Invalid network client provided, stop mining");
+    stop_mining();
     return false;
   }
 
-  if (!d_http_client->is_connected()) {
-    MINE_ERROR("No connection to the daemon");
-    return false;
+  if(!d_http_client->is_connected()) {
+    MINE_DEBUG("Connecting to the daemon");
+    d_http_client->connect(std::chrono::milliseconds((uint32_t)3000));
   }
 
-  d_is_mining = true;
+  d_reward_wallet_address = reward_wallet_address;
+  d_blockchain_height     = 0;
+  d_block_hash            = {};
+
   d_scheduler.schedule_every(std::bind(&Plant::handle_blockchain_update, this), Clock::now(), d_data_update_period);
+  d_scheduler.schedule_every(std::bind(&Plant::handle_reward_update, this), Clock::now(), d_reward_update_period);
 
   message_writer() << tr("POS mining is started");
 
@@ -118,31 +130,35 @@ void Plant::stop_mining()
 
 void Plant::handle_blockchain_update()
 {
-  uint64_t cur_height;
-  std::string cur_hash;
-  if (!get_last_block_info(cur_height, cur_hash)) {
-    MINE_ERROR("Could not retrieve blockchain info from a daemon");
-    return;
-  }
-
   {
     std::lock_guard<std::mutex> lock(d_pos_state_mutex);
     boost::unique_lock<boost::mutex> lock2(d_idle_mutex);
+
+    uint64_t cur_height;
+    std::string cur_hash;
+    if (!get_last_block_info(cur_height, cur_hash)) {
+      MINE_ERROR("Could not retrieve blockchain info from a daemon");
+      return;
+    }
 
     if (d_blockchain_height == cur_height && d_block_hash == cur_hash) {
       return;
     }
 
-    MINE_DEBUG("current height differs from the saved one, do mining");
+    MINE_DEBUG("Current height differs from the saved one, do mining");
 
     d_blockchain_height = cur_height;
-    d_block_hash = cur_hash;
+    d_block_hash        = cur_hash;
 
     MiningInfo mining_info{};
-    if(!get_mining_info(mining_info)) {
+    if (!get_mining_info(mining_info)) {
       MINE_ERROR("Could not get data required for mining from a daemon");
       return;
     }
+
+    d_pos_metrics.d_timestamp = mining_info.d_timestamp;
+    d_pos_metrics.d_height = mining_info.d_height;
+    d_pos_metrics.d_difficulty = mining_info.d_difficulty;
 
     tools::wallet2::transfer_container transfers;
     get_transfers(transfers);
@@ -153,10 +169,11 @@ void Plant::handle_blockchain_update()
 
     tools::wallet2::transfer_details pos_output;
     mining::StakeDetails stake_details;
-    if(!get_mining_output(mining_info, transfers, pos_output, stake_details)) {
+    if (!get_mining_output(mining_info, transfers, pos_output, stake_details)) {
       std::stringstream error_message;
       error_message << "No suitable unspent outputs for mining. One must have amount more or equal to "
-                    << 1 << "cutcoin and maturity at least " << config::OUTPUT_STAKE_MATURITY << " blocks." << std::endl;
+                    << 1 << "cutcoin and maturity at least " << config::OUTPUT_STAKE_MATURITY << " blocks."
+                    << std::endl;
       MINE_WARNING(error_message.str().c_str());
       return;
     }
@@ -167,35 +184,46 @@ void Plant::handle_blockchain_update()
     }
 
     d_mining_task = d_scheduler.schedule_at(
-        std::bind(&Plant::handle_block_mining, this), stake_details.d_new_block_timestamp - block_building_time);
+        std::bind(&Plant::handle_block_mining, this, d_block_hash),
+        stake_details.d_new_block_timestamp - block_building_time);
+
+    evaluate_pos_metrics();
+
     d_idle_cond.notify_one();
+  }
+
+  print_pos_metrics();
+
+  if (d_plant_callbacks) {
+    d_plant_callbacks->on_pos_metrics_updated();
   }
 }
 
-void Plant::handle_block_mining()
+void Plant::handle_block_mining(const std::string &block_hash)
 {
   if (!d_http_client->is_connected()) {
     MINE_ERROR("No connection to the daemon");
     return;
   }
 
-  // acquire daemon again to have fresh information
-  uint64_t cur_height;
-  std::string cur_hash;
-  if (!get_last_block_info(cur_height, cur_hash)) {
-    MINE_ERROR("Could not retrieve blockchain info from a daemon");
-    return;
-  }
-
   {
     std::lock_guard<std::mutex> lock(d_pos_state_mutex);
     boost::unique_lock<boost::mutex> lock2(d_idle_mutex);
-    if (d_blockchain_height != cur_height  || d_block_hash != cur_hash) {
+
+    // acquire daemon again to have fresh information
+    uint64_t cur_height;
+    std::string cur_hash;
+    if (!get_last_block_info(cur_height, cur_hash)) {
+      MINE_ERROR("Could not retrieve blockchain info from a daemon");
+      return;
+    }
+
+    if (d_blockchain_height != cur_height || d_block_hash != cur_hash) {
       return;
     }
 
     MiningInfo mining_info{};
-    if(!get_mining_info(mining_info)) {
+    if (!get_mining_info(mining_info)) {
       MINE_ERROR("Could not retrieve data required for mining from a daemon");
       return;
     }
@@ -209,7 +237,7 @@ void Plant::handle_block_mining()
 
     tools::wallet2::transfer_details pos_output;
     mining::StakeDetails stake_details;
-    if(!get_mining_output(mining_info, transfers, pos_output, stake_details)) {
+    if (!get_mining_output(mining_info, transfers, pos_output, stake_details)) {
       std::stringstream error_message;
       error_message << "Found no suitable unspent outputs for mining. One must have amount more or equal to " << 1
                     << " and maturity at least " << config::OUTPUT_STAKE_MATURITY << " blocks."
@@ -231,33 +259,73 @@ void Plant::handle_block_mining()
     crypto::hash prev_hash;
     crypto::hash prev_crypto_hash;
     crypto::hash merkle_root;
+    std::vector<std::vector<tools::wallet2::get_outs_entry>> outs;
 
-    bool res = get_pos_block_template(block_template, extra, prev_hash, prev_crypto_hash, merkle_root, stake_details, pos_output);
-    if(!res) {
+    bool res = get_pos_block_template(block_template,
+                                      extra,
+                                      prev_hash,
+                                      prev_crypto_hash,
+                                      merkle_root,
+                                      outs,
+                                      stake_details,
+                                      pos_output);
+    if (!res) {
       MINE_ERROR("Could not retrieve block template from a daemon");
       return;
     }
 
     tools::wallet2::pending_tx stake_tx;
-    res = create_pos_tx(stake_tx, extra, pos_output, stake_details, prev_crypto_hash, merkle_root);
-    if(!res) {
+    res = create_pos_tx(stake_tx, extra, outs, pos_output, stake_details, prev_crypto_hash, merkle_root);
+    if (!res) {
       MINE_ERROR("Could not create POS transaction");
       return;
     }
 
-    uint64_t cur_height;
-    std::string cur_hash;
     if (!get_last_block_info(cur_height, cur_hash)) {
       MINE_ERROR("Could not retrieve blockchain info from a daemon");
       return;
     }
 
-    if (d_blockchain_height != cur_height  || d_block_hash != cur_hash) {
+    if (cur_hash != block_hash) {
       MINE_WARNING("Somebody just mined a new block. Next time you'll be more lucky!");
       return;
     }
 
     publish_pos_block(block_template, stake_tx.tx);
+  }
+}
+
+void Plant::handle_reward_update()
+{
+  uint64_t blocks_in_24_h = 86400 / DIFFICULTY_TARGET_V2;
+  uint64_t blocks_in_48_h = blocks_in_24_h << 1;
+
+  {
+    std::lock_guard<std::mutex> lock(d_pos_state_mutex);
+    boost::unique_lock<boost::mutex> lock2(d_idle_mutex);
+
+    tools::wallet2::transfer_container pos_transfers;
+    d_wallet->get_pos_transfers(pos_transfers, std::max<uint64_t>(d_blockchain_height - blocks_in_24_h, 0));
+
+    uint64_t amount_24_h = 0;
+    for (const auto &t: pos_transfers) {
+      if (!t.m_spent) {
+        amount_24_h += t.amount();
+      }
+    }
+    d_pos_metrics.d_forged_in_last_24 = amount_24_h / COIN;
+
+    pos_transfers.clear();
+    d_wallet->get_pos_transfers(pos_transfers, std::max<uint64_t>(d_blockchain_height - blocks_in_48_h, 0));
+
+    uint64_t amount_48_h = 0;
+    for (const auto &t: pos_transfers) {
+      if (!t.m_spent) {
+        amount_48_h += t.amount();
+      }
+    }
+
+    d_pos_metrics.d_forged_in_last_48 = amount_48_h / COIN;
   }
 }
 
@@ -350,7 +418,8 @@ bool Plant::get_mining_output(const MiningInfo                         &mining_i
       candidates.begin(),
       candidates.end(),
       [](const mining::StakeDetails& d1, const mining::StakeDetails& d2)-> bool {
-        return mining::target_from_hash(d1.d_pos_hash) < mining::target_from_hash(d2.d_pos_hash);
+        return num::u128_t(d2.d_amount) * mining::target_from_hash(d1.d_pos_hash) <
+            num::u128_t(d1.d_amount) * mining::target_from_hash(d2.d_pos_hash);
       });
 
   if (it == candidates.end()) {
@@ -402,13 +471,14 @@ bool Plant::get_mining_output(const MiningInfo                         &mining_i
   return true;
 }
 
-bool Plant::get_pos_block_template(cryptonote::block                      &block_template,
-                                   std::vector<uint8_t>                   &extra,
-                                   crypto::hash                           &prev_hash,
-                                   crypto::hash                           &prev_crypto_hash,
-                                   crypto::hash                           &merkle_root,
-                                   const mining::StakeDetails             &stake_details,
-                                   const tools::wallet2::transfer_details &pos_output) const
+bool Plant::get_pos_block_template(cryptonote::block                                        &block_template,
+                                   std::vector<uint8_t>                                     &extra,
+                                   crypto::hash                                             &prev_hash,
+                                   crypto::hash                                             &prev_crypto_hash,
+                                   crypto::hash                                             &merkle_root,
+                                   std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+                                   const mining::StakeDetails                               &stake_details,
+                                   const tools::wallet2::transfer_details                   &pos_output) const
 {
   cryptonote::COMMAND_RPC_GETPOSBLOCKTEMPLATE::request request = AUTO_VAL_INIT(request);
   cryptonote::COMMAND_RPC_GETPOSBLOCKTEMPLATE::response response = AUTO_VAL_INIT(response);
@@ -417,12 +487,23 @@ bool Plant::get_pos_block_template(cryptonote::block                      &block
   if (fake_outs_count == 0)
     fake_outs_count = 10;
 
-  request.wallet_address = cryptonote::get_account_address_as_str(d_wallet->nettype(), false, d_wallet->get_address());
+  std::string reward_wallet_address = d_reward_wallet_address;  // copy to avoid race cond
+  if (d_reward_wallet_address.empty()) {
+    request.wallet_address = cryptonote::get_account_address_as_str(d_wallet->nettype(), false,
+                                                                    d_wallet->get_address());
+  } else {
+    request.wallet_address = d_reward_wallet_address;
+  }
 
   try {
-    request.pos_tx_size = d_wallet->estimate_pos_tx_size(pos_output, fake_outs_count, extra);
+    request.pos_tx_size = d_wallet->estimate_pos_tx_size(outs, fake_outs_count, pos_output, extra);
   } catch (const std::runtime_error& e) {
     MINE_ERROR("Could not estimate POS transaction size");
+    return false;
+  }
+
+  if (1 != outs.size() || outs[0].empty()) {
+    MINE_ERROR("Could not get outs for POS transaction");
     return false;
   }
 
@@ -470,12 +551,13 @@ bool Plant::get_pos_block_template(cryptonote::block                      &block
   return true;
 }
 
-bool Plant::create_pos_tx(tools::wallet2::pending_tx             &stake_tx,
-                          std::vector<uint8_t>                   &extra,
-                          const tools::wallet2::transfer_details &pos_output,
-                          const mining::StakeDetails             &stake_details,
-                          const crypto::hash                     &prev_crypto_hash,
-                          const crypto::hash                     &merkle_root)
+bool Plant::create_pos_tx(tools::wallet2::pending_tx                               &stake_tx,
+                          std::vector<uint8_t>                                     &extra,
+                          std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+                          const tools::wallet2::transfer_details                   &pos_output,
+                          const mining::StakeDetails                               &stake_details,
+                          const crypto::hash                                       &prev_crypto_hash,
+                          const crypto::hash                                       &merkle_root)
 {
   size_t fake_outs_count = d_wallet->default_mixin();
   if (fake_outs_count == 0)
@@ -505,7 +587,7 @@ bool Plant::create_pos_tx(tools::wallet2::pending_tx             &stake_tx,
   }
 
   try {
-    d_wallet->create_stake_transaction(stake_tx, pos_output, fake_outs_count, extra);
+    d_wallet->create_stake_transaction(stake_tx, outs, fake_outs_count, pos_output, extra);
   } catch (const std::runtime_error& e) {
     MINE_ERROR("Could not create PoS transaction");
     return false;
@@ -539,6 +621,14 @@ bool Plant::fit_stake_requirements(const tools::wallet2::transfer_details &t)
          !t.m_spent &&
          d_wallet->is_transfer_unlocked(t) &&
          t.m_block_height + config::OUTPUT_STAKE_MATURITY <= d_blockchain_height;
+}
+
+bool Plant::is_maturing(const tools::wallet2::transfer_details &t)
+{
+  return t.amount() >= COIN &&
+         !t.m_spent &&
+         d_wallet->is_transfer_unlocked(t) &&
+         t.m_block_height + config::OUTPUT_STAKE_MATURITY > d_blockchain_height;
 }
 
 template<typename t_request, typename t_response>
@@ -577,6 +667,98 @@ bool Plant::invoke_rpc_request(std::string     method_name,
     return false;
   }
   return true;
+}
+
+void Plant::print_pos_metrics()
+{
+  std::stringstream metrics_stream;
+
+  if (d_pos_metrics.d_last_block_age > 5 * DIFFICULTY_TARGET_V2) {
+    metrics_stream << "Last block time is too far in the past, you are likely disconnected from the network, "
+                    "the information below may be obsolete, please check your daemon." << std::endl;
+  }
+
+  std::chrono::seconds expected_seconds;
+  if (d_pos_metrics.d_expected_time_till_block > std::numeric_limits<long>::max()) {
+    expected_seconds = std::chrono::seconds(std::numeric_limits<long>::max());
+  } else {
+    expected_seconds = std::chrono::seconds((long)d_pos_metrics.d_expected_time_till_block);
+  }
+
+  auto h = std::chrono::duration_cast<std::chrono::hours>(expected_seconds);
+  expected_seconds -= h;
+  auto m = std::chrono::duration_cast<std::chrono::minutes>(expected_seconds);
+  expected_seconds -= m;
+  auto s = std::chrono::duration_cast<std::chrono::seconds>(expected_seconds);
+
+  metrics_stream
+      << "____________________________________________________________________" << std::endl
+      << std::endl
+      << "                            POS  status" << std::endl
+      << "____________________________________________________________________" << std::endl
+      << "You are staking:                                  " << d_pos_metrics.d_on_stake << " CUT" << std::endl
+      << "Waiting for stake to mature:                      " << d_pos_metrics.d_maturing << " CUT" << std::endl
+      << "Number of the outputs on stake:                   " << d_pos_metrics.d_pos_outputs_count << std::endl
+      << "Blockchain height:                                " << d_pos_metrics.d_height << std::endl
+      << "Time since the last block forging:                " << d_pos_metrics.d_last_block_age << " seconds" << std::endl
+      << "Current difficulty on the network:                " << d_pos_metrics.d_difficulty << std::endl
+      << "This account has POS reward:                      " << d_pos_metrics.d_forged_in_last_24 << " in last 24h" << std::endl
+      << "This account has POS reward:                      " << d_pos_metrics.d_forged_in_last_48 << " in last 48h" << std::endl
+      << "Expected next block forging time:                 " << h.count() << "h, " << m.count() << "min, " << s.count() << "s" << std::endl
+      << "Expected reward per week:                         " << d_pos_metrics.d_expected_reward_per_week << " CUT" << std::endl
+      << "Chance to forge the next block:                   " << std::fixed << std::setw(11) << std::setprecision(9)
+                                                              << 100.0 * d_pos_metrics.d_chance_to_mine_next_block << "%" << std::endl
+      << "-  -  -" << std::endl;
+
+  message_writer() << metrics_stream.str();
+}
+
+void Plant::evaluate_pos_metrics()
+{
+  uint64_t cur_time = static_cast<uint64_t>(std::chrono::system_clock::system_clock::to_time_t(std::chrono::system_clock::now()));
+  d_pos_metrics.d_last_block_age = cur_time > d_pos_metrics.d_timestamp ? cur_time - d_pos_metrics.d_timestamp : 0;
+
+  d_pos_metrics.d_on_stake                  = 0;
+  d_pos_metrics.d_maturing                  = 0;
+  d_pos_metrics.d_pos_outputs_count         = 0;
+  d_pos_metrics.d_expected_time_till_block  = 0;
+  d_pos_metrics.d_expected_reward_per_week  = 0;
+  d_pos_metrics.d_chance_to_mine_next_block = 0;
+
+  tools::wallet2::transfer_container transfers;
+  get_transfers(transfers);
+
+  if (transfers.empty()) {
+    return;
+  }
+
+  for (const tools::wallet2::transfer_details &t: transfers) {
+    if (fit_stake_requirements(t)) {
+      d_pos_metrics.d_on_stake += t.amount();
+      ++d_pos_metrics.d_pos_outputs_count;
+    } else if (is_maturing(t)) {
+      d_pos_metrics.d_maturing += t.amount();
+    }
+  }
+
+  d_pos_metrics.d_on_stake /= COIN;
+  d_pos_metrics.d_maturing /= COIN;
+
+  d_pos_metrics.d_chance_to_mine_next_block = ((double)d_pos_metrics.d_on_stake) / d_pos_metrics.d_difficulty;
+  d_pos_metrics.d_expected_time_till_block = (((double)DIFFICULTY_TARGET_V2) / d_pos_metrics.d_chance_to_mine_next_block) - d_pos_metrics.d_last_block_age;
+
+  double k = 0.9999980926512037;
+  double first_reward = ((double)(MONEY_SUPPLY - GENESIS_TX_REWARD)) / (1 << EMISSION_SPEED_FACTOR_PER_MINUTE);
+  uint64_t blocks_per_week = 604800 / DIFFICULTY_TARGET_V2;
+  double cur_supply  = GENESIS_TX_REWARD + k * (pow(k, d_pos_metrics.d_height - 1) - 1.0) / (k - 1.0) * first_reward;
+  double week_supply = GENESIS_TX_REWARD + k * (pow(k, d_pos_metrics.d_height + blocks_per_week - 1) - 1.0) / (k - 1.0) * first_reward;
+  double cur_balance = d_pos_metrics.d_on_stake + d_pos_metrics.d_maturing;
+  d_pos_metrics.d_expected_reward_per_week = cur_balance * (week_supply / cur_supply - 1.0);
+}
+
+PosMetrics Plant::pos_metrics() const
+{
+  return  d_pos_metrics;
 }
 
 }  // namespace plant

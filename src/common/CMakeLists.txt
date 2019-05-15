@@ -42,6 +42,7 @@ set(common_sources
   password.cpp
   perf_timer.cpp
   scheduler.cpp
+  sharedlock.cpp
   spawn.cpp
   threadpool.cpp
   updates.cpp
@@ -54,6 +55,7 @@ endif()
 
 set(common_headers
   scheduler.h
+  sharedlock.h
   threadpool.h
   uint128.hpp)
 

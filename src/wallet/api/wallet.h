@@ -35,10 +35,16 @@
 #include "wallet/api/wallet2_api.h"
 #include "wallet/wallet2.h"
 
-#include <string>
+#include "common/sharedlock.h"
+#include "net/http_client.h"
+#include "plant/plant.h"
+
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/thread.hpp>
 #include <boost/thread/condition_variable.hpp>
+
+#include <memory>
+#include <string>
 
 
 namespace Monero {
@@ -53,7 +59,9 @@ struct Wallet2CallbackImpl;
 class WalletImpl : public Wallet
 {
 public:
-    WalletImpl(NetworkType nettype = MAINNET, uint64_t kdf_rounds = 1);
+    WalletImpl(std::shared_ptr<epee::net_utils::http::http_simple_client> http_client,
+               NetworkType nettype = MAINNET,
+               uint64_t kdf_rounds = 1);
     ~WalletImpl();
     bool create(const std::string &path, const std::string &password,
                 const std::string &language);
@@ -155,6 +163,7 @@ public:
     virtual UnsignedTransaction * loadUnsignedTx(const std::string &unsigned_filename) override;
     bool exportKeyImages(const std::string &filename) override;
     bool importKeyImages(const std::string &filename) override;
+    std::shared_ptr<tools::wallet2> get_wallet();
 
     virtual void disposeTransaction(PendingTransaction * t) override;
     virtual TransactionHistory * history() override;
@@ -196,6 +205,20 @@ public:
     virtual bool lockKeysFile() override;
     virtual bool unlockKeysFile() override;
     virtual bool isKeysFileLocked() override;
+    virtual void posMetrics(int &height,
+                            int &difficulty,
+                            int &on_stake,
+                            int &maturing,
+                            int &pos_outputs_count,
+                            int &last_block_age,
+                            int &forged_in_last_24,
+                            int &forged_in_last_48,
+                            double &expected_time_till_block,
+                            double &expected_reward_per_week,
+                            double &chance_to_mine_next_block) override;
+    virtual bool isStaking() override;
+    virtual bool startStaking() override;
+    virtual bool stopStaking() override;
 
 private:
     void clearStatus() const;
@@ -218,13 +241,13 @@ private:
     friend class SubaddressImpl;
     friend class SubaddressAccountImpl;
 
-    std::unique_ptr<tools::wallet2> m_wallet;
+    std::shared_ptr<tools::wallet2> m_wallet;
     mutable boost::mutex m_statusMutex;
     mutable int m_status;
     mutable std::string m_errorString;
     std::string m_password;
     std::unique_ptr<TransactionHistoryImpl> m_history;
-    std::unique_ptr<Wallet2CallbackImpl> m_wallet2Callback;
+    std::shared_ptr<Wallet2CallbackImpl> m_wallet2Callback;
     std::unique_ptr<AddressBookImpl>  m_addressBook;
     std::unique_ptr<SubaddressImpl>  m_subaddress;
     std::unique_ptr<SubaddressAccountImpl>  m_subaddressAccount;
@@ -250,6 +273,9 @@ private:
     // cache connection status to avoid unnecessary RPC calls
     mutable std::atomic<bool>   m_is_connected;
     boost::optional<epee::net_utils::http::login> m_daemon_login{};
+
+//    std::shared_ptr<tools::SharedLock> m_shared_lock;
+    std::shared_ptr<plant::Plant>      m_plant; // POS 'Plant' object instance
 };
 
 

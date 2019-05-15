@@ -4059,8 +4059,10 @@ void Blockchain::block_longhash_worker(uint64_t height, const std::vector<block>
 
   for (const auto & block : blocks)
   {
+    if (block.major_version>=HF_VERSION_POS)
+      break;
     if (m_cancel)
-       break;
+      break;
     crypto::hash id = get_block_hash(block);
     crypto::hash pow = get_block_longhash(block, height++);
     map.emplace(id, pow);

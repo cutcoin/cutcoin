@@ -19,11 +19,13 @@
 namespace tools {
 
 class LightThreadPool {
+public:
+  // Types
+  using Function = std::function<void(void)>;
 
 public:
-  explicit LightThreadPool(size_t);
-  template<class F, class... Args>
-  auto enqueue(F&& f, Args&&... args)-> std::future<typename std::result_of<F(Args...)>::type>;
+  explicit LightThreadPool(size_t threads_n = std::thread::hardware_concurrency());
+  void enqueue(const Function &work_item);
   ~LightThreadPool();
 
 private:
@@ -39,16 +41,15 @@ private:
 };
 
 // the constructor just launches some amount of workers
-inline LightThreadPool::LightThreadPool(size_t threads)
-    :   stop(false)
+inline
+LightThreadPool::LightThreadPool(size_t threads_n)
+: stop(false)
 {
-  for(size_t i = 0;i<threads;++i)
+  for(size_t i = 0; i<threads_n; ++i)
     workers.emplace_back(
-        [this]
-        {
-          for(;;)
-          {
-            std::function<void()> task;
+        [this] {
+          for(;;) {
+            Function task;
 
             {
               std::unique_lock<std::mutex> lock(this->queue_mutex);
@@ -56,7 +57,7 @@ inline LightThreadPool::LightThreadPool(size_t threads)
                                    [this]{ return this->stop || !this->tasks.empty(); });
               if(this->stop && this->tasks.empty())
                 return;
-              task = std::move(this->tasks.front());
+              task = this->tasks.front();
               this->tasks.pop();
             }
 
@@ -67,28 +68,14 @@ inline LightThreadPool::LightThreadPool(size_t threads)
 }
 
 // add new work item to the pool
-template<class F, class... Args>
-auto LightThreadPool::enqueue(F&& f, Args&&... args)
--> std::future<typename std::result_of<F(Args...)>::type>
+inline
+void LightThreadPool::enqueue(const Function &work_item)
 {
-  using return_type = typename std::result_of<F(Args...)>::type;
-
-  auto task = std::make_shared< std::packaged_task<return_type()> >(
-      std::bind(std::forward<F>(f), std::forward<Args>(args)...)
-  );
-
-  std::future<return_type> res = task->get_future();
   {
     std::unique_lock<std::mutex> lock(queue_mutex);
-
-    // don't allow enqueueing after stopping the pool
-    if(stop)
-      throw std::runtime_error("enqueue on stopped LightThreadPool");
-
-    tasks.emplace([task](){ (*task)(); });
+    tasks.push(work_item);
   }
   condition.notify_one();
-  return res;
 }
 
 // the destructor joins all threads

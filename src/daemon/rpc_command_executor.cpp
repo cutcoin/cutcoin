@@ -410,11 +410,6 @@ bool t_rpc_command_executor::show_status() {
       tools::fail_msg_writer() << make_error(fail_message, hfres.status);
       return true;
     }
-    if (!m_rpc_server->on_mining_status(mreq, mres))
-    {
-      tools::fail_msg_writer() << fail_message.c_str();
-      return true;
-    }
 
     if (mres.status == CORE_RPC_STATUS_BUSY)
     {
@@ -444,13 +439,13 @@ bool t_rpc_command_executor::show_status() {
   }
 
   std::stringstream str;
-  str << boost::format("Height: %llu/%llu (%.1f%%) on %s%s, %s, net hash %s, v%u%s, %s, %u(out)+%u(in) connections")
+  str << boost::format("Height: %llu/%llu (%.1f%%) on %s%s, %s, difficulty %s, v%u%s, %s, %u(out)+%u(in) connections")
     % (unsigned long long)ires.height
     % (unsigned long long)net_height
     % get_sync_percentage(ires)
     % (ires.testnet ? "testnet" : ires.stagenet ? "stagenet" : "mainnet")
     % bootstrap_msg
-    % (!has_mining_info ? "mining info unavailable" : mining_busy ? "syncing" : mres.active ? ( ( mres.is_background_mining_enabled ? "smart " : "" ) + std::string("mining at ") + get_mining_speed(mres.speed) ) : "not mining")
+    % (!has_mining_info ? "mining info unavailable" : mining_busy ? "syncing" : mres.active ? ( ( mres.is_background_mining_enabled ? "smart " : "" ) + std::string("staking at ") + get_mining_speed(mres.speed) ) : "not staking")
     % get_mining_speed(ires.difficulty / ires.target)
     % (unsigned)hfres.version
     % get_fork_extra_info(hfres.earliest_height, net_height, ires.target)
@@ -1054,61 +1049,6 @@ bool t_rpc_command_executor::print_transaction_pool_stats() {
   }
   tools::msg_writer();
 
-  return true;
-}
-
-bool t_rpc_command_executor::start_mining(cryptonote::account_public_address address, uint64_t num_threads, cryptonote::network_type nettype, bool do_background_mining, bool ignore_battery) {
-  cryptonote::COMMAND_RPC_START_MINING::request req;
-  cryptonote::COMMAND_RPC_START_MINING::response res;
-  req.miner_address = cryptonote::get_account_address_as_str(nettype, false, address);
-  req.threads_count = num_threads;
-  req.do_background_mining = do_background_mining;
-  req.ignore_battery = ignore_battery;
-  
-  std::string fail_message = "Mining did not start";
-
-  if (m_is_rpc)
-  {
-    if (m_rpc_client->rpc_request(req, res, "/start_mining", fail_message.c_str()))
-    {
-      tools::success_msg_writer() << "Mining started";
-    }
-  }
-  else
-  {
-    if (!m_rpc_server->on_start_mining(req, res) || res.status != CORE_RPC_STATUS_OK)
-    {
-      tools::fail_msg_writer() << make_error(fail_message, res.status);
-      return true;
-    }
-  }
-
-  return true;
-}
-
-bool t_rpc_command_executor::stop_mining() {
-  cryptonote::COMMAND_RPC_STOP_MINING::request req;
-  cryptonote::COMMAND_RPC_STOP_MINING::response res;
-
-  std::string fail_message = "Mining did not stop";
-
-  if (m_is_rpc)
-  {
-    if (!m_rpc_client->rpc_request(req, res, "/stop_mining", fail_message.c_str()))
-    {
-      return true;
-    }
-  }
-  else
-  {
-    if (!m_rpc_server->on_stop_mining(req, res) || res.status != CORE_RPC_STATUS_OK)
-    {
-      tools::fail_msg_writer() << make_error(fail_message, res.status);
-      return true;
-    }
-  }
-
-  tools::success_msg_writer() << "Mining stopped";
   return true;
 }
 

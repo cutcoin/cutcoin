@@ -1298,7 +1298,7 @@ static uint64_t decodeRct(const rct::rctSig & rv, const crypto::key_derivation &
   }
 }
 //----------------------------------------------------------------------------------------------------
-void wallet2::scan_output(const cryptonote::transaction &tx, const crypto::public_key &tx_pub_key, size_t i, tx_scan_info_t &tx_scan_info, int &num_vouts_received, std::unordered_map<cryptonote::subaddress_index, uint64_t> &tx_money_got_in_outs, std::vector<size_t> &outs)
+void wallet2::scan_output(const cryptonote::transaction &tx, bool miner_tx, const crypto::public_key &tx_pub_key, size_t i, tx_scan_info_t &tx_scan_info, int &num_vouts_received, std::unordered_map<cryptonote::subaddress_index, uint64_t> &tx_money_got_in_outs, std::vector<size_t> &outs)
 {
   THROW_WALLET_EXCEPTION_IF(i >= tx.vout.size(), error::wallet_internal_error, "Invalid vout index");
 
@@ -1331,11 +1331,15 @@ void wallet2::scan_output(const cryptonote::transaction &tx, const crypto::publi
         error::wallet_internal_error, "key_image generated ephemeral public key not matched with output_key");
   }
 
+  THROW_WALLET_EXCEPTION_IF(std::find(outs.begin(), outs.end(), i) != outs.end(), error::wallet_internal_error, "Same output cannot be added twice");
+
   outs.push_back(i);
-  if (tx_scan_info.money_transfered == 0)
+  if (tx_scan_info.money_transfered == 0 && !miner_tx)
   {
     tx_scan_info.money_transfered = tools::decodeRct(tx.rct_signatures, tx_scan_info.received->derivation, i, tx_scan_info.mask, m_account.get_device());
   }
+  THROW_WALLET_EXCEPTION_IF(tx_money_got_in_outs[tx_scan_info.received->index] >= std::numeric_limits<uint64_t>::max() - tx_scan_info.money_transfered,
+                            error::wallet_internal_error, "Overflow in received amounts");
   tx_money_got_in_outs[tx_scan_info.received->index] += tx_scan_info.money_transfered;
   tx_scan_info.amount = tx_scan_info.money_transfered;
   ++num_vouts_received;
@@ -1514,7 +1518,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
           if (tx_scan_info[i].received)
           {
             hwdev.conceal_derivation(tx_scan_info[i].received->derivation, tx_pub_key, additional_tx_pub_keys.data, derivation, additional_derivations);
-            scan_output(tx, tx_pub_key, i, tx_scan_info[i], num_vouts_received, tx_money_got_in_outs, outs);
+            scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], num_vouts_received, tx_money_got_in_outs, outs);
           }
         }
       }
@@ -1537,7 +1541,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
         if (tx_scan_info[i].received)
         {
           hwdev.conceal_derivation(tx_scan_info[i].received->derivation, tx_pub_key, additional_tx_pub_keys.data, derivation, additional_derivations);
-          scan_output(tx, tx_pub_key, i, tx_scan_info[i], num_vouts_received, tx_money_got_in_outs, outs);
+          scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], num_vouts_received, tx_money_got_in_outs, outs);
         }
       }
     }
@@ -1553,7 +1557,7 @@ void wallet2::process_new_transaction(const crypto::hash &txid, const cryptonote
           boost::unique_lock<hw::device> hwdev_lock (hwdev);
           hwdev.set_mode(hw::device::NONE);
           hwdev.conceal_derivation(tx_scan_info[i].received->derivation, tx_pub_key, additional_tx_pub_keys.data, derivation, additional_derivations);
-          scan_output(tx, tx_pub_key, i, tx_scan_info[i], num_vouts_received, tx_money_got_in_outs, outs);
+          scan_output(tx, miner_tx, tx_pub_key, i, tx_scan_info[i], num_vouts_received, tx_money_got_in_outs, outs);
         }
       }
     }
@@ -3596,6 +3600,23 @@ void wallet2::unlockTransport()
   m_daemon_rpc_mutex.unlock();
 }
 
+void wallet2::get_pos_transfers(transfer_container &pos_transfers, uint64_t start_height)
+{
+  transfer_container transfers;
+  for(const auto &ts: m_transfers) {
+    if (ts.m_block_height >= start_height) {
+      rct::key zC = rct::zeroCommit(ts.amount());
+      rct::key k;
+      rct::genC(k, ts.m_mask, ts.amount());
+
+      if (zC == k) {
+        transfers.push_back(ts);
+      }
+    }
+  }
+  pos_transfers = transfers;
+}
+
 
 /*!
  * \brief determine the key storage for the specified wallet file
@@ -5123,11 +5144,7 @@ bool wallet2::is_tx_spendtime_unlocked(uint64_t unlock_time, uint64_t block_heig
   {
     //interpret as time
     uint64_t current_time = static_cast<uint64_t>(time(NULL));
-    // XXX: this needs to be fast, so we'd need to get the starting heights
-    // from the daemon to be correct once voting kicks in
-    uint64_t v2height = m_nettype == TESTNET ? 624634 : m_nettype == STAGENET ? 32000  : 1009827;
-    uint64_t leeway = block_height < v2height ? CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V1 : CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2;
-    if(current_time + leeway >= unlock_time)
+    if(current_time + CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2 >= unlock_time)
       return true;
     else
       return false;
@@ -7553,13 +7570,15 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
       // If the change is 0, send it to a random address, to avoid confusing
       // the sender with a 0 amount output. We send a 0 amount in order to avoid
       // letting the destination be able to work out which of the inputs is the
-      // real one in our rings
+      // real one in our rings.
       LOG_PRINT_L2("generating dummy address for 0 change");
       cryptonote::account_base dummy;
       dummy.generate();
       change_dts.addr = dummy.get_keys().m_account_address;
       LOG_PRINT_L2("generated dummy address for 0 change");
       splitted_dsts.push_back(change_dts);
+
+      std::shuffle(splitted_dsts.begin(), splitted_dsts.end(), std::default_random_engine(crypto::rand<unsigned>()));
     }
   }
   else
@@ -9079,8 +9098,10 @@ std::vector<wallet2::pending_tx> wallet2::create_transactions_from(const crypton
   return ptx_vector;
 }
 
-size_t wallet2::estimate_pos_tx_size(const tools::wallet2::transfer_details &pos_output,
-                                     size_t fake_outs_count, const std::vector<uint8_t> &extra)
+size_t wallet2::estimate_pos_tx_size(std::vector<std::vector<get_outs_entry>> &outs,
+                                     size_t                                    fake_outs_count,
+                                     const tools::wallet2::transfer_details   &pos_output,
+                                     const std::vector<uint8_t>               &extra)
 {
   //ensure device is let in NONE mode in any case
   hw::device &hwdev = m_account.get_device();
@@ -9110,8 +9131,6 @@ size_t wallet2::estimate_pos_tx_size(const tools::wallet2::transfer_details &pos
   THROW_WALLET_EXCEPTION_IF(transfers.empty(), error::wallet_pos_mining_error, "Cannot find output for stake");
   THROW_WALLET_EXCEPTION_IF(transfers.size() > 1, error::wallet_pos_mining_error, "Unrecognized mining error");
 
-  std::vector<std::vector<tools::wallet2::get_outs_entry>> outs;
-
   uint64_t unlock_time = 0;
   uint64_t needed_fee  = 0;
 
@@ -9129,7 +9148,8 @@ size_t wallet2::estimate_pos_tx_size(const tools::wallet2::transfer_details &pos
                           extra,
                           test_tx,
                           test_ptx,
-                          range_proof_type);
+                          range_proof_type,
+                          true);
   } else {
     transfer_selected(dsts,
                       transfers,
@@ -9148,7 +9168,12 @@ size_t wallet2::estimate_pos_tx_size(const tools::wallet2::transfer_details &pos
   return txBlob.size();
 }
 
-void wallet2::create_stake_transaction(wallet2::pending_tx &stake_ptx, const tools::wallet2::transfer_details &pos_output, size_t fake_outs_count, const std::vector<uint8_t> &extra)
+void wallet2::create_stake_transaction(
+    wallet2::pending_tx                                      &stake_ptx,
+    std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+    size_t                                                    fake_outs_count,
+    const tools::wallet2::transfer_details                   &pos_output,
+    const std::vector<uint8_t>                               &extra)
 {
   LOG_PRINT_L2("Starting to create stake transaction");
 
@@ -9157,7 +9182,7 @@ void wallet2::create_stake_transaction(wallet2::pending_tx &stake_ptx, const too
   boost::unique_lock<hw::device> hwdev_lock (hwdev);
   hw::reset_mode rst(hwdev);
 
-  const bool use_rct = fake_outs_count > 0 && use_fork_rules(4, 0);
+  const bool use_rct     = fake_outs_count > 0 && use_fork_rules(4, 0);
   const bool bulletproof = use_fork_rules(get_bulletproof_fork(), 0);
   const rct::RangeProofType range_proof_type = bulletproof ? rct::RangeProofPaddedBulletproof : rct::RangeProofBorromean;
 
@@ -9177,8 +9202,6 @@ void wallet2::create_stake_transaction(wallet2::pending_tx &stake_ptx, const too
 
   THROW_WALLET_EXCEPTION_IF(transfers.empty(), error::wallet_pos_mining_error, "Cannot find output for stake");
   THROW_WALLET_EXCEPTION_IF(transfers.size() > 1, error::wallet_pos_mining_error, "Unrecognized mining error");
-
-  std::vector<std::vector<tools::wallet2::get_outs_entry>> outs;
 
   uint64_t unlock_time = 0;
   uint64_t needed_fee  = 0;
@@ -10822,6 +10845,7 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
         THROW_WALLET_EXCEPTION_IF(!r, error::wallet_internal_error, "Failed to generate key derivation");
       }
       size_t output_index = 0;
+      bool miner_tx = cryptonote::is_coinbase(spent_tx);
       for (const cryptonote::tx_out& out : spent_tx.vout)
       {
         tx_scan_info_t tx_scan_info;
@@ -10829,11 +10853,13 @@ uint64_t wallet2::import_key_images(const std::vector<std::pair<crypto::key_imag
         THROW_WALLET_EXCEPTION_IF(tx_scan_info.error, error::wallet_internal_error, "check_acc_out_precomp failed");
         if (tx_scan_info.received)
         {
-          if (tx_scan_info.money_transfered == 0)
+          if (tx_scan_info.money_transfered == 0 && !miner_tx)
           {
             rct::key mask;
             tx_scan_info.money_transfered = tools::decodeRct(spent_tx.rct_signatures, tx_scan_info.received->derivation, output_index, mask, hwdev);
           }
+          THROW_WALLET_EXCEPTION_IF(tx_money_got_in_outs >= std::numeric_limits<uint64_t>::max() - tx_scan_info.money_transfered,
+                                    error::wallet_internal_error, "Overflow in received amounts");
           tx_money_got_in_outs += tx_scan_info.money_transfered;
         }
         ++output_index;

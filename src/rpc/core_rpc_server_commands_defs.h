@@ -825,33 +825,6 @@ namespace cryptonote
     };
   };
   //-----------------------------------------------
-  struct COMMAND_RPC_START_MINING
-  {
-    struct request
-    {
-      std::string miner_address;
-      uint64_t    threads_count;
-      bool        do_background_mining;
-      bool        ignore_battery;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(miner_address)
-        KV_SERIALIZE(threads_count)
-        KV_SERIALIZE(do_background_mining)
-        KV_SERIALIZE(ignore_battery)
-      END_KV_SERIALIZE_MAP()
-    };
-
-    struct response
-    {
-      std::string status;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(status)
-      END_KV_SERIALIZE_MAP()
-    };
-  };
-  //-----------------------------------------------
   struct COMMAND_RPC_GET_INFO
   {
     struct request
@@ -929,28 +902,6 @@ namespace cryptonote
         KV_SERIALIZE(was_bootstrap_ever_used)
         KV_SERIALIZE(database_size)
         KV_SERIALIZE(update_available)
-      END_KV_SERIALIZE_MAP()
-    };
-  };
-
-
-  //-----------------------------------------------
-  struct COMMAND_RPC_STOP_MINING
-  {
-    struct request
-    {
-
-      BEGIN_KV_SERIALIZE_MAP()
-      END_KV_SERIALIZE_MAP()
-    };
-
-
-    struct response
-    {
-      std::string status;
-
-      BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(status)
       END_KV_SERIALIZE_MAP()
     };
   };

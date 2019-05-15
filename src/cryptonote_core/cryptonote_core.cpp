@@ -158,12 +158,12 @@ namespace cryptonote
   static const command_line::arg_descriptor<bool> arg_fluffy_blocks  = {
     "fluffy-blocks"
   , "Relay blocks as fluffy blocks (obsolete, now default)"
-  , true
+  , false
   };
   static const command_line::arg_descriptor<bool> arg_no_fluffy_blocks  = {
     "no-fluffy-blocks"
   , "Relay blocks as normal blocks"
-  , false
+  , true
   };
   static const command_line::arg_descriptor<size_t> arg_max_txpool_weight  = {
     "max-txpool-weight"

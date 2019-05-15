@@ -29,8 +29,12 @@
 #ifndef CUTCOIN_PLANT_H
 #define CUTCOIN_PLANT_H
 
-#include <common/scheduler.h>
+#include "plantcallbacks.h"
+#include "posmetrics.h"
+
 #include <common/lightthreadpool.h>
+#include <common/scheduler.h>
+#include <common/sharedlock.h>
 #include <crypto/hash.h>
 #include <cryptonote_basic/cryptonote_basic.h>
 #include <cryptonote_basic/difficulty.h>
@@ -49,10 +53,9 @@
 namespace plant {
 
 class Plant {
-  // Implement basic functionality required for mining of CUT coin
-  // with Proof of Stake (PoS) algorithm.
+  // Contain basic functions for CUT coin staking.
   // This class is not thread safe and not Movable or Copyable.
-  // It designed according to RAII.
+  // It is designed according to RAII.
 
 public:
   // Types
@@ -62,8 +65,8 @@ public:
   using TimePoint = Clock::time_point;
 
 private:
-  struct MiningInfo
-  {
+  struct MiningInfo {
+    // Keep short summary info required for staking
     uint64_t                    d_height;
     crypto::hash                d_posHash;
     cryptonote::difficulty_type d_difficulty;
@@ -72,26 +75,37 @@ private:
 
 private:
   // Data
-  const size_t d_num_threads{5};
-  Period d_data_update_period{std::chrono::seconds{1}};
+  const size_t d_num_threads{5};                                  // number of threads we use the threadpool
+  const Period d_data_update_period{std::chrono::seconds{1}};     // blockchain update period
+  const Period d_reward_update_period{std::chrono::seconds{120}}; // POS reward update period
 
-  std::shared_ptr<tools::wallet2> d_wallet;        // wallet. Share, don't own
-  Client                          d_http_client;   // RPC http client. Share, don't own
-  tools::LightThreadPool          d_threadpool;    // thread pool for tasks execution
-  tools::Scheduler                d_scheduler;     // scheduler for deferred tasks
-  tools::Scheduler::SharedTask    d_mining_task;   // current scheduled mining task
-  bool                            d_is_mining;     // state flag
-  uint64_t                        d_blockchain_height;  // current blockchain height
-  std::string                     d_block_hash;         // current block crtptographic hash
-  std::mutex                      d_pos_state_mutex;    // protect mining state (sequence of stages) consistence
+  std::shared_ptr<tools::wallet2>  d_wallet;        // wallet. Share, don't own
+  Client                           d_http_client;   // RPC http client. Share, don't own
+  tools::LightThreadPool           d_threadpool;    // thread pool for tasks execution
+  tools::Scheduler                 d_scheduler;     // scheduler for deferred tasks
+  tools::Scheduler::SharedTask     d_mining_task;   // current scheduled mining task
+  std::atomic<bool>                d_is_mining;     // state flag
+  uint64_t                         d_blockchain_height;  // current blockchain height
+  std::string                      d_block_hash;         // current block crtptographic hash
+  std::mutex                       d_pos_state_mutex;    // protect mining state (sequence of stages) consistence
+  PosMetrics                       d_pos_metrics;
+  std::string                      d_reward_wallet_address; // wallet address for rewards
+  std::shared_ptr<plant::PlantCallbacks> d_plant_callbacks;
   boost::mutex                    &d_idle_mutex;
   boost::condition_variable       &d_idle_cond;
 
 public:
   // Creators
-  Plant(std::shared_ptr<tools::wallet2> wallet, Client client, boost::mutex &idle_mutex, boost::condition_variable &idle_cond);
+
+  Plant(std::shared_ptr<tools::wallet2> wallet,
+        Client client,
+        boost::mutex &idle_mutex,
+        boost::condition_variable &idle_cond,
+        std::shared_ptr<plant::PlantCallbacks> plant_callbacks);
+    // Construct this object.
 
   ~Plant();
+    // Destruct this object.
 
 public:
   // Deleted members
@@ -103,50 +117,83 @@ public:
 
   // Public manipulators
   bool is_mining();
+    // Return 'true' if the 'Plant' is mining.
 
-  bool start_mining();
+  bool start_mining(const std::string &reward_wallet_address);
+    // Start staking. The specified 'reward_wallet_address' is a wallet address where rewards are transferred.
+    // If 'reward_wallet_address' is an empty string the rewards are transferred to the current wallet.
+
   void stop_mining();
+    // Stop staking process.
+
+  PosMetrics pos_metrics() const;
+    // Return POS statistics.
 
 private:
   // Private manipulators
   void handle_blockchain_update();
+    // Handle event of blockchain height update.
 
-  void handle_block_mining();
+  void handle_block_mining(const std::string &block_hash);
+    // Handle event of block mining. This event is scheduled at the specific time that depends on
+    // the current network difficulty, stake amount and piece of luck.
+
+  void handle_reward_update();
+    // Invoked to evaluate this account rewords within last 24 and 48 hours.
 
   bool get_last_block_info(uint64_t &height, std::string &hash) const;
+    // Return last block height and hash.
 
   bool get_mining_info(MiningInfo &info) const;
+    // Return actual mining info.
 
   void get_transfers(tools::wallet2::transfer_container &transfers);
+    // Get current account transfers.
 
   bool get_mining_output(const MiningInfo                         &mining_info,
                          const tools::wallet2::transfer_container &transfers,
                          tools::wallet2::transfer_details         &pos_output,
                          mining::StakeDetails                     &stake_details);
+    // Find the best output appropriate for mining at the current height.
 
-  bool get_pos_block_template(cryptonote::block                      &block_template,
-                              std::vector<uint8_t>                   &extra,
-                              crypto::hash                           &prev_hash,
-                              crypto::hash                           &prev_crypto_hash,
-                              crypto::hash                           &merkle_root,
-                              const mining::StakeDetails             &stake_details,
-                              const tools::wallet2::transfer_details &pos_output) const;
+  bool get_pos_block_template(cryptonote::block                                        &block_template,
+                              std::vector<uint8_t>                                     &extra,
+                              crypto::hash                                             &prev_hash,
+                              crypto::hash                                             &prev_crypto_hash,
+                              crypto::hash                                             &merkle_root,
+                              std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+                              const mining::StakeDetails                               &stake_details,
+                              const tools::wallet2::transfer_details                   &pos_output) const;
+    // Return POS block template.
 
-  bool create_pos_tx(tools::wallet2::pending_tx             &stake_tx,
-                     std::vector<uint8_t>                   &extra,
-                     const tools::wallet2::transfer_details &pos_output,
-                     const mining::StakeDetails             &stake_details,
-                     const crypto::hash                     &prev_crypto_hash,
-                     const crypto::hash                     &merkle_root);
+  bool create_pos_tx(tools::wallet2::pending_tx                               &stake_tx,
+                     std::vector<uint8_t>                                     &extra,
+                     std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+                     const tools::wallet2::transfer_details                   &pos_output,
+                     const mining::StakeDetails                               &stake_details,
+                     const crypto::hash                                       &prev_crypto_hash,
+                     const crypto::hash                                       &merkle_root);
+    // Build POS mining transaction that contains a single input and a single effective output.
 
   bool publish_pos_block(const cryptonote::block &block, const cryptonote::transaction &tx);
+    // Publish new POS block to the daemon.
 
   bool fit_stake_requirements(const tools::wallet2::transfer_details &t);
+    // Return 'true' if the specified 't' that correspond to a specific unspent output meet
+    // conditions on POS stake output.
+
+  bool is_maturing(const tools::wallet2::transfer_details &t);
 
   template<typename t_request, typename t_response>
-  bool invoke_rpc_request(std::string     method_name,
+  bool invoke_rpc_request(std::string      method_name,
                           const t_request &request,
                           t_response      &response) const;
+    // Function-helper that templating RPC requests.
+
+  void print_pos_metrics();
+    // Print current staking status and metrics.
+
+  void evaluate_pos_metrics();
 };
 
 } // namespace plant

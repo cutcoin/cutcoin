@@ -349,57 +349,6 @@ namespace rpc
     return;
   }
 
-  void DaemonHandler::handle(const StartMining::Request& req, StartMining::Response& res)
-  {
-    cryptonote::address_parse_info info;
-    if(!get_account_address_from_str(info, m_core.get_nettype(), req.miner_address))
-    {
-      res.error_details = "Failed, wrong address";
-      LOG_PRINT_L0(res.error_details);
-      res.status = Message::STATUS_FAILED;
-      return;
-    }
-    if (info.is_subaddress)
-    {
-      res.error_details = "Failed, mining to subaddress isn't supported yet";
-      LOG_PRINT_L0(res.error_details);
-      res.status = Message::STATUS_FAILED;
-      return;
-    }
-
-    unsigned int concurrency_count = boost::thread::hardware_concurrency() * 4;
-
-    // if we couldn't detect threads, set it to a ridiculously high number
-    if(concurrency_count == 0)
-    {
-      concurrency_count = 257;
-    }
-
-    // if there are more threads requested than the hardware supports
-    // then we fail and log that.
-    if(req.threads_count > concurrency_count)
-    {
-      res.error_details = "Failed, too many threads relative to CPU cores.";
-      LOG_PRINT_L0(res.error_details);
-      res.status = Message::STATUS_FAILED;
-      return;
-    }
-
-    boost::thread::attributes attrs;
-    attrs.set_stack_size(THREAD_STACK_SIZE);
-
-    if(!m_core.get_miner().start(info.address, static_cast<size_t>(req.threads_count), attrs, req.do_background_mining, req.ignore_battery))
-    {
-      res.error_details = "Failed, mining not started";
-      LOG_PRINT_L0(res.error_details);
-      res.status = Message::STATUS_FAILED;
-      return;
-    }
-    res.status = Message::STATUS_OK;
-    res.error_details = "";
-
-  }
-
   void DaemonHandler::handle(const GetInfo::Request& req, GetInfo::Response& res)
   {
     res.info.height = m_core.get_current_blockchain_height();
@@ -438,37 +387,6 @@ namespace rpc
     res.info.block_size_limit = res.info.block_weight_limit = m_core.get_blockchain_storage().get_current_cumulative_block_weight_limit();
     res.info.block_size_median = res.info.block_weight_median = m_core.get_blockchain_storage().get_current_cumulative_block_weight_median();
     res.info.start_time = (uint64_t)m_core.get_start_time();
-
-    res.status = Message::STATUS_OK;
-    res.error_details = "";
-  }
-
-  void DaemonHandler::handle(const StopMining::Request& req, StopMining::Response& res)
-  {
-    if(!m_core.get_miner().stop())
-    {
-      res.error_details = "Failed, mining not stopped";
-      LOG_PRINT_L0(res.error_details);
-      res.status = Message::STATUS_FAILED;
-      return;
-    }
-
-    res.status = Message::STATUS_OK;
-    res.error_details = "";
-  }
-
-  void DaemonHandler::handle(const MiningStatus::Request& req, MiningStatus::Response& res)
-  {
-    const cryptonote::miner& lMiner = m_core.get_miner();
-    res.active = lMiner.is_mining();
-    res.is_background_mining_enabled = lMiner.get_is_background_mining_enabled();
-    
-    if ( lMiner.is_mining() ) {
-      res.speed = lMiner.get_speed();
-      res.threads_count = lMiner.get_threads_count();
-      const account_public_address& lMiningAdr = lMiner.get_mining_address();
-      res.address = get_account_address_as_str(m_core.get_nettype(), false, lMiningAdr);
-    }
 
     res.status = Message::STATUS_OK;
     res.error_details = "";
@@ -813,9 +731,6 @@ void DaemonHandler::handle(const GetMiningInfo::Request& req, GetMiningInfo::Res
       REQ_RESP_TYPES_MACRO(request_type, GetTxGlobalOutputIndices, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, SendRawTx, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetInfo, req_json, resp_message, handle);
-      REQ_RESP_TYPES_MACRO(request_type, StartMining, req_json, resp_message, handle);
-      REQ_RESP_TYPES_MACRO(request_type, StopMining, req_json, resp_message, handle);
-      REQ_RESP_TYPES_MACRO(request_type, MiningStatus, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, SaveBC, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetBlockHash, req_json, resp_message, handle);
       REQ_RESP_TYPES_MACRO(request_type, GetLastBlockHeader, req_json, resp_message, handle);

@@ -30,11 +30,13 @@ set(plant_sources
     logging.cpp
     plant.cpp)
 
-set(plant_headers)
+set(plant_headers
+    plantcallbacks.h)
 
 set(plant_private_headers
     logging.h
-    plant.h)
+    plant.h
+    posmetrics.h)
 
 cutcoin_private_headers(plant
     ${plant_private_headers})

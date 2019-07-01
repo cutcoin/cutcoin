@@ -36,6 +36,16 @@ namespace cryptonote
 namespace rpc
 {
 
+#ifdef ZMQ_CPP11
+#if ZMQ_VERSION >= ZMQ_MAKE_VERSION(4, 3, 1)
+#define zmq_receiver(socket, message)   (socket->recv(message))
+#else
+#define zmq_receiver(socket, message)   (socket->recv(&message))
+#endif
+#else
+#define zmq_receiver(socket, message)   (socket->recv(&message))
+#endif
+
 ZmqServer::ZmqServer(RpcHandler& h) :
     handler(h),
     stop_signal(false),
@@ -61,7 +71,7 @@ void ZmqServer::serve()
       {
         throw std::runtime_error("ZMQ RPC server reply socket is null");
       }
-      while (rep_socket->recv(&message))
+      while (zmq_receiver(rep_socket, message))
       {
         std::string message_string(reinterpret_cast<const char *>(message.data()), message.size());
 

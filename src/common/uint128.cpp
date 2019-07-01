@@ -309,11 +309,6 @@ u128_t& u128_t::operator--() {
 }
 
 
-std::ostream &operator <<(std::ostream &out, const u128_t &f) {
-  out << f.get_string();
-  return out;
-}
-
 u128_t operator +(const u128_t &a, const u128_t &b) {
   return safe_add(a, b);
 }

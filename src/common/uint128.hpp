@@ -101,8 +101,6 @@ struct u128_t {
   u128_t& operator--();
 };
 
-std::ostream &operator <<(std::ostream &out, const u128_t &f);
-
 u128_t operator +(const u128_t &a, const u128_t &b);
 u128_t operator -(const u128_t &a, const u128_t &b);
 u128_t operator *(const u128_t &a, const u128_t &b);

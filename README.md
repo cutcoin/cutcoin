@@ -67,6 +67,10 @@ build the library binary manually. This can be done with the following command `
 Debian / Ubuntu one liner for all dependencies  
 ``` sudo apt update && sudo apt install build-essential cmake pkg-config libboost-all-dev libssl-dev libzmq3-dev libunbound-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev doxygen graphviz libpgm-dev```
 
+Install all dependencies at once on macOS with the provided Brewfile: ```brew update && brew bundle --file=contrib/brew/Brewfile```
+
+reeBSD one liner for required to build dependencies ```pkg install git gmake cmake pkgconf boost-libs cppzmq libsodium```
+
 Debug mode build also requires QT4, on Debian / Ubuntu
 ``` sudo apt install qt4-default ```
 
@@ -91,7 +95,7 @@ invokes cmake commands as needed.
 * Change to the root of the source code directory, change to the most recent release branch, and build:
 
         cd cutcoin
-        git checkout v0.13.0.4
+        git checkout master
         make
 
     *Optional*: If your machine has several cores and enough memory, enable

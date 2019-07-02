@@ -69,7 +69,7 @@ Debian / Ubuntu one liner for all dependencies
 
 Install all dependencies at once on macOS with the provided Brewfile: ```brew update && brew bundle --file=contrib/brew/Brewfile```
 
-reeBSD one liner for required to build dependencies ```pkg install git gmake cmake pkgconf boost-libs cppzmq libsodium```
+FreeBSD one liner for required to build dependencies ```pkg install git gmake cmake pkgconf boost-libs cppzmq libsodium```
 
 Debug mode build also requires QT4, on Debian / Ubuntu
 ``` sudo apt install qt4-default ```

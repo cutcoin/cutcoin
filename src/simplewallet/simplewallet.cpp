@@ -4752,8 +4752,10 @@ bool simple_wallet::print_ring_members(const std::vector<tools::wallet2::pending
 bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::string> &args_)
 {
 //  "transfer [index=<N1>[,<N2>,...]] [<priority>] [<ring_size>] <address> <amount> [<payment_id>]"
-  if (!try_connect_to_daemon())
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
     return true;
+  }
 
   SCOPED_WALLET_UNLOCK();
 

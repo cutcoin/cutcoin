@@ -38,9 +38,9 @@
 namespace cryptonote
 {
   //-----------------------------------------------
-#define CORE_RPC_STATUS_OK   "OK"
-#define CORE_RPC_STATUS_BUSY   "BUSY"
-#define CORE_RPC_STATUS_NOT_MINING "NOT MINING"
+#define CORE_RPC_STATUS_OK    "OK"
+#define CORE_RPC_STATUS_BUSY  "BUSY"
+#define CORE_RPC_STATUS_ERROR "ERROR"
 
 // When making *any* change here, bump minor
 // If the change is incompatible, then bump major and set minor to 0
@@ -907,7 +907,7 @@ namespace cryptonote
   };
 
   //-----------------------------------------------
-  struct COMMAND_RPC_MINING_STATUS
+  struct COMMAND_RPC_STAKING_STATUS
   {
     struct request
     {
@@ -919,20 +919,20 @@ namespace cryptonote
 
     struct response
     {
-      std::string status;
-      bool active;
-      uint64_t speed;
-      uint32_t threads_count;
-      std::string address;
-      bool is_background_mining_enabled;
+      std::string                 status;
+      std::string                 algorithm;
+      uint64_t                    height;
+      std::string                 pos_hash;
+      cryptonote::difficulty_type difficulty;
+      uint64_t                    block_time;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(status)
-        KV_SERIALIZE(active)
-        KV_SERIALIZE(speed)
-        KV_SERIALIZE(threads_count)
-        KV_SERIALIZE(address)
-        KV_SERIALIZE(is_background_mining_enabled)
+        KV_SERIALIZE(algorithm)
+        KV_SERIALIZE(height)
+        KV_SERIALIZE(pos_hash)
+        KV_SERIALIZE(difficulty)
+        KV_SERIALIZE(block_time)
       END_KV_SERIALIZE_MAP()
     };
   };

@@ -106,6 +106,8 @@ public:
 
   bool print_transaction_pool_stats();
 
+  bool staking_status();
+
   bool stop_daemon();
 
   bool print_status();

@@ -1347,7 +1347,7 @@ namespace cryptonote
     crypto::hash tx_hash, prefix_hash;
     CHECK_AND_ASSERT_MES(parse_tx_from_blob(tx, tx_hash, prefix_hash, pos_tx), false, "failed to parse PoS transaction");
     tx_verification_context tvc;
-    CHECK_AND_ASSERT_MES(m_mempool.add_tx(tx, tx_hash, get_transaction_weight(tx, pos_tx.size()), tvc, true, false, true, b.major_version),
+    CHECK_AND_WARN_MES(m_mempool.add_tx(tx, tx_hash, get_transaction_weight(tx, pos_tx.size()), tvc, true, false, true, b.major_version),
                          false, "failed to add PoS transaction to pool");
     b.tx_hashes.insert(b.tx_hashes.begin(), tx_hash);
     prepare_handle_incoming_blocks(blocks);
@@ -1358,7 +1358,7 @@ namespace cryptonote
     m_miner.resume();
 
 
-    CHECK_AND_ASSERT_MES(!bvc.m_verifivation_failed, false, "mined block failed verification");
+    CHECK_AND_WARN_MES(!bvc.m_verifivation_failed, false, "Forged block failed verification. Most likely another staker submited better one.");
     if(bvc.m_added_to_main_chain)
     {
       cryptonote_connection_context exclude_context = boost::value_initialized<cryptonote_connection_context>();

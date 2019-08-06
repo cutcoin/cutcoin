@@ -752,6 +752,47 @@ namespace cryptonote
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
+  bool core_rpc_server::on_staking_status(const COMMAND_RPC_STAKING_STATUS::request& req, COMMAND_RPC_STAKING_STATUS::response& res)
+  {
+    PERF_TIMER(on_staking_status);
+
+    res.algorithm  = "Cutcoin PoS v 1.0";
+    res.block_time = DIFFICULTY_TARGET_V1;
+
+    uint64_t height = m_core.get_current_blockchain_height();
+    res.height  = height;
+
+    cryptonote::block block;
+    bool orphan;
+
+    try {
+      crypto::hash crypto_hash = m_core.get_block_id_by_height(height - 1);
+      if (!m_core.get_block_by_hash(crypto_hash, block, &orphan)) {
+        res.status = CORE_RPC_STATUS_ERROR;
+        return false;
+      }
+
+      crypto::hash pos_hash;
+      if (!m_core.get_block_pos_hash(block, pos_hash)) {
+        res.status = CORE_RPC_STATUS_ERROR;
+        return false;
+      }
+      std::stringstream s;
+      s << pos_hash;
+      res.pos_hash = s.str();
+
+      res.difficulty = height == 0 ? 0 : height == 1 ?
+                       m_core.get_block_cumulative_difficulty(height - 1) :
+                       m_core.get_block_cumulative_difficulty(height - 1) - m_core.get_block_cumulative_difficulty(height - 2);
+    } catch (...) {
+      res.status = CORE_RPC_STATUS_ERROR;
+      return false;
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
   bool core_rpc_server::on_save_bc(const COMMAND_RPC_SAVE_BC::request& req, COMMAND_RPC_SAVE_BC::response& res)
   {
     PERF_TIMER(on_save_bc);
@@ -804,7 +845,7 @@ namespace cryptonote
     }
     else
     {
-      res.status = CORE_RPC_STATUS_NOT_MINING;
+      res.status = CORE_RPC_STATUS_ERROR;
     }
     return true;
   }

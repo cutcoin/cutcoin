@@ -1,3 +1,8 @@
+###Release v 2.0.3 Byzantine Berserker
+
+* Rewritten RPC command 'status' in the daemon'.
+* 'internal error: try to insert duplicate iterator in key_image set' error downgraded to a warning.
+
 ###Release v 2.0.2 Byzantine Berserker
 
 * Added support for GUI wallet.

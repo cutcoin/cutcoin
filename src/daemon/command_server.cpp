@@ -102,6 +102,11 @@ t_command_server::t_command_server(
     , "Print whether a given key image is in the spent key images set."
     );
   m_command_lookup.set_handler(
+      "staking_status"
+      , std::bind(&t_command_parser_executor::show_status, &m_parser, p::_1)
+      , "Show current mining status."
+  );
+  m_command_lookup.set_handler(
       "print_pool"
     , std::bind(&t_command_parser_executor::print_transaction_pool_long, &m_parser, p::_1)
     , "Print the transaction pool using a long format."

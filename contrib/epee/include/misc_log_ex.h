@@ -162,6 +162,10 @@ namespace debug
 #define CHECK_AND_ASSERT_MES(expr, fail_ret_val, message)   do{if(!(expr)) {LOG_ERROR(message); return fail_ret_val;};}while(0)
 #endif
 
+#ifndef CHECK_AND_WARN_MES
+#define CHECK_AND_WARN_MES(expr, fail_ret_val, message)   do{if(!(expr)) {LOG_PRINT_L0(message); return fail_ret_val;};}while(0)
+#endif
+
 #ifndef CHECK_AND_NO_ASSERT_MES_L
 #define CHECK_AND_NO_ASSERT_MES_L(expr, fail_ret_val, l, message)   do{if(!(expr)) {LOG_PRINT_L##l(message); /*LOCAL_ASSERT(expr);*/ return fail_ret_val;};}while(0)
 #endif

@@ -329,14 +329,6 @@ bool t_rpc_command_executor::show_difficulty() {
   return true;
 }
 
-static std::string get_mining_speed(uint64_t hr)
-{
-  if (hr>1e9) return (boost::format("%.2f GH/s") % (hr/1e9)).str();
-  if (hr>1e6) return (boost::format("%.2f MH/s") % (hr/1e6)).str();
-  if (hr>1e3) return (boost::format("%.2f kH/s") % (hr/1e3)).str();
-  return (boost::format("%.0f H/s") % hr).str();
-}
-
 static std::string get_fork_extra_info(uint64_t t, uint64_t now, uint64_t block_time)
 {
   uint64_t blocks_per_day = 86400 / block_time;
@@ -376,15 +368,15 @@ bool t_rpc_command_executor::show_status() {
   cryptonote::COMMAND_RPC_GET_INFO::response ires;
   cryptonote::COMMAND_RPC_HARD_FORK_INFO::request hfreq;
   cryptonote::COMMAND_RPC_HARD_FORK_INFO::response hfres;
-  cryptonote::COMMAND_RPC_MINING_STATUS::request mreq;
-  cryptonote::COMMAND_RPC_MINING_STATUS::response mres;
+  cryptonote::COMMAND_RPC_STAKING_STATUS::request mreq;
+  cryptonote::COMMAND_RPC_STAKING_STATUS::response mres;
   epee::json_rpc::error error_resp;
-  bool has_mining_info = true;
+  bool has_staking_info = true;
 
   std::string fail_message = "Problem fetching info";
 
   hfreq.version = 0;
-  bool mining_busy = false;
+  bool staking_busy = false;
   if (m_is_rpc)
   {
     if (!m_rpc_client->rpc_request(ireq, ires, "/getinfo", fail_message.c_str()))
@@ -396,7 +388,7 @@ bool t_rpc_command_executor::show_status() {
       return true;
     }
     // mining info is only available non unrestricted RPC mode
-    has_mining_info = m_rpc_client->rpc_request(mreq, mres, "/mining_status", fail_message.c_str());
+    has_staking_info = m_rpc_client->rpc_request(mreq, mres, "/staking_status", fail_message.c_str());
   }
   else
   {
@@ -410,10 +402,15 @@ bool t_rpc_command_executor::show_status() {
       tools::fail_msg_writer() << make_error(fail_message, hfres.status);
       return true;
     }
+    if (!m_rpc_server->on_staking_status(mreq, mres))
+    {
+      tools::fail_msg_writer() << fail_message.c_str();
+      return true;
+    }
 
     if (mres.status == CORE_RPC_STATUS_BUSY)
     {
-      mining_busy = true;
+      staking_busy = true;
     }
     else if (mres.status != CORE_RPC_STATUS_OK)
     {
@@ -439,14 +436,14 @@ bool t_rpc_command_executor::show_status() {
   }
 
   std::stringstream str;
-  str << boost::format("Height: %llu/%llu (%.1f%%) on %s%s, %s, difficulty %s, v%u%s, %s, %u(out)+%u(in) connections")
+  str << boost::format("Cutcoin %s, height: %llu/%llu (%.1f%%) on %s%s, %s, fork v%u%s, %s, %u(out)+%u(in) connections")
+    % mres.algorithm
     % (unsigned long long)ires.height
     % (unsigned long long)net_height
     % get_sync_percentage(ires)
     % (ires.testnet ? "testnet" : ires.stagenet ? "stagenet" : "mainnet")
     % bootstrap_msg
-    % (!has_mining_info ? "mining info unavailable" : mining_busy ? "syncing" : mres.active ? ( ( mres.is_background_mining_enabled ? "smart " : "" ) + std::string("staking at ") + get_mining_speed(mres.speed) ) : "not staking")
-    % get_mining_speed(ires.difficulty / ires.target)
+    % (staking_busy || !has_staking_info ? "staking info unavailable" : (std::string("difficulty ") + std::to_string(mres.difficulty)).c_str())
     % (unsigned)hfres.version
     % get_fork_extra_info(hfres.earliest_height, net_height, ires.target)
     % (hfres.state == cryptonote::HardFork::Ready ? "up to date" : hfres.state == cryptonote::HardFork::UpdateNeeded ? "update needed" : "out of date, likely forked")
@@ -1048,6 +1045,55 @@ bool t_rpc_command_executor::print_transaction_pool_stats() {
     }
   }
   tools::msg_writer();
+
+  return true;
+}
+
+bool t_rpc_command_executor::staking_status()
+{
+  cryptonote::COMMAND_RPC_STAKING_STATUS::request mreq;
+  cryptonote::COMMAND_RPC_STAKING_STATUS::response mres;
+  epee::json_rpc::error error_resp;
+  bool has_staking_info = true;
+
+  std::string fail_message = "Problem fetching info";
+
+  if (m_is_rpc)
+  {
+    // mining info is only available non unrestricted RPC mode
+    has_staking_info = m_rpc_client->rpc_request(mreq, mres, "/staking_status", fail_message.c_str());
+  }
+  else
+  {
+    if (!m_rpc_server->on_staking_status(mreq, mres))
+    {
+      tools::fail_msg_writer() << fail_message.c_str();
+      return true;
+    }
+
+    if (mres.status == CORE_RPC_STATUS_BUSY)
+    {
+      tools::msg_writer() << "Not currently mining";
+      return true;
+    }
+    else if (mres.status != CORE_RPC_STATUS_OK)
+    {
+      tools::fail_msg_writer() << make_error(fail_message, mres.status);
+      return true;
+    }
+  }
+
+  if (!has_staking_info)
+  {
+    tools::fail_msg_writer() << "Staking info unavailable";
+    return true;
+  }
+
+  tools::msg_writer() << "Staking status summary";
+  tools::msg_writer() << "PoS algorithm: " << mres.algorithm;
+  tools::msg_writer() << "Block target time: " << mres.block_time;
+  tools::msg_writer() << "Current blockchain height: " << mres.height;
+  tools::msg_writer() << "Last block PoS hash: " << mres.pos_hash;
 
   return true;
 }

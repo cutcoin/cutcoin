@@ -149,7 +149,7 @@ TEST(uint128, creaters)
   }
 }
 
-TEST(uint128, unary_operators)
+TEST(uint128, DISABLED_unary_operators)
 {
   // Concerns: conversion to bool, increment, decrement.
 

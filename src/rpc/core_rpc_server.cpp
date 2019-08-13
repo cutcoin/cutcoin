@@ -756,7 +756,7 @@ namespace cryptonote
   {
     PERF_TIMER(on_staking_status);
 
-    res.algorithm  = "Cutcoin PoS v 1.0";
+    res.algorithm  = "PoS v 1.0";
     res.block_time = DIFFICULTY_TARGET_V1;
 
     uint64_t height = m_core.get_current_blockchain_height();

@@ -3944,7 +3944,7 @@ daemon to work correctly.</source>
     </message>
     <message>
         <location filename="../src/wallet/wallet_rpc_server.cpp" line="2870"/>
-        <source>This is the RPC monero wallet. It needs to connect to a monero
+        <source>This is the RPC cutcoin wallet. It needs to connect to a cutcoin
 daemon to work correctly.</source>
         <translation type="unfinished"></translation>
     </message>

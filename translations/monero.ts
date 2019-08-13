@@ -4926,7 +4926,7 @@ WARNING: Do not reuse your Monero keys on another fork, UNLESS this fork has key
     </message>
     <message>
         <location filename="../src/wallet/wallet_rpc_server.cpp" line="3495"/>
-        <source>This is the RPC monero wallet. It needs to connect to a monero
+        <source>This is the RPC cutcoin wallet. It needs to connect to a cutcoin
 daemon to work correctly.</source>
         <translation type="unfinished"></translation>
     </message>

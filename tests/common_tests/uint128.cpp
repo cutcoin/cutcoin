@@ -156,13 +156,13 @@ TEST(uint128, DISABLED_unary_operators)
   {
     // conversion to bool
     u128_t a(zero);
-    EXPECT_FALSE(a);
+    EXPECT_FALSE(!!a);
 
     u128_t b(one);
-    EXPECT_TRUE(b);
+    EXPECT_TRUE(!!b);
 
     u128_t c(max);
-    EXPECT_TRUE(c);
+    EXPECT_TRUE(!!c);
   }
 
   {

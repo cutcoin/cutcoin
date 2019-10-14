@@ -691,6 +691,9 @@ void Plant::print_pos_metrics()
   expected_seconds -= m;
   auto s = std::chrono::duration_cast<std::chrono::seconds>(expected_seconds);
 
+  double chance_to_mine_next_block_per_cent = d_pos_metrics.d_chance_to_mine_next_block <= 1.0 ?
+      100.0 * d_pos_metrics.d_chance_to_mine_next_block : 100.0;
+
   metrics_stream
       << "____________________________________________________________________" << std::endl
       << std::endl
@@ -707,7 +710,7 @@ void Plant::print_pos_metrics()
       << "Expected next block forging time:                 " << h.count() << "h, " << m.count() << "min, " << s.count() << "s" << std::endl
       << "Expected reward per week:                         " << d_pos_metrics.d_expected_reward_per_week << " CUT" << std::endl
       << "Chance to forge the next block:                   " << std::fixed << std::setw(11) << std::setprecision(9)
-                                                              << 100.0 * d_pos_metrics.d_chance_to_mine_next_block << "%" << std::endl
+                                                              << chance_to_mine_next_block_per_cent << "%" << std::endl
       << "-  -  -" << std::endl;
 
   message_writer() << metrics_stream.str();

@@ -1,3 +1,10 @@
+###Release v 2.0.4 Byzantine Berserker
+
+* Changed algorithm that estimated the probability of next block forging.
+* In the message 'Error: refresh failed: unexpected error: Invalid password: password is needed to compute key image for incoming monero' monero -> cutcoin.
+* Corrected the algorithm of time estimation when syncing daemon with the network.
+* Always use built-in gtest library for unit tests.
+
 ###Release v 2.0.3 Byzantine Berserker
 
 * Rewritten RPC command 'status' in the daemon'.

@@ -250,11 +250,11 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool generate_key_image_helper_precomp(const account_keys& ack, const crypto::public_key& out_key, const crypto::key_derivation& recv_derivation, size_t real_output_index, const subaddress_index& received_index, keypair& in_ephemeral, crypto::key_image& ki, hw::device &hwdev)
   {
-    if (ack.m_spend_secret_key == crypto::null_skey)
+    if (ack.m_spend_secret_key == crypto::NullKey::s())
     {
       // for watch-only wallet, simply copy the known output pubkey
       in_ephemeral.pub = out_key;
-      in_ephemeral.sec = crypto::null_skey;
+      in_ephemeral.sec = crypto::NullKey::s();
     }
     else
     {
@@ -444,7 +444,7 @@ namespace cryptonote
 
     tx_extra_pub_key pub_key_field;
     if(!find_tx_extra_field_by_type(tx_extra_fields, pub_key_field, pk_index))
-      return null_pkey;
+      return crypto::NullKey::p();
 
     return pub_key_field.pub_key;
   }
@@ -769,7 +769,7 @@ namespace cryptonote
   bool lookup_acc_outs(const account_keys& acc, const transaction& tx, std::vector<size_t>& outs, uint64_t& money_transfered)
   {
     crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
-    if(null_pkey == tx_pub_key)
+    if(crypto::NullKey::p() == tx_pub_key)
       return false;
     std::vector<crypto::public_key> additional_tx_pub_keys = get_additional_tx_pub_keys_from_extra(tx);
     return lookup_acc_outs(acc, tx, tx_pub_key, additional_tx_pub_keys, outs, money_transfered);

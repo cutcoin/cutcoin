@@ -279,8 +279,16 @@ namespace crypto {
     epee::to_hex::formatted(o, epee::as_byte_span(v)); return o;
   }
 
-  const extern crypto::public_key null_pkey;
-  const extern crypto::secret_key null_skey;
+  class NullKey {
+    // Provide Null Key primitive. This class is thread-safe.
+
+    public:
+      static const crypto::public_key &p();
+        // Return const reference to an empty 'public_key' entity with lazy initialization.
+
+      static const crypto::secret_key &s();
+        // Return const reference to an empty 'secret_key' entity with lazy initialization.
+  };
 }
 
 CRYPTO_MAKE_HASHABLE(public_key)

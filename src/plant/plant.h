@@ -79,17 +79,18 @@ private:
   const Period d_data_update_period{std::chrono::seconds{1}};     // blockchain update period
   const Period d_reward_update_period{std::chrono::seconds{120}}; // POS reward update period
 
-  std::shared_ptr<tools::wallet2>  d_wallet;        // wallet. Share, don't own
-  Client                           d_http_client;   // RPC http client. Share, don't own
-  tools::LightThreadPool           d_threadpool;    // thread pool for tasks execution
-  tools::Scheduler                 d_scheduler;     // scheduler for deferred tasks
-  tools::Scheduler::SharedTask     d_mining_task;   // current scheduled mining task
-  std::atomic<bool>                d_is_mining;     // state flag
+  std::shared_ptr<tools::wallet2>  d_wallet;             // wallet. Share, don't own
+  Client                           d_http_client;        // RPC http client. Share, don't own
+  tools::LightThreadPool           d_threadpool;         // thread pool for tasks execution
+  tools::Scheduler                 d_scheduler;          // scheduler for deferred tasks
+  tools::Scheduler::SharedTask     d_mining_task;        // current scheduled mining task
+  std::atomic<bool>                d_is_mining;          // state flag
   uint64_t                         d_blockchain_height;  // current blockchain height
-  std::string                      d_block_hash;         // current block crtptographic hash
+  std::string                      d_block_hash;         // current block cryptographic hash
   std::mutex                       d_pos_state_mutex;    // protect mining state (sequence of stages) consistence
-  PosMetrics                       d_pos_metrics;
+  PosMetrics                       d_pos_metrics;        // contain POS metrics
   std::string                      d_reward_wallet_address; // wallet address for rewards
+  size_t                           d_print_counter;      // how many times POS metrics were printed
   std::shared_ptr<plant::PlantCallbacks> d_plant_callbacks;
   boost::mutex                    &d_idle_mutex;
   boost::condition_variable       &d_idle_cond;
@@ -189,6 +190,9 @@ private:
                           const t_request &request,
                           t_response      &response) const;
     // Function-helper that templating RPC requests.
+
+  void print_pos_metrics_header();
+    // Print header for POS metrics.
 
   void print_pos_metrics();
     // Print current staking status and metrics.

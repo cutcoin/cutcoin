@@ -1,6 +1,12 @@
+###Release v 2.0.5 Byzantine Berserker
+
+* New POS statistics output in the cli wallet.
+* Fixed bug with 'crypto::secret_key null_skey' deinitialization.
+* Continuous rebranding: changed 'monero' -> 'cutcoin' in cle wallet help output.
+
 ###Release v 2.0.4 Byzantine Berserker
 
-* Changed algorithm that estimated the probability of next block forging.
+* Changed the algorithm that estimates the probability of next block forging.
 * In the message 'Error: refresh failed: unexpected error: Invalid password: password is needed to compute key image for incoming monero' monero -> cutcoin.
 * Corrected the algorithm of time estimation when syncing daemon with the network.
 * Always use built-in gtest library for unit tests.

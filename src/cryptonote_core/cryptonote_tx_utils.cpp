@@ -176,7 +176,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   crypto::public_key get_destination_view_key_pub(const std::vector<tx_destination_entry> &destinations, const boost::optional<cryptonote::account_public_address>& change_addr)
   {
-    account_public_address addr = {null_pkey, null_pkey};
+    account_public_address addr = {crypto::NullKey::p(), crypto::NullKey::p()};
     size_t count = 0;
     for (const auto &i : destinations)
     {
@@ -187,7 +187,7 @@ namespace cryptonote
       if (i.addr == addr)
         continue;
       if (count > 0)
-        return null_pkey;
+        return crypto::NullKey::p();
       addr = i.addr;
       ++count;
     }
@@ -232,7 +232,7 @@ namespace cryptonote
         {
           LOG_PRINT_L2("Encrypting payment id " << payment_id);
           crypto::public_key view_key_pub = get_destination_view_key_pub(destinations, change_addr);
-          if (view_key_pub == null_pkey)
+          if (view_key_pub == crypto::NullKey::p())
           {
             LOG_ERROR("Destinations have to have exactly one output to support encrypted payment ids");
             return false;

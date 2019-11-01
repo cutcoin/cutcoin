@@ -124,7 +124,7 @@ namespace hw {
     /* ===                       Internal Helpers                       ==== */
     /* ===================================================================== */
     static bool is_fake_view_key(const crypto::secret_key &sec) {
-      return sec == crypto::null_skey;
+      return sec == crypto::NullKey::s();
     }
 
     bool operator==(const crypto::key_derivation &d0, const crypto::key_derivation &d1) {
@@ -880,7 +880,7 @@ namespace hw {
         }
       }
       ASSERT_X(pkey, "Mismatched derivation on scan info");
-      return this->generate_key_derivation(*pkey,  crypto::null_skey, derivation);
+      return this->generate_key_derivation(*pkey,  crypto::NullKey::s(), derivation);
     } 
 
     bool device_ledger::derivation_to_scalar(const crypto::key_derivation &derivation, const size_t output_index, crypto::ec_scalar &res) {

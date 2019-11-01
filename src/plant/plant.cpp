@@ -75,6 +75,7 @@ Plant::Plant(std::shared_ptr<tools::wallet2> wallet,
 , d_pos_metrics{}
 , d_reward_wallet_address{}
 , d_plant_callbacks{plant_callbacks}
+, d_print_counter{0}
 {
   d_scheduler.start();
 }
@@ -190,6 +191,11 @@ void Plant::handle_blockchain_update()
     evaluate_pos_metrics();
 
     d_idle_cond.notify_one();
+  }
+
+  if (d_pos_metrics.d_last_block_age > 5 * DIFFICULTY_TARGET_V2) {
+    message_writer() << "Last block time is too far in the past, you are likely disconnected from the network, "
+                        "the information below may be obsolete, please check your daemon." << std::endl;
   }
 
   print_pos_metrics();
@@ -669,21 +675,27 @@ bool Plant::invoke_rpc_request(std::string     method_name,
   return true;
 }
 
+void Plant::print_pos_metrics_header()
+{
+  message_writer()
+    << "\n"
+    << "_________________________________________________________________________________________________________________________" << "\n"
+    << "Blockchain" << "|" << " Staking  " << "|" << " Maturing " << "|" << " Staking  " << "|" << "Time since" << "|" << "          " << "|" << "POS reward" << "|" << "POS reward" << "|" << "Best block" << "|" << "  Weekly  " << "|" << "Chance to  " << "\n"
+    << "height    " << "|" << " amount   " << "|" << " outputs  " << "|" << " outputs  " << "|" << "last block" << "|" << "Difficulty" << "|" << "in 24h    " << "|" << "in 48h    " << "|" << "time      " << "|" << "  reward  " << "|" << "forge next " << "\n"
+    << "          " << "|" << " (CUT)    " << "|" << " (CUT)    " << "|" << "          " << "|" << "(seconds) " << "|" << "          " << "|" << "(CUT)     " << "|" << "(CUT)     " << "|" << "(h:min:s) " << "|" << "  (CUT)   " << "|" << "block (%)  " << "\n"
+    << "_________________________________________________________________________________________________________________________";
+}
+
 void Plant::print_pos_metrics()
 {
-  std::stringstream metrics_stream;
-
-  if (d_pos_metrics.d_last_block_age > 5 * DIFFICULTY_TARGET_V2) {
-    metrics_stream << "Last block time is too far in the past, you are likely disconnected from the network, "
-                    "the information below may be obsolete, please check your daemon." << std::endl;
+  if (d_print_counter % 30 == 0) {
+    print_pos_metrics_header();
   }
+  ++d_print_counter;
 
-  std::chrono::seconds expected_seconds;
-  if (d_pos_metrics.d_expected_time_till_block > std::numeric_limits<long>::max()) {
-    expected_seconds = std::chrono::seconds(std::numeric_limits<long>::max());
-  } else {
-    expected_seconds = std::chrono::seconds((long)d_pos_metrics.d_expected_time_till_block);
-  }
+  std::chrono::seconds expected_seconds = d_pos_metrics.d_expected_time_till_block > std::numeric_limits<long>::max()
+    ? std::chrono::seconds(std::numeric_limits<long>::max())
+    : std::chrono::seconds((long)d_pos_metrics.d_expected_time_till_block);
 
   auto h = std::chrono::duration_cast<std::chrono::hours>(expected_seconds);
   expected_seconds -= h;
@@ -691,29 +703,26 @@ void Plant::print_pos_metrics()
   expected_seconds -= m;
   auto s = std::chrono::duration_cast<std::chrono::seconds>(expected_seconds);
 
-  double chance_to_mine_next_block_per_cent = d_pos_metrics.d_chance_to_mine_next_block <= 1.0 ?
-      100.0 * d_pos_metrics.d_chance_to_mine_next_block : 100.0;
+  std::string expected_time_till_block = h.count() > 999
+    ? std::to_string(h.count()) + "h"
+    : std::to_string(h.count()) + ":" + std::to_string(m.count()) + ":" + std::to_string(s.count());
 
-  metrics_stream
-      << "____________________________________________________________________" << std::endl
-      << std::endl
-      << "                            POS  status" << std::endl
-      << "____________________________________________________________________" << std::endl
-      << "You are staking:                                  " << d_pos_metrics.d_on_stake << " CUT" << std::endl
-      << "Waiting for stake to mature:                      " << d_pos_metrics.d_maturing << " CUT" << std::endl
-      << "Number of the outputs on stake:                   " << d_pos_metrics.d_pos_outputs_count << std::endl
-      << "Blockchain height:                                " << d_pos_metrics.d_height << std::endl
-      << "Time since the last block forging:                " << d_pos_metrics.d_last_block_age << " seconds" << std::endl
-      << "Current difficulty on the network:                " << d_pos_metrics.d_difficulty << std::endl
-      << "This account has POS reward:                      " << d_pos_metrics.d_forged_in_last_24 << " in last 24h" << std::endl
-      << "This account has POS reward:                      " << d_pos_metrics.d_forged_in_last_48 << " in last 48h" << std::endl
-      << "Expected next block forging time:                 " << h.count() << "h, " << m.count() << "min, " << s.count() << "s" << std::endl
-      << "Expected reward per week:                         " << d_pos_metrics.d_expected_reward_per_week << " CUT" << std::endl
-      << "Chance to forge the next block:                   " << std::fixed << std::setw(11) << std::setprecision(9)
-                                                              << chance_to_mine_next_block_per_cent << "%" << std::endl
-      << "-  -  -" << std::endl;
 
-  message_writer() << metrics_stream.str();
+  double chance_to_mine_next_block_per_cent = d_pos_metrics.d_chance_to_mine_next_block <= 1.0
+    ? 100.0 * d_pos_metrics.d_chance_to_mine_next_block : 100.0;
+
+  message_writer()
+    <<        std::setw(10) << d_pos_metrics.d_height
+    << " " << std::setw(10) << d_pos_metrics.d_on_stake
+    << " " << std::setw(10) << d_pos_metrics.d_maturing
+    << " " << std::setw(10) << d_pos_metrics.d_pos_outputs_count
+    << " " << std::setw(10) << d_pos_metrics.d_last_block_age
+    << " " << std::setw(10) << d_pos_metrics.d_difficulty
+    << " " << std::setw(10) << d_pos_metrics.d_forged_in_last_24
+    << " " << std::setw(10) << d_pos_metrics.d_forged_in_last_48
+    << " " << std::setw(10) << expected_time_till_block
+    << " " << std::setw(10) << d_pos_metrics.d_expected_reward_per_week
+    << " " << std::fixed << std::setw(11) << std::setprecision(9) << chance_to_mine_next_block_per_cent;
 }
 
 void Plant::evaluate_pos_metrics()

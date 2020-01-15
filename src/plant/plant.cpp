@@ -760,12 +760,13 @@ void Plant::evaluate_pos_metrics()
   d_pos_metrics.d_expected_time_till_block = (((double)DIFFICULTY_TARGET_V2) / d_pos_metrics.d_chance_to_mine_next_block) - d_pos_metrics.d_last_block_age;
 
   double k = 0.9999980926512037;
-  double first_reward = ((double)(MONEY_SUPPLY - GENESIS_TX_REWARD)) / (1 << EMISSION_SPEED_FACTOR_PER_MINUTE);
+  double first_reward = ((double)(MONEY_SUPPLY - GENESIS_TX_REWARD)) / (1 << (EMISSION_SPEED_FACTOR_PER_MINUTE - 1));
   uint64_t blocks_per_week = 604800 / DIFFICULTY_TARGET_V2;
-  double cur_supply  = GENESIS_TX_REWARD + k * (pow(k, d_pos_metrics.d_height - 1) - 1.0) / (k - 1.0) * first_reward;
-  double week_supply = GENESIS_TX_REWARD + k * (pow(k, d_pos_metrics.d_height + blocks_per_week - 1) - 1.0) / (k - 1.0) * first_reward;
+  double cur_supply  = (GENESIS_TX_REWARD + k * (pow(k, d_pos_metrics.d_height - 1) - 1.0) / (k - 1.0) * first_reward) / COIN;
+  double week_supply = (GENESIS_TX_REWARD + k * (pow(k, d_pos_metrics.d_height + blocks_per_week - 1) - 1.0) / (k - 1.0) * first_reward) / COIN;
   double cur_balance = d_pos_metrics.d_on_stake + d_pos_metrics.d_maturing;
-  d_pos_metrics.d_expected_reward_per_week = cur_balance * (week_supply / cur_supply - 1.0);
+  double erpw = cur_balance * (week_supply / cur_supply - 1.0);
+  d_pos_metrics.d_expected_reward_per_week = erpw;
 }
 
 PosMetrics Plant::pos_metrics() const

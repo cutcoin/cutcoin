@@ -215,23 +215,23 @@ namespace cryptonote
   {
     std::vector<std::string> records;
 
-    // All four MoneroPulse domains have DNSSEC on and valid
-    static const std::vector<std::string> dns_urls = { "checkpoints.moneropulse.se"
-						     , "checkpoints.moneropulse.org"
-						     , "checkpoints.moneropulse.net"
-						     , "checkpoints.moneropulse.co"
+    // All four CutcoinPulse domains have DNSSEC on and valid
+    static const std::vector<std::string> dns_urls = { "checkpoints.cutcoinpulse.se"
+						     , "checkpoints.cutcoinpulse.org"
+						     , "checkpoints.cutcoinpulse.net"
+						     , "checkpoints.cutcoinpulse.co"
     };
 
-    static const std::vector<std::string> testnet_dns_urls = { "testpoints.moneropulse.se"
-							     , "testpoints.moneropulse.org"
-							     , "testpoints.moneropulse.net"
-							     , "testpoints.moneropulse.co"
+    static const std::vector<std::string> testnet_dns_urls = { "testpoints.cutcoinpulse.se"
+							     , "testpoints.cutcoinpulse.org"
+							     , "testpoints.cutcoinpulse.net"
+							     , "testpoints.cutcoinpulse.co"
     };
 
-    static const std::vector<std::string> stagenet_dns_urls = { "stagenetpoints.moneropulse.se"
-                   , "stagenetpoints.moneropulse.org"
-                   , "stagenetpoints.moneropulse.net"
-                   , "stagenetpoints.moneropulse.co"
+    static const std::vector<std::string> stagenet_dns_urls = { "stagenetpoints.cutcoinpulse.se"
+                   , "stagenetpoints.cutcoinpulse.org"
+                   , "stagenetpoints.cutcoinpulse.net"
+                   , "stagenetpoints.cutcoinpulse.co"
     };
 
     if (!tools::dns_utils::load_txt_records_from_dns(records, nettype == TESTNET ? testnet_dns_urls : nettype == STAGENET ? stagenet_dns_urls : dns_urls))

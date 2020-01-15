@@ -220,8 +220,8 @@ namespace cryptonote
     // assume failure during verification steps until success is certain
     tvc.m_verifivation_failed = true;
 
-    time_t receive_time = fee ? time(nullptr) : time(NULL) - (kept_by_block ? CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME :
-                                                              CRYPTONOTE_MEMPOOL_TX_LIVETIME) + 30 * 60;
+    time_t receive_time = fee ? time(nullptr) : time(nullptr) - (kept_by_block ? CRYPTONOTE_MEMPOOL_TX_FROM_ALT_BLOCK_LIVETIME :
+                                                                 CRYPTONOTE_MEMPOOL_TX_LIVETIME) + 8 * 60 * 60;
 
     crypto::hash max_used_block_id = null_hash;
     uint64_t max_used_block_height = 0;
@@ -534,7 +534,8 @@ namespace cryptonote
         {
           m_txs_by_fee_and_receive_time.erase(sorted_it);
         }
-        m_timed_out_transactions.insert(txid);
+        if (meta.fee)
+          m_timed_out_transactions.insert(txid);
         remove.insert(txid);
       }
       return true;

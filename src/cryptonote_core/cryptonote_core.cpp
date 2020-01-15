@@ -107,8 +107,9 @@ namespace cryptonote
   , "Do not listen for peers, nor connect to any"
   };
   const command_line::arg_descriptor<bool> arg_disable_dns_checkpoints = {
-    "disable-dns-checkpoints"
-  , "Do not retrieve checkpoints from DNS"
+    "disable-dns-checkpoints",
+    "Do not retrieve checkpoints from DNS",
+    true
   };
 
   static const command_line::arg_descriptor<bool> arg_test_drop_download = {

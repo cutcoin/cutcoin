@@ -1,3 +1,10 @@
+###Release v 2.0.6 Byzantine Berserker
+
+* Disabled DNS pulse lookup by default.
+* Added a message that warns when try staking with an integrated address.
+* Adjusted POS txs drop time in the memory pool.
+* Rebranding: 'multisig_monero_tx'-> 'multisig_cutcoin_tx' (issue #3 opened by Satori-Nakamoto 7 Nov 2019).
+
 ###Release v 2.0.5 Byzantine Berserker
 
 * New POS statistics output in the cli wallet.

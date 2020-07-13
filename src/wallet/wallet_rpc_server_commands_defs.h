@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -1201,7 +1201,9 @@ namespace wallet_rpc
     std::string payment_id;
     uint64_t height;
     uint64_t timestamp;
-    uint64_t amount;
+    uint64_t                         amount;         // cutcoin amount
+    std::vector<cryptonote::TokenId> token_ids;      // vector of token ids
+    std::vector<uint64_t>            token_amounts;  // vector of token amounts (except for cutcoin)
     uint64_t fee;
     std::string note;
     std::list<transfer_destination> destinations;
@@ -1219,6 +1221,8 @@ namespace wallet_rpc
       KV_SERIALIZE(height);
       KV_SERIALIZE(timestamp);
       KV_SERIALIZE(amount);
+      KV_SERIALIZE(token_ids);
+      KV_SERIALIZE(token_amounts);
       KV_SERIALIZE(fee);
       KV_SERIALIZE(note);
       KV_SERIALIZE(destinations);

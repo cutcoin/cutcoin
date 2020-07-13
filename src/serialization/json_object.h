@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016-2018, The Monero Project
 // 
 // All rights reserved.
@@ -249,8 +249,8 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::hard_fork_info&
 void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_amount_count& out, rapidjson::Value& val);
 void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_amount_count& out);
 
-void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_amount_and_index& out, rapidjson::Value& val);
-void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_amount_and_index& out);
+void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_token_id_and_index& out, rapidjson::Value& val);
+void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_token_id_and_index& out);
 
 void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_key_mask_unlocked& out, rapidjson::Value& val);
 void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_key_mask_unlocked& out);

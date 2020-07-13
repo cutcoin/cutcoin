@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -394,6 +394,21 @@ namespace cryptonote
     }
 
     if(!m_core.get_outs(req, res))
+    {
+      return true;
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+  //------------------------------------------------------------------------------------------------------------------------------
+  bool core_rpc_server::on_get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res)
+  {
+    PERF_TIMER(on_get_tokens);
+
+    res.status = "Failed";
+
+    if(!m_core.get_tokens(req, res))
     {
       return true;
     }
@@ -1840,20 +1855,21 @@ namespace cryptonote
       return r;
 
     std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> histogram;
-    try
-    {
-      histogram = m_core.get_blockchain_storage().get_output_histogram(req.amounts, req.unlocked, req.recent_cutoff, req.min_count);
+    try {
+      histogram = m_core.get_blockchain_storage().get_output_histogram(req.token_id,
+                                                                       req.amounts,
+                                                                       req.unlocked,
+                                                                       req.recent_cutoff,
+                                                                       req.min_count);
     }
-    catch (const std::exception &e)
-    {
+    catch (const std::exception &e) {
       res.status = "Failed to get output histogram";
       return true;
     }
 
     res.histogram.clear();
     res.histogram.reserve(histogram.size());
-    for (const auto &i: histogram)
-    {
+    for (const auto &i: histogram) {
       if (std::get<0>(i.second) >= req.min_count && (std::get<0>(i.second) <= req.max_count || req.max_count == 0))
         res.histogram.push_back(COMMAND_RPC_GET_OUTPUT_HISTOGRAM::entry(i.first, std::get<0>(i.second), std::get<1>(i.second), std::get<2>(i.second)));
     }
@@ -2207,34 +2223,33 @@ namespace cryptonote
     return true;
   }
   //------------------------------------------------------------------------------------------------------------------------------
-  bool core_rpc_server::on_get_output_distribution(const COMMAND_RPC_GET_OUTPUT_DISTRIBUTION::request& req, COMMAND_RPC_GET_OUTPUT_DISTRIBUTION::response& res, epee::json_rpc::error& error_resp)
+  bool core_rpc_server::on_get_output_distribution(const COMMAND_RPC_GET_OUTPUT_DISTRIBUTION::request &req,
+                                                   COMMAND_RPC_GET_OUTPUT_DISTRIBUTION::response      &res,
+                                                   epee::json_rpc::error                              &error_resp)
   {
     PERF_TIMER(on_get_output_distribution);
     bool r;
     if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_OUTPUT_DISTRIBUTION>(invoke_http_mode::JON_RPC, "get_output_distribution", req, res, r))
       return r;
 
-    try
-    {
+    try {
       // 0 is placeholder for the whole chain
       const uint64_t req_to_height = req.to_height ? req.to_height : (m_core.get_current_blockchain_height() - 1);
-      for (uint64_t amount: req.amounts)
-      {
-        static struct D
-        {
+      for (const auto &token_id: req.token_ids) {
+        static struct D {
           boost::mutex mutex;
           std::vector<uint64_t> cached_distribution;
           uint64_t cached_from, cached_to, cached_start_height, cached_base;
           bool cached;
+          TokenId token_id {0};
           D(): cached_from(0), cached_to(0), cached_start_height(0), cached_base(0), cached(false) {}
         } d;
         boost::unique_lock<boost::mutex> lock(d.mutex);
 
-        if (d.cached && amount == 0 && d.cached_from == req.from_height && d.cached_to == req_to_height)
+        if (d.cached && d.token_id == token_id && d.cached_from == req.from_height && d.cached_to == req_to_height)
         {
-          res.distributions.push_back({amount, d.cached_start_height, req.binary, d.cached_distribution, d.cached_base});
-          if (!req.cumulative)
-          {
+          res.distributions.push_back({token_id, d.cached_start_height, req.binary, d.cached_distribution, d.cached_base});
+          if (!req.cumulative) {
             auto &distribution = res.distributions.back().distribution;
             for (size_t n = distribution.size() - 1; n > 0; --n)
               distribution[n] -= distribution[n-1];
@@ -2245,7 +2260,12 @@ namespace cryptonote
 
         std::vector<uint64_t> distribution;
         uint64_t start_height, base;
-        if (!m_core.get_output_distribution(amount, req.from_height, req_to_height, start_height, distribution, base))
+        if (!m_core.get_output_distribution(token_id,
+                                            req.from_height,
+                                            req_to_height,
+                                            start_height,
+                                            distribution,
+                                            base))
         {
           error_resp.code = CORE_RPC_ERROR_CODE_INTERNAL_ERROR;
           error_resp.message = "Failed to get rct distribution";
@@ -2258,15 +2278,13 @@ namespace cryptonote
             distribution.resize(req_to_height - offset + 1);
         }
 
-        if (amount == 0)
-        {
-          d.cached_from = req.from_height;
-          d.cached_to = req_to_height;
-          d.cached_distribution = distribution;
-          d.cached_start_height = start_height;
-          d.cached_base = base;
-          d.cached = true;
-        }
+        d.token_id = token_id;
+        d.cached_from = req.from_height;
+        d.cached_to = req_to_height;
+        d.cached_distribution = distribution;
+        d.cached_start_height = start_height;
+        d.cached_base = base;
+        d.cached = true;
 
         if (!req.cumulative)
         {
@@ -2275,7 +2293,7 @@ namespace cryptonote
           distribution[0] -= base;
         }
 
-        res.distributions.push_back({amount, start_height, req.binary, std::move(distribution), base});
+        res.distributions.push_back({token_id, start_height, req.binary, std::move(distribution), base});
       }
     }
     catch (const std::exception &e)

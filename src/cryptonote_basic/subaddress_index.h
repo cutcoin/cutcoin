@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -30,8 +30,11 @@
 #pragma once
 
 #include "serialization/keyvalue_serialization.h"
+#include "serialization/serialization.h"
+
 #include <boost/serialization/serialization.hpp>
 #include <boost/serialization/version.hpp>
+
 #include <ostream>
 
 namespace cryptonote

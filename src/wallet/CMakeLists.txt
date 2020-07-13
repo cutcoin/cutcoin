@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2019, CUT coin
+# Copyright (c) 2018-2020, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -32,12 +32,19 @@
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(wallet_sources
+  account_view.cpp
   wallet2.cpp
   wallet_args.cpp
   ringdb.cpp
   node_rpc_proxy.cpp)
 
 set(wallet_private_headers
+  account_view.h
+  pending_tx.h
+  transfer_container.h
+  transfer_details.h
+  tx_creation_context.h
+  unconfirmed_transfer_details.h
   wallet2.h
   wallet_args.h
   wallet_errors.h

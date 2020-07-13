@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -33,6 +33,7 @@
 #include "cryptonote_protocol/cryptonote_protocol_defs.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/difficulty.h"
+#include "cryptonote_basic/token.h"
 #include "crypto/hash.h"
 
 namespace cryptonote
@@ -245,6 +246,7 @@ namespace cryptonote
         uint64_t timestamp;
         uint64_t total_received;
         uint64_t total_sent;
+        cryptonote::TokenId token_id;
         uint64_t unlock_time;
         uint64_t height;
         std::list<spent_output> spent_outputs;
@@ -259,6 +261,7 @@ namespace cryptonote
           KV_SERIALIZE(timestamp)
           KV_SERIALIZE(total_received)
           KV_SERIALIZE(total_sent)
+          KV_SERIALIZE(token_id);
           KV_SERIALIZE(unlock_time)
           KV_SERIALIZE(height)
           KV_SERIALIZE(spent_outputs)
@@ -683,11 +686,11 @@ namespace cryptonote
   //-----------------------------------------------
   struct get_outputs_out
   {
-    uint64_t amount;
+    TokenId token_id;
     uint64_t index;
 
     BEGIN_KV_SERIALIZE_MAP()
-      KV_SERIALIZE(amount)
+      KV_SERIALIZE(token_id)
       KV_SERIALIZE(index)
     END_KV_SERIALIZE_MAP()
   };
@@ -772,6 +775,42 @@ namespace cryptonote
         KV_SERIALIZE(outs)
         KV_SERIALIZE(status)
         KV_SERIALIZE(untrusted)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+  //-----------------------------------------------
+    struct COMMAND_RPC_GET_TOKENS
+  {
+    struct request
+    {
+      std::string prefix;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(prefix)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct token_summary
+    {
+      TokenId token_id;
+      TokenUnit token_supply;
+      std::uint64_t unit;
+
+      BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(token_id)
+      KV_SERIALIZE(token_supply)
+      KV_SERIALIZE(unit)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      std::vector<token_summary> tokens;
+      std::string status;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(tokens)
+        KV_SERIALIZE(status)
       END_KV_SERIALIZE_MAP()
     };
   };
@@ -1995,6 +2034,7 @@ namespace cryptonote
       uint64_t max_count;
       bool unlocked;
       uint64_t recent_cutoff;
+      cryptonote::TokenId token_id;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(amounts);
@@ -2002,6 +2042,7 @@ namespace cryptonote
         KV_SERIALIZE(max_count);
         KV_SERIALIZE(unlocked);
         KV_SERIALIZE(recent_cutoff);
+        KV_SERIALIZE(token_id);
       END_KV_SERIALIZE_MAP()
     };
 
@@ -2270,13 +2311,16 @@ namespace cryptonote
     struct request
     {
       std::vector<uint64_t> amounts;
+      std::vector<uint64_t> token_ids;
       uint64_t from_height;
       uint64_t to_height;
       bool cumulative;
       bool binary;
 
+
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(amounts)
+        KV_SERIALIZE(token_ids)
         KV_SERIALIZE_OPT(from_height, (uint64_t)0)
         KV_SERIALIZE_OPT(to_height, (uint64_t)0)
         KV_SERIALIZE_OPT(cumulative, false)
@@ -2286,14 +2330,14 @@ namespace cryptonote
 
     struct distribution
     {
-      uint64_t amount;
+      uint64_t token_id;
       uint64_t start_height;
       bool binary;
       std::vector<uint64_t> distribution;
       uint64_t base;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(amount)
+        KV_SERIALIZE(token_id)
         KV_SERIALIZE(start_height)
         KV_SERIALIZE(binary)
         if (this_ref.binary)

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 //
 // All rights reserved.
 //
@@ -42,6 +42,8 @@
 #include <rpc/core_rpc_server_commands_defs.h>
 #include <storages/http_abstract_invoke.h>
 #include <string_tools.h>
+#include <wallet/transfer_container.h>
+#include <wallet/transfer_details.h>
 #include <wallet/wallet2.h>
 
 #include <algorithm>
@@ -116,7 +118,7 @@ bool Plant::start_mining(const std::string &reward_wallet_address)
   d_scheduler.schedule_every(std::bind(&Plant::handle_blockchain_update, this), Clock::now(), d_data_update_period);
   d_scheduler.schedule_every(std::bind(&Plant::handle_reward_update, this), Clock::now(), d_reward_update_period);
 
-  message_writer() << tr("POS mining is started");
+  message_writer() << tr("POS staking is started");
 
   return true;
 }
@@ -126,7 +128,7 @@ void Plant::stop_mining()
   d_is_mining = false;
   d_scheduler.clear();
 
-  message_writer() << tr("POS mining is stopped");
+  message_writer() << tr("POS staking is stopped");
 }
 
 void Plant::handle_blockchain_update()
@@ -161,15 +163,15 @@ void Plant::handle_blockchain_update()
     d_pos_metrics.d_height = mining_info.d_height;
     d_pos_metrics.d_difficulty = mining_info.d_difficulty;
 
-    tools::wallet2::transfer_container transfers;
+    tools::transfer_container transfers;
     get_transfers(transfers);
     if (transfers.empty()) {
       MINE_WARNING("No unspent outputs in the wallet");
       return;
     }
 
-    tools::wallet2::transfer_details pos_output;
-    mining::StakeDetails stake_details;
+    tools::transfer_details pos_output;
+    mining::StakeDetails    stake_details;
     if (!get_mining_output(mining_info, transfers, pos_output, stake_details)) {
       std::stringstream error_message;
       error_message << "No suitable unspent outputs for mining. One must have amount more or equal to "
@@ -234,14 +236,14 @@ void Plant::handle_block_mining(const std::string &block_hash)
       return;
     }
 
-    tools::wallet2::transfer_container transfers;
+    tools::transfer_container transfers;
     get_transfers(transfers);
     if (transfers.empty()) {
       MINE_WARNING("No unspent outputs in the wallet");
       return;
     }
 
-    tools::wallet2::transfer_details pos_output;
+    tools::transfer_details pos_output;
     mining::StakeDetails stake_details;
     if (!get_mining_output(mining_info, transfers, pos_output, stake_details)) {
       std::stringstream error_message;
@@ -280,7 +282,7 @@ void Plant::handle_block_mining(const std::string &block_hash)
       return;
     }
 
-    tools::wallet2::pending_tx stake_tx;
+    tools::pending_tx stake_tx;
     res = create_pos_tx(stake_tx, extra, outs, pos_output, stake_details, prev_crypto_hash, merkle_root);
     if (!res) {
       MINE_ERROR("Could not create POS transaction");
@@ -310,7 +312,7 @@ void Plant::handle_reward_update()
     std::lock_guard<std::mutex> lock(d_pos_state_mutex);
     boost::unique_lock<boost::mutex> lock2(d_idle_mutex);
 
-    tools::wallet2::transfer_container pos_transfers;
+    tools::transfer_container pos_transfers;
     d_wallet->get_pos_transfers(pos_transfers, std::max<uint64_t>(d_blockchain_height - blocks_in_24_h, 0));
 
     uint64_t amount_24_h = 0;
@@ -374,7 +376,7 @@ bool Plant::get_mining_info(MiningInfo &info) const
   return true;
 }
 
-void Plant::get_transfers(tools::wallet2::transfer_container &transfers)
+void Plant::get_transfers(tools::transfer_container &transfers)
 {
   d_wallet->get_transfers(transfers);
 
@@ -393,12 +395,12 @@ void Plant::get_transfers(tools::wallet2::transfer_container &transfers)
 #endif
 }
 
-bool Plant::get_mining_output(const MiningInfo                         &mining_info,
-                              const tools::wallet2::transfer_container &transfers,
-                              tools::wallet2::transfer_details         &pos_output,
-                              mining::StakeDetails                     &stake_details)
+bool Plant::get_mining_output(const MiningInfo                &mining_info,
+                              const tools::transfer_container &transfers,
+                              tools::transfer_details         &pos_output,
+                              mining::StakeDetails            &stake_details)
 {
-  tools::wallet2::transfer_container filtered_transfers;
+  tools::transfer_container filtered_transfers;
   std::copy_if(
       transfers.begin(),
       transfers.end(),
@@ -484,7 +486,7 @@ bool Plant::get_pos_block_template(cryptonote::block                            
                                    crypto::hash                                             &merkle_root,
                                    std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
                                    const mining::StakeDetails                               &stake_details,
-                                   const tools::wallet2::transfer_details                   &pos_output) const
+                                   const tools::transfer_details                            &pos_output) const
 {
   cryptonote::COMMAND_RPC_GETPOSBLOCKTEMPLATE::request request = AUTO_VAL_INIT(request);
   cryptonote::COMMAND_RPC_GETPOSBLOCKTEMPLATE::response response = AUTO_VAL_INIT(response);
@@ -495,7 +497,8 @@ bool Plant::get_pos_block_template(cryptonote::block                            
 
   std::string reward_wallet_address = d_reward_wallet_address;  // copy to avoid race cond
   if (d_reward_wallet_address.empty()) {
-    request.wallet_address = cryptonote::get_account_address_as_str(d_wallet->nettype(), false,
+    request.wallet_address = cryptonote::get_account_address_as_str(d_wallet->nettype(),
+                                                                    false,
                                                                     d_wallet->get_address());
   } else {
     request.wallet_address = d_reward_wallet_address;
@@ -557,10 +560,10 @@ bool Plant::get_pos_block_template(cryptonote::block                            
   return true;
 }
 
-bool Plant::create_pos_tx(tools::wallet2::pending_tx                               &stake_tx,
+bool Plant::create_pos_tx(tools::pending_tx                                        &stake_tx,
                           std::vector<uint8_t>                                     &extra,
                           std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-                          const tools::wallet2::transfer_details                   &pos_output,
+                          const tools::transfer_details                            &pos_output,
                           const mining::StakeDetails                               &stake_details,
                           const crypto::hash                                       &prev_crypto_hash,
                           const crypto::hash                                       &merkle_root)
@@ -621,17 +624,19 @@ bool Plant::publish_pos_block(const cryptonote::block &block, const cryptonote::
   return true;
 }
 
-bool Plant::fit_stake_requirements(const tools::wallet2::transfer_details &t)
+bool Plant::fit_stake_requirements(const tools::transfer_details &t)
 {
-  return t.amount() >= COIN &&
+  return t.m_token_id == cryptonote::CUTCOIN_ID &&
+         t.amount() >= COIN &&
          !t.m_spent &&
          d_wallet->is_transfer_unlocked(t) &&
          t.m_block_height + config::OUTPUT_STAKE_MATURITY <= d_blockchain_height;
 }
 
-bool Plant::is_maturing(const tools::wallet2::transfer_details &t)
+bool Plant::is_maturing(const tools::transfer_details &t)
 {
-  return t.amount() >= COIN &&
+  return t.m_token_id == cryptonote::CUTCOIN_ID &&
+         t.amount() >= COIN &&
          !t.m_spent &&
          d_wallet->is_transfer_unlocked(t) &&
          t.m_block_height + config::OUTPUT_STAKE_MATURITY > d_blockchain_height;
@@ -737,14 +742,14 @@ void Plant::evaluate_pos_metrics()
   d_pos_metrics.d_expected_reward_per_week  = 0;
   d_pos_metrics.d_chance_to_mine_next_block = 0;
 
-  tools::wallet2::transfer_container transfers;
+  tools::transfer_container transfers;
   get_transfers(transfers);
 
   if (transfers.empty()) {
     return;
   }
 
-  for (const tools::wallet2::transfer_details &t: transfers) {
+  for (const tools::transfer_details &t: transfers) {
     if (fit_stake_requirements(t)) {
       d_pos_metrics.d_on_stake += t.amount();
       ++d_pos_metrics.d_pos_outputs_count;

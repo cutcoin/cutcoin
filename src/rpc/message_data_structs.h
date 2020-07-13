@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016-2018, The Monero Project
 // 
 // All rights reserved.
@@ -111,9 +111,9 @@ namespace rpc
     uint64_t recent_count;
   };
 
-  struct output_amount_and_index
+  struct output_token_id_and_index
   {
-    uint64_t amount;
+    TokenId token_id;
     uint64_t index;
   };
 

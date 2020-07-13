@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // All rights reserved.
 //
@@ -1726,7 +1726,7 @@ std::vector<uint64_t> BlockchainBDB::get_tx_amount_output_indices(const crypto::
 
     uint64_t i = 0;
     uint64_t global_index;
-    for (const auto& vout : tx.vout)
+    for (const auto& vout : tx.vout[0])
     {
         uint64_t amount =  vout.amount;
 

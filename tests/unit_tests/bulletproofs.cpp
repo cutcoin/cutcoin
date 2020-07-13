@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -83,18 +83,19 @@ TEST(bulletproofs, multi_splitting)
   rct::ctkeyV sc, pc;
   rct::ctkey sctmp, pctmp;
   std::vector<unsigned int> index;
-  std::vector<uint64_t> inamounts, outamounts;
+  rct::ctamountV inamounts;
+  std::vector<uint64_t> outamounts;
 
   std::tie(sctmp, pctmp) = rct::ctskpkGen(6000);
   sc.push_back(sctmp);
   pc.push_back(pctmp);
-  inamounts.push_back(6000);
+  inamounts.push_back({6000, rct::H});
   index.push_back(1);
 
   std::tie(sctmp, pctmp) = rct::ctskpkGen(7000);
   sc.push_back(sctmp);
   pc.push_back(pctmp);
-  inamounts.push_back(7000);
+  inamounts.push_back({7000, rct::H});
   index.push_back(1);
 
   const int mixin = 3, max_outputs = 16;
@@ -132,12 +133,25 @@ TEST(bulletproofs, multi_splitting)
     }
 
     rct::ctkeyV outSk;
-    rct::rctSig s = rct::genRctSimple([] (const rct::key &a) -> rct::key {return rct::zero();}, sc, destinations, inamounts, outamounts, available, mixRing, amount_keys, NULL, NULL, index, outSk, rct::RangeProofPaddedBulletproof, hw::get_device("default"));
+    rct::rctSig s = rct::genRctSimple([] (const rct::key &a) -> rct::key {return rct::zero();},
+                                      sc,
+                                      destinations,
+                                      inamounts,
+                                      outamounts,
+                                      available,
+                                      mixRing,
+                                      amount_keys,
+                                      NULL,
+                                      NULL,
+                                      index,
+                                      outSk,
+                                      rct::RangeProofPaddedBulletproof,
+                                      hw::get_device("default"));
     ASSERT_TRUE(rct::verRctSimple(s));
     for (size_t i = 0; i < n_outputs; ++i)
     {
       rct::key mask;
-      rct::decodeRctSimple(s, amount_keys[i], i, mask, hw::get_device("default"));
+      rct::decodeRctSimple(s, amount_keys[i], {rct::H}, i, mask, hw::get_device("default"));
       ASSERT_TRUE(mask == outSk[i].mask);
     }
   }
@@ -256,7 +270,7 @@ TEST(bulletproof, weight_equal)
   cryptonote::transaction tx;
   crypto::hash tx_hash, tx_prefix_hash;
   ASSERT_TRUE(parse_and_validate_tx_from_blob(bd, tx, tx_hash, tx_prefix_hash));
-  ASSERT_TRUE(tx.version == 2);
+  ASSERT_TRUE(tx.version == cryptonote::TxVersion::ring_signatures);
   ASSERT_TRUE(rct::is_rct_bulletproof(tx.rct_signatures.type));
   const uint64_t tx_size = bd.size();
   const uint64_t tx_weight = cryptonote::get_transaction_weight(tx);
@@ -271,7 +285,7 @@ TEST(bulletproof, weight_more)
   cryptonote::transaction tx;
   crypto::hash tx_hash, tx_prefix_hash;
   ASSERT_TRUE(parse_and_validate_tx_from_blob(bd, tx, tx_hash, tx_prefix_hash));
-  ASSERT_TRUE(tx.version == 2);
+  ASSERT_TRUE(tx.version == cryptonote::TxVersion::ring_signatures);
   ASSERT_TRUE(rct::is_rct_bulletproof(tx.rct_signatures.type));
   const uint64_t tx_size = bd.size();
   const uint64_t tx_weight = cryptonote::get_transaction_weight(tx);

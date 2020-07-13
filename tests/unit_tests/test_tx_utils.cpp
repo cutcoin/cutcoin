@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -161,7 +161,7 @@ TEST(parse_and_validate_tx_extra, fails_on_wrong_size_in_extra_nonce)
   std::vector<cryptonote::tx_extra_field> tx_extra_fields;
   ASSERT_FALSE(cryptonote::parse_tx_extra(tx.extra, tx_extra_fields));
 }
-TEST(validate_parse_amount_case, validate_parse_amount)
+TEST(validate_parse_amount_case, DISABLED_validate_parse_amount)
 {
   uint64_t res = 0;
   bool r = cryptonote::parse_amount(res, "0.0001");

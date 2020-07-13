@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -33,10 +33,6 @@
 #ifndef RCT_TYPES_H
 #define RCT_TYPES_H
 
-#include <cstddef>
-#include <vector>
-#include <iostream>
-#include <cinttypes>
 #include <sodium/crypto_verify_32.h>
 
 extern "C" {
@@ -54,6 +50,10 @@ extern "C" {
 #include "serialization/binary_archive.h"
 #include "serialization/json_archive.h"
 
+#include <cinttypes>
+#include <cstddef>
+#include <iostream>
+#include <vector>
 
 //Define this flag when debugging to get additional info on the console
 #ifdef DBG
@@ -77,14 +77,22 @@ namespace rct {
     //  but uses unsigned chars,
     //  also includes an operator for accessing the i'th byte.
     struct key {
-        unsigned char & operator[](int i) {
-            return bytes[i];
-        }
-        unsigned char operator[](int i) const {
-            return bytes[i];
-        }
-        bool operator==(const key &k) const { return !crypto_verify_32(bytes, k.bytes); }
-        unsigned char bytes[32];
+      unsigned char & operator[](int i) {
+          return bytes[i];
+      }
+      
+      unsigned char operator[](int i) const {
+          return bytes[i];
+      }
+      
+      bool operator==(const key &k) const {
+        return !crypto_verify_32(bytes, k.bytes);
+      }
+  
+      bool operator!=(const key &k) const {
+        return crypto_verify_32(bytes, k.bytes);
+      }
+      unsigned char bytes[32];
     };
     typedef std::vector<key> keyV; //vector of keys
     typedef std::vector<keyV> keyM; //matrix of keys (indexed by column first)
@@ -100,6 +108,14 @@ namespace rct {
     };
     typedef std::vector<ctkey> ctkeyV;
     typedef std::vector<ctkeyV> ctkeyM;
+
+    struct ctamount {
+      // Contain amount and base point data.
+      uint64_t amount;
+      key      omega;
+    };
+
+    using ctamountV = std::vector<ctamount>;
 
     //used for multisig data
     struct multisig_kLRki {
@@ -214,10 +230,99 @@ namespace rct {
       END_SERIALIZE()
     };
 
+struct BigBulletproof
+{
+  std::vector<keyV> V;
+  keyV A, S, T1, T2;
+  keyV taux, mu;
+  std::vector<keyV> L, R;
+  keyV a, b, t;
+  keyV o;
+  
+  BigBulletproof() {}
+  BigBulletproof(const keyV &V,
+                 const keyV &A,
+                 const keyV &S,
+                 const keyV &T1,
+                 const keyV &T2,
+                 const keyV &taux,
+                 const keyV &mu,
+                 const std::vector<keyV> &L,
+                 const std::vector<keyV> &R,
+                 const keyV &a,
+                 const keyV &b,
+                 const keyV &t,
+                 const keyV &o)
+   : V({V})
+   , A(A)
+   , S(S)
+   , T1(T1)
+   , T2(T2)
+   , taux(taux)
+   , mu(mu)
+   , L(L)
+   , R(R)
+   , a(a)
+   , b(b)
+   , t(t)
+   , o(o){}
+   
+  BigBulletproof(const std::vector<keyV> &V,
+                 const keyV &A,
+                 const keyV &S,
+                 const keyV &T1,
+                 const keyV &T2,
+                 const keyV &taux,
+                 const keyV &mu,
+                 const std::vector<keyV> &L,
+                 const std::vector<keyV> &R,
+                 const keyV &a,
+                 const keyV &b,
+                 const keyV &t,
+                 const keyV &o)
+  : V(V)
+  , A(A)
+  , S(S)
+  , T1(T1)
+  , T2(T2)
+  , taux(taux)
+  , mu(mu)
+  , L(L)
+  , R(R)
+  , a(a)
+  , b(b)
+  , t(t)
+  , o(o){}
+  
+  BEGIN_SERIALIZE_OBJECT()
+    // Commitments aren't saved, they're restored via outPk
+    FIELD(V)
+    FIELD(A)
+    FIELD(S)
+    FIELD(T1)
+    FIELD(T2)
+    FIELD(taux)
+    FIELD(mu)
+    FIELD(L)
+    FIELD(R)
+    FIELD(a)
+    FIELD(b)
+    FIELD(t)
+    FIELD(o)
+    
+    if (L.empty() || L.size() != R.size())
+      return false;
+  END_SERIALIZE()
+};
+
     size_t n_bulletproof_amounts(const Bulletproof &proof);
+    size_t n_big_bulletproof_amounts(const BigBulletproof &proof);
     size_t n_bulletproof_max_amounts(const Bulletproof &proof);
+    size_t n_bulletproof_max_amounts(const BigBulletproof &proof);
     size_t n_bulletproof_amounts(const std::vector<Bulletproof> &proofs);
+    size_t n_big_bulletproof_amounts(const std::vector<BigBulletproof> &proofs);
     size_t n_bulletproof_max_amounts(const std::vector<Bulletproof> &proofs);
+    size_t n_big_bulletproof_max_amounts(const std::vector<BigBulletproof> &proofs);
 
     //A container to hold all signatures necessary for RingCT
     // rangeSigs holds all the rangeproof data of a transaction
@@ -226,13 +331,41 @@ namespace rct {
     // ecdhInfo holds an encoded mask / amount to be passed to each receiver
     // outPk contains public keypairs which are destinations (P, C),
     //  P = address, C = commitment to amount
-    enum {
-      RCTTypeNull = 0,
-      RCTTypeFull = 1,
-      RCTTypeSimple = 2,
-      RCTTypeBulletproof = 3,
+
+    enum class RctType: uint8_t {
+      RCTTypeNull           = 0x00,
+      RCTTypeFull           = 0x01,
+      RCTTypeSimple         = 0x02,
+      RCTTypeBulletproof    = 0x03,
+      RCTTypeBigBulletproof = 0x04
     };
-    enum RangeProofType { RangeProofBorromean, RangeProofBulletproof, RangeProofMultiOutputBulletproof, RangeProofPaddedBulletproof };
+
+    constexpr bool operator != (const uint8_t &l, const RctType &r) { return l != (uint8_t)r; }
+
+    constexpr bool operator == (const uint8_t &l, const RctType &r) { return l == (uint8_t)r; }
+
+    constexpr bool is_rct_null(const uint8_t &v) { return v == (uint8_t)RctType::RCTTypeNull; }
+
+    constexpr bool is_rct_valid(const uint8_t &v) {
+      return v == RctType::RCTTypeFull || v == RctType::RCTTypeSimple
+          || v == RctType::RCTTypeBulletproof || v == RctType::RCTTypeBigBulletproof; }
+
+    constexpr bool is_rct_full(const uint8_t &v) { return v == RctType::RCTTypeFull; }
+
+    constexpr bool is_rct_simple(const uint8_t &v) { return v == RctType::RCTTypeSimple
+          || v == RctType::RCTTypeBulletproof || v == RctType::RCTTypeBigBulletproof; }
+
+    constexpr bool is_rct_bulletproof(const uint8_t &v) { return v == RctType::RCTTypeBulletproof || v == RctType::RCTTypeBigBulletproof; }
+
+    constexpr bool is_rct_borromean(const uint8_t &v) { return v == RctType::RCTTypeSimple || v == RctType::RCTTypeFull; }
+
+enum RangeProofType {
+      RangeProofBorromean,
+      RangeProofBulletproof,
+      RangeProofMultiOutputBulletproof,
+      RangeProofPaddedBulletproof
+    };
+
     struct rctSigBase {
         uint8_t type;
         key message;
@@ -247,15 +380,15 @@ namespace rct {
         bool serialize_rctsig_base(Archive<W> &ar, size_t inputs, size_t outputs)
         {
           FIELD(type)
-          if (type == RCTTypeNull)
+          if (is_rct_null(type))
             return true;
-          if (type != RCTTypeFull && type != RCTTypeSimple && type != RCTTypeBulletproof)
+          if (!is_rct_valid(type))
             return false;
           VARINT_FIELD(txnFee)
           // inputs/outputs not saved, only here for serialization help
           // FIELD(message) - not serialized, it can be reconstructed
           // FIELD(mixRing) - not serialized, it can be reconstructed
-          if (type == RCTTypeSimple) // moved to prunable with bulletproofs
+          if (type == RctType::RCTTypeSimple) // moved to prunable with bulletproofs
           {
             ar.tag("pseudoOuts");
             ar.begin_array();
@@ -302,34 +435,59 @@ namespace rct {
     struct rctSigPrunable {
         std::vector<rangeSig> rangeSigs;
         std::vector<Bulletproof> bulletproofs;
+        std::vector<BigBulletproof> bigBulletproofs;
         std::vector<mgSig> MGs; // simple rct has N, full has 1
         keyV pseudoOuts; //C - for simple rct
 
         template<bool W, template <bool> class Archive>
-        bool serialize_rctsig_prunable(Archive<W> &ar, uint8_t type, size_t inputs, size_t outputs, size_t mixin)
+        bool serialize_rctsig_prunable(Archive<W> &ar,
+                                       uint8_t type,
+                                       size_t inputs,
+                                       size_t outputs,
+                                       size_t mixin,
+                                       size_t version)
         {
-          if (type == RCTTypeNull)
+          if (is_rct_null(type))
             return true;
-          if (type != RCTTypeFull && type != RCTTypeSimple && type != RCTTypeBulletproof)
+          if (!is_rct_valid(type))
             return false;
-          if (type == RCTTypeBulletproof)
-          {
-            uint32_t nbp = bulletproofs.size();
-            FIELD(nbp)
-            ar.tag("bp");
-            ar.begin_array();
-            if (nbp > outputs)
-              return false;
-            PREPARE_CUSTOM_VECTOR_SERIALIZATION(nbp, bulletproofs);
-            for (size_t i = 0; i < nbp; ++i)
-            {
-              FIELDS(bulletproofs[i])
-              if (nbp - i > 1)
-                ar.delimit_array();
+          if (is_rct_bulletproof(type)) {
+            if (version < 3) {
+              uint32_t nbp = bulletproofs.size();
+              FIELD(nbp)
+              ar.tag("bp");
+              ar.begin_array();
+              if (nbp > outputs)
+                return false;
+              PREPARE_CUSTOM_VECTOR_SERIALIZATION(nbp, bulletproofs);
+              for (size_t i = 0; i < nbp; ++i) {
+                FIELDS(bulletproofs[i])
+                if (nbp - i > 1)
+                  ar.delimit_array();
+              }
+              if (n_bulletproof_max_amounts(bulletproofs) < outputs)
+                return false;
+              ar.end_array();
+            } else {
+//              if(bigBulletproofs.empty()) {
+//                return false;
+//              }
+              uint32_t nbbp = bigBulletproofs.size();
+              FIELD(nbbp)
+              ar.tag("bbp");
+              ar.begin_array();
+              if (nbbp > outputs)
+                return false;
+              PREPARE_CUSTOM_VECTOR_SERIALIZATION(nbbp, bigBulletproofs);
+              for (size_t i = 0; i < nbbp; ++i) {
+                FIELDS(bigBulletproofs[i])
+                if (nbbp - i > 1)
+                  ar.delimit_array();
+              }
+              if (n_big_bulletproof_max_amounts(bigBulletproofs) < outputs)
+                return false;
+              ar.end_array();
             }
-            if (n_bulletproof_max_amounts(bulletproofs) < outputs)
-              return false;
-            ar.end_array();
           }
           else
           {
@@ -351,10 +509,12 @@ namespace rct {
           ar.begin_array();
           // we keep a byte for size of MGs, because we don't know whether this is
           // a simple or full rct signature, and it's starting to annoy the hell out of me
-          size_t mg_elements = (type == RCTTypeSimple || type == RCTTypeBulletproof) ? inputs : 1;
+          size_t mg_elements = is_rct_simple(type) ? inputs : 1;
           PREPARE_CUSTOM_VECTOR_SERIALIZATION(mg_elements, MGs);
-          if (MGs.size() != mg_elements)
+          if (MGs.size() != mg_elements) {
             return false;
+          }
+
           for (size_t i = 0; i < mg_elements; ++i)
           {
             // we save the MGs contents directly, because we want it to save its
@@ -369,7 +529,7 @@ namespace rct {
             for (size_t j = 0; j < mixin + 1; ++j)
             {
               ar.begin_array();
-              size_t mg_ss2_elements = ((type == RCTTypeSimple || type == RCTTypeBulletproof) ? 1 : inputs) + 1;
+              size_t mg_ss2_elements = (is_rct_simple(type) ? 1 : inputs) + 1;
               PREPARE_CUSTOM_VECTOR_SERIALIZATION(mg_ss2_elements, MGs[i].ss[j]);
               if (MGs[i].ss[j].size() != mg_ss2_elements)
                 return false;
@@ -395,7 +555,7 @@ namespace rct {
                ar.delimit_array();
           }
           ar.end_array();
-          if (type == RCTTypeBulletproof)
+          if (is_rct_bulletproof(type))
           {
             ar.tag("pseudoOuts");
             ar.begin_array();
@@ -419,12 +579,12 @@ namespace rct {
 
         keyV& get_pseudo_outs()
         {
-          return type == RCTTypeBulletproof ? p.pseudoOuts : pseudoOuts;
+          return (is_rct_bulletproof(type)) ? p.pseudoOuts : pseudoOuts;
         }
 
         keyV const& get_pseudo_outs() const
         {
-          return type == RCTTypeBulletproof ? p.pseudoOuts : pseudoOuts;
+          return (is_rct_bulletproof(type)) ? p.pseudoOuts : pseudoOuts;
         }
     };
 
@@ -528,10 +688,6 @@ namespace rct {
     void b2h(key  & amountdh, bits amountb2);
     //int[64] to uint long long
     xmr_amount b2d(bits amountb);
-
-    bool is_rct_simple(int type);
-    bool is_rct_bulletproof(int type);
-    bool is_rct_borromean(int type);
 
     static inline const rct::key &pk2rct(const crypto::public_key &pk) { return (const rct::key&)pk; }
     static inline const rct::key &sk2rct(const crypto::secret_key &sk) { return (const rct::key&)sk; }

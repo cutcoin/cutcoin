@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,27 +31,27 @@
 
 #pragma once
 
-#include <vector>
-#include <iostream>
-#include <stdint.h>
+#include "common/boost_serialization_helper.h"
+#include "common/command_line.h"
+#include "cryptonote_basic/account_boost_serialization.h"
+#include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_basic/cryptonote_basic_impl.h"
+#include "cryptonote_basic/cryptonote_boost_serialization.h"
+#include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_core/cryptonote_core.h"
+#include "include_base_utils.h"
+#include "misc_language.h"
 
 #include <boost/archive/binary_oarchive.hpp>
 #include <boost/archive/binary_iarchive.hpp>
 #include <boost/program_options.hpp>
-#include <boost/serialization/vector.hpp>
 #include <boost/serialization/variant.hpp>
+#include <boost/serialization/vector.hpp>
 
-#include "include_base_utils.h"
-#include "common/boost_serialization_helper.h"
-#include "common/command_line.h"
-
-#include "cryptonote_basic/account_boost_serialization.h"
-#include "cryptonote_basic/cryptonote_basic.h"
-#include "cryptonote_basic/cryptonote_basic_impl.h"
-#include "cryptonote_basic/cryptonote_format_utils.h"
-#include "cryptonote_core/cryptonote_core.h"
-#include "cryptonote_basic/cryptonote_boost_serialization.h"
-#include "misc_language.h"
+#include <cstdint>
+#include <functional>
+#include <iostream>
+#include <vector>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "tests.core"
@@ -573,41 +573,49 @@ inline bool do_replay_file(const std::string& filename)
   VEC_EVENTS.push_back(CALLBACK_ENTRY); \
 }
 
-#define REGISTER_CALLBACK(CB_NAME, CLBACK) \
-  register_callback(CB_NAME, boost::bind(&CLBACK, this, _1, _2, _3));
+#define REGISTER_CALLBACK(CB_NAME, CLBACK)                      \
+  register_callback(CB_NAME, std::bind(&CLBACK,                 \
+                                       this,                    \
+                                       std::placeholders::_1,   \
+                                       std::placeholders::_2,   \
+                                       std::placeholders::_3));
 
-#define REGISTER_CALLBACK_METHOD(CLASS, METHOD) \
-  register_callback(#METHOD, boost::bind(&CLASS::METHOD, this, _1, _2, _3));
+#define REGISTER_CALLBACK_METHOD(CLASS, METHOD)                 \
+  register_callback(#METHOD, std::bind(&CLASS::METHOD,          \
+                                       this,                    \
+                                       std::placeholders::_1,   \
+                                       std::placeholders::_2,   \
+                                       std::placeholders::_3));
 
 #define MAKE_GENESIS_BLOCK(VEC_EVENTS, BLK_NAME, MINER_ACC, TS)                       \
   test_generator generator;                                                           \
-  cryptonote::block BLK_NAME;                                                           \
+  cryptonote::block BLK_NAME;                                                         \
   generator.construct_block(BLK_NAME, MINER_ACC, TS);                                 \
   VEC_EVENTS.push_back(BLK_NAME);
 
 #define MAKE_NEXT_BLOCK(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC)                  \
-  cryptonote::block BLK_NAME;                                                           \
+  cryptonote::block BLK_NAME;                                                         \
   generator.construct_block(BLK_NAME, PREV_BLOCK, MINER_ACC);                         \
   VEC_EVENTS.push_back(BLK_NAME);
 
 #define MAKE_NEXT_BLOCK_TX1(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, TX1)         \
-  cryptonote::block BLK_NAME;                                                           \
+  cryptonote::block BLK_NAME;                                                         \
   {                                                                                   \
-    std::list<cryptonote::transaction> tx_list;                                         \
+    std::list<cryptonote::transaction> tx_list;                                       \
     tx_list.push_back(TX1);                                                           \
     generator.construct_block(BLK_NAME, PREV_BLOCK, MINER_ACC, tx_list);              \
   }                                                                                   \
   VEC_EVENTS.push_back(BLK_NAME);
 
 #define MAKE_NEXT_BLOCK_TX_LIST(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, TXLIST)  \
-  cryptonote::block BLK_NAME;                                                           \
+  cryptonote::block BLK_NAME;                                                         \
   generator.construct_block(BLK_NAME, PREV_BLOCK, MINER_ACC, TXLIST);                 \
   VEC_EVENTS.push_back(BLK_NAME);
 
 #define REWIND_BLOCKS_N(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, COUNT)           \
-  cryptonote::block BLK_NAME;                                                           \
+  cryptonote::block BLK_NAME;                                                         \
   {                                                                                   \
-    cryptonote::block blk_last = PREV_BLOCK;                                            \
+    cryptonote::block blk_last = PREV_BLOCK;                                          \
     for (size_t i = 0; i < COUNT; ++i)                                                \
     {                                                                                 \
       MAKE_NEXT_BLOCK(VEC_EVENTS, blk, blk_last, MINER_ACC);                          \
@@ -619,7 +627,7 @@ inline bool do_replay_file(const std::string& filename)
 #define REWIND_BLOCKS(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC) REWIND_BLOCKS_N(VEC_EVENTS, BLK_NAME, PREV_BLOCK, MINER_ACC, CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW)
 
 #define MAKE_TX_MIX(VEC_EVENTS, TX_NAME, FROM, TO, AMOUNT, NMIX, HEAD)                       \
-  cryptonote::transaction TX_NAME;                                                             \
+  cryptonote::transaction TX_NAME;                                                           \
   construct_tx_to_key(VEC_EVENTS, TX_NAME, HEAD, FROM, TO, AMOUNT, TESTS_DEFAULT_FEE, NMIX); \
   VEC_EVENTS.push_back(TX_NAME);
 
@@ -627,7 +635,7 @@ inline bool do_replay_file(const std::string& filename)
 
 #define MAKE_TX_MIX_LIST(VEC_EVENTS, SET_NAME, FROM, TO, AMOUNT, NMIX, HEAD)             \
   {                                                                                      \
-    cryptonote::transaction t;                                                             \
+    cryptonote::transaction t;                                                           \
     construct_tx_to_key(VEC_EVENTS, t, HEAD, FROM, TO, AMOUNT, TESTS_DEFAULT_FEE, NMIX); \
     SET_NAME.push_back(t);                                                               \
     VEC_EVENTS.push_back(t);                                                             \

@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2019, CUT coin
+# Copyright (c) 2018-2020, CUT coin
 #
 # All rights reserved.
 #
@@ -27,6 +27,7 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(common_tests_sources
+  cryptonote_tx_utils.cpp
   scheduler.cpp
   uint128.cpp)
 
@@ -40,6 +41,8 @@ add_executable(common_tests
 target_link_libraries(common_tests
   PRIVATE
     common
+    cryptonote_basic
+    cryptonote_core
     version
     ${CMAKE_THREAD_LIBS_INIT}
     ${GTEST_LIBRARIES})

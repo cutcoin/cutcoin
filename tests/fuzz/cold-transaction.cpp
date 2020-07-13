@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -84,7 +84,7 @@ int ColdTransactionFuzzer::run(const std::string &filename)
     iss << s;
     boost::archive::portable_binary_iarchive ar(iss);
     ar >> exported_txs;
-    std::vector<tools::wallet2::pending_tx> ptx;
+    std::vector<tools::pending_tx> ptx;
     bool success = wallet.sign_tx(exported_txs, "/tmp/cold-transaction-test-signed", ptx);
     std::cout << (success ? "signed" : "error") << std::endl;
   }

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -36,16 +36,29 @@
 
 #include "rctTypes.h"
 
+#include <tuple>
+#include <vector>
+
 namespace rct
 {
 
-Bulletproof bulletproof_PROVE(const rct::key &v, const rct::key &gamma);
-Bulletproof bulletproof_PROVE(uint64_t v, const rct::key &gamma);
-Bulletproof bulletproof_PROVE(const rct::keyV &v, const rct::keyV &gamma);
-Bulletproof bulletproof_PROVE(const std::vector<uint64_t> &v, const rct::keyV &gamma);
+// amount, gamma, omega
+using bulletproof_input = std::tuple<keyV, keyV, key>;
+using bulletproof_input_raw = std::tuple<std::vector<uint64_t>, keyV, key>;
+
+Bulletproof bulletproof_PROVE(const key &sv, const key &gamma);
+Bulletproof bulletproof_PROVE(uint64_t v, const key &gamma);
+Bulletproof bulletproof_PROVE(const keyV &v, const keyV &gamma);
+Bulletproof bulletproof_PROVE(const std::vector<uint64_t> &v, const keyV &gamma);
 bool bulletproof_VERIFY(const Bulletproof &proof);
 bool bulletproof_VERIFY(const std::vector<const Bulletproof*> &proofs);
 bool bulletproof_VERIFY(const std::vector<Bulletproof> &proofs);
+
+BigBulletproof bulletproof_PROVE(const std::vector<bulletproof_input> &bp);
+BigBulletproof bulletproof_PROVE(const std::vector<bulletproof_input_raw> &raw_bp);
+bool bulletproof_VERIFY(const BigBulletproof &proof);
+bool bulletproof_VERIFY(const std::vector<const BigBulletproof*> &proofs);
+bool bulletproof_VERIFY(const std::vector<BigBulletproof> &proofs);
 
 }
 

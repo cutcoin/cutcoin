@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,7 +31,11 @@
 
 #pragma once
 
-namespace cryptonote
-{
-  typedef std::string blobdata;
-}
+#include <string>
+
+namespace cryptonote {
+
+using blobdata = std::string;
+  // Unified type for blob storage data structure.
+
+}  // namespace cryptonote

@@ -21,7 +21,7 @@
 // OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 // WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 //
-// Code surrounding the word list is Copyright (c) 2018-2019, CUT coin
+// Code surrounding the word list is Copyright (c) 2018-2020, CUT coin
 // Code surrounding the word list is Copyright (c) 2014-2018, The Monero Project
 // All rights reserved.
 //

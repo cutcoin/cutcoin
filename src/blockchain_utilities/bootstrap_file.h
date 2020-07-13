@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -40,10 +40,9 @@
 #include "cryptonote_core/blockchain.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <fstream>
-#include <boost/iostreams/copy.hpp>
-#include <atomic>
 
 #include "common/command_line.h"
 #include "version.h"

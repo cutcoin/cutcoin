@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -58,7 +58,7 @@ namespace
 }
 
 #define TEST_pos(expected, str)            \
-  TEST(parse_amount, handles_pos_ ## str)  \
+  TEST(parse_amount, DISABLED_handles_pos_ ## str)  \
   {                                        \
     do_pos_test(UINT64_C(expected), #str); \
   }

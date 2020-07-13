@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -42,9 +42,11 @@
 #define TX_EXTRA_NONCE                      0x02
 #define TX_EXTRA_MERGE_MINING_TAG           0x03
 #define TX_EXTRA_TAG_ADDITIONAL_PUBKEYS     0x04
-#define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG   0xDE
-
 #define TX_EXTRA_POS_STAMP_TAG              0x05
+#define TX_EXTRA_TOKEN_DATA_TAG             0x06
+#define TX_EXTRA_TAG_TGTX_PUBKEYS           0x07
+
+#define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG   0xDE
 
 #define TX_EXTRA_NONCE_PAYMENT_ID           0x00
 #define TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID 0x01
@@ -175,6 +177,15 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+  struct tx_extra_tgtx_pub_keys
+  {
+    std::vector<crypto::public_key> data;
+
+    BEGIN_SERIALIZE()
+      FIELD(data)
+    END_SERIALIZE()
+  };
+
   struct tx_extra_mysterious_minergate
   {
     std::string data;
@@ -199,6 +210,39 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
+  struct tx_extra_token_data
+  {
+    TokenId       d_id;
+    TokenUnit     d_supply;
+    uint64_t      d_unit;
+    crypto::hash  d_outs_hash;
+    uint64_t      d_extra1{0};
+    uint64_t      d_extra2{0};
+    uint64_t      d_extra3{0};
+    uint64_t      d_extra4{0};
+
+    BEGIN_SERIALIZE()
+      FIELD(d_id)
+      FIELD(d_supply)
+      FIELD(d_unit)
+      FIELD(d_outs_hash)
+      FIELD(d_extra1)
+      FIELD(d_extra2)
+      FIELD(d_extra3)
+      FIELD(d_extra4)
+    END_SERIALIZE()
+  };
+
+  struct tx_extra_token_genesis_input
+  {
+    size_t index;
+    rct::key key;
+    BEGIN_SERIALIZE()
+      FIELD(index)
+      FIELD(key)
+    END_SERIALIZE()
+  };
+
   // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
   //   varint tag;
   //   varint size;
@@ -208,8 +252,10 @@ namespace cryptonote
                          tx_extra_nonce,
                          tx_extra_merge_mining_tag,
                          tx_extra_additional_pub_keys,
+                         tx_extra_tgtx_pub_keys,
                          tx_extra_mysterious_minergate,
-                         tx_extra_pos_stamp> tx_extra_field;
+                         tx_extra_pos_stamp,
+                         tx_extra_token_data> tx_extra_field;
 }
 
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_padding, TX_EXTRA_TAG_PADDING);
@@ -217,6 +263,8 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_pub_key, TX_EXTRA_TAG_PUBKEY);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_nonce, TX_EXTRA_NONCE);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_merge_mining_tag, TX_EXTRA_MERGE_MINING_TAG);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_additional_pub_keys, TX_EXTRA_TAG_ADDITIONAL_PUBKEYS);
-VARIANT_TAG(binary_archive, cryptonote::tx_extra_mysterious_minergate, TX_EXTRA_MYSTERIOUS_MINERGATE_TAG);
-
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_pos_stamp, TX_EXTRA_POS_STAMP_TAG);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_token_data, TX_EXTRA_TOKEN_DATA_TAG);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_tgtx_pub_keys, TX_EXTRA_TAG_TGTX_PUBKEYS);
+
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_mysterious_minergate, TX_EXTRA_MYSTERIOUS_MINERGATE_TAG);

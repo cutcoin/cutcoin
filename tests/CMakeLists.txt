@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2019, CUT coin
+# Copyright (c) 2018-2020, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -84,6 +84,7 @@ add_subdirectory(mining_tests)
 add_subdirectory(performance_tests)
 #add_subdirectory(core_proxy)
 add_subdirectory(unit_tests)
+add_subdirectory(token_tests)
 add_subdirectory(difficulty)
 add_subdirectory(hash)
 add_subdirectory(net_load_tests)
@@ -121,6 +122,7 @@ set(enabled_tests
     performance_tests
     core_proxy
     fuzz
+    token_tests
     unit_tests)
 
 add_custom_target(tests DEPENDS enabled_tests)

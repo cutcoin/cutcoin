@@ -27,9 +27,10 @@
 
 #pragma once
 
-#include ""
 #include "net_helper.h"
 #include "levin_base.h"
+
+#include "boost/bind/bind.hpp"
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net"

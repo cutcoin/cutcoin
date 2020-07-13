@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -27,15 +27,18 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <array>
+#include <boost/predef/other/endian.h>
 #include <boost/endian/conversion.hpp>
 #include <boost/range/algorithm/equal.hpp>
 #include <boost/range/algorithm_ext/iota.hpp>
-#include <cstdint>
+
 #include <gtest/gtest.h>
+
+#include <array>
+#include <cstdint>
 #include <iterator>
-#include <string>
 #include <sstream>
+#include <string>
 #include <vector>
 
 #ifndef _WIN32
@@ -134,7 +137,7 @@ namespace
     EXPECT_FALSE( lhs >= rhs );  \
     EXPECT_TRUE( rhs >= lhs )
 
-  #ifdef BOOST_LITTLE_ENDIAN
+  #if BOOST_ENDIAN_LITTLE_BYTE
     #define CHECK_LESS_ENDIAN(lhs, rhs) CHECK_LESS( rhs , lhs )
   #else
     #define CHECK_LESS_ENDIAN(lhs, rhs) CHECK_LESS( lhs , rhs )

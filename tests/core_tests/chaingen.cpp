@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -551,7 +551,7 @@ bool construct_miner_tx_manually(size_t height, uint64_t already_generated_coins
   out.target = txout_to_key(out_eph_public_key);
   tx.vout.push_back(out);
 
-  tx.version = 1;
+  tx.version = TxVersion::plain;
   tx.unlock_time = height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW;
 
   return true;

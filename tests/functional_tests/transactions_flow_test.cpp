@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -35,6 +35,7 @@
 
 #include "include_base_utils.h"
 using namespace epee;
+#include "wallet/transfer_container.h"
 #include "wallet/wallet2.h"
 using namespace cryptonote;
 
@@ -85,7 +86,7 @@ bool do_send_money(tools::wallet2& w1, tools::wallet2& w2, size_t mix_in_factor,
 
   try
   {
-    std::vector<tools::wallet2::pending_tx> ptx;
+    std::vector<tools::pending_tx> ptx;
     ptx = w1.create_transactions_2(dsts, mix_in_factor, 0, 0, std::vector<uint8_t>(), 0, {});
     for (auto &p: ptx)
       w1.commit_tx(p);
@@ -97,11 +98,11 @@ bool do_send_money(tools::wallet2& w1, tools::wallet2& w2, size_t mix_in_factor,
   }
 }
 
-uint64_t get_money_in_first_transfers(const tools::wallet2::transfer_container& incoming_transfers, size_t n_transfers)
+uint64_t get_money_in_first_transfers(const tools::transfer_container& incoming_transfers, size_t n_transfers)
 {
   uint64_t summ = 0;
   size_t count = 0;
-  BOOST_FOREACH(const tools::wallet2::transfer_details& td, incoming_transfers)
+  BOOST_FOREACH(const tools::transfer_details& td, incoming_transfers)
   {
     summ += td.m_tx.vout[td.m_internal_output_index].amount;
     if(++count >= n_transfers)
@@ -171,13 +172,13 @@ bool transactions_flow_test(std::string& working_folder,
   //with 500 outs (about 18kb), and we have to wait appropriate count blocks, mined for test wallet
   while(true)
   {
-    tools::wallet2::transfer_container incoming_transfers;
+    tools::transfer_container incoming_transfers;
     w1.get_transfers(incoming_transfers);
     if(incoming_transfers.size() > FIRST_N_TRANSFERS && get_money_in_first_transfers(incoming_transfers, FIRST_N_TRANSFERS) < w1.unlocked_balance(0) )
     {
       //lets go!
       size_t count = 0;
-      BOOST_FOREACH(tools::wallet2::transfer_details& td, incoming_transfers)
+      BOOST_FOREACH(tools::transfer_details& td, incoming_transfers)
       {
         cryptonote::transaction tx_s;
         bool r = do_send_money(w1, w1, 0, td.m_tx.vout[td.m_internal_output_index].amount - TEST_FEE, tx_s, 50);
@@ -265,9 +266,9 @@ bool transactions_flow_test(std::string& working_folder,
     return true;
   }else
   {
-    tools::wallet2::transfer_container tc;
+    tools::transfer_container tc;
     w2.get_transfers(tc);
-    BOOST_FOREACH(tools::wallet2::transfer_details& td, tc)
+    BOOST_FOREACH(tools::transfer_details& td, tc)
     {
       auto it = txs.find(td.m_txid);
       CHECK_AND_ASSERT_MES(it != txs.end(), false, "transaction not found in local cache");

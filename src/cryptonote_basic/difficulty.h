@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,10 +31,10 @@
 
 #pragma once
 
+#include "crypto/hash.h"
+
 #include <cstdint>
 #include <vector>
-
-#include "crypto/hash.h"
 
 namespace cryptonote
 {

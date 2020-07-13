@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -142,31 +142,31 @@ static void make_wallets(std::vector<tools::wallet2>& wallets, unsigned int M)
   }
 }
 
-TEST(multisig, make_2_2)
+TEST(multisig, DISABLED_make_2_2)
 {
   std::vector<tools::wallet2> wallets(2);
   make_wallets(wallets, 2);
 }
 
-TEST(multisig, make_3_3)
+TEST(multisig, DISABLED_make_3_3)
 {
   std::vector<tools::wallet2> wallets(3);
   make_wallets(wallets, 3);
 }
 
-TEST(multisig, make_2_3)
+TEST(multisig, DISABLED_make_2_3)
 {
   std::vector<tools::wallet2> wallets(3);
   make_wallets(wallets, 2);
 }
 
-TEST(multisig, make_2_4)
+TEST(multisig, DISABLED_make_2_4)
 {
   std::vector<tools::wallet2> wallets(4);
   make_wallets(wallets, 2);
 }
 
-TEST(multisig, make_2_5)
+TEST(multisig, DISABLED_make_2_5)
 {
   std::vector<tools::wallet2> wallets(5);
   make_wallets(wallets, 2);

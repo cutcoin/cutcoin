@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -1054,7 +1054,7 @@ UnsignedTransaction *WalletImpl::loadUnsignedTx(const std::string &unsigned_file
   std::string extra_message;
   if (!transaction->m_unsigned_tx_set.transfers.empty())
     extra_message = (boost::format("%u outputs to import. ") % (unsigned)transaction->m_unsigned_tx_set.transfers.size()).str();
-  transaction->checkLoadedTx([&transaction](){return transaction->m_unsigned_tx_set.txes.size();}, [&transaction](size_t n)->const tools::wallet2::tx_construction_data&{return transaction->m_unsigned_tx_set.txes[n];}, extra_message);
+  transaction->checkLoadedTx([&transaction](){return transaction->m_unsigned_tx_set.txes.size();}, [&transaction](size_t n)->const tools::tx_construction_data&{return transaction->m_unsigned_tx_set.txes[n];}, extra_message);
   setStatus(transaction->status(), transaction->errorString());
     
   return transaction;
@@ -1401,7 +1401,7 @@ PendingTransaction *WalletImpl::createTransaction(const string &dst_addr, const 
         }
 
 
-        //std::vector<tools::wallet2::pending_tx> ptx_vector;
+        //std::vector<tools::pending_tx> ptx_vector;
 
         try {
             if (amount) {

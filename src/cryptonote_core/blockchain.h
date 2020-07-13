@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -449,23 +449,23 @@ namespace cryptonote
     bool handle_get_objects(NOTIFY_REQUEST_GET_OBJECTS::request& arg, NOTIFY_RESPONSE_GET_OBJECTS::request& rsp);
 
     /**
-     * @brief get number of outputs of an amount past the minimum spendable age
+     * @brief get number of outputs of an token_id past the minimum spendable age
      *
-     * @param amount the output amount
+     * @param token_id the output token_id
      *
      * @return the number of mature outputs
      */
-    uint64_t get_num_mature_outputs(uint64_t amount) const;
+    uint64_t get_num_mature_outputs(TokenId token_id) const;
 
     /**
      * @brief get the public key for an output
      *
-     * @param amount the output amount
-     * @param global_index the output amount-global index
+     * @param token_id the output token_id
+     * @param global_index the output token_id-global index
      *
      * @return the public key
      */
-    crypto::public_key get_output_key(uint64_t amount, uint64_t global_index) const;
+    crypto::public_key get_output_key(TokenId token_id, uint64_t global_index) const;
 
     /**
      * @brief gets specific outputs to mix with
@@ -483,27 +483,45 @@ namespace cryptonote
     bool get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res) const;
 
     /**
+     * @brief gets tokens list
+     *
+     * This function takes all token summaries from lmdb
+     * and creates an RPC response with list filtered by prefix from RPC request
+     *
+     * @param req prefix
+     * @param res filtered tokens list
+     *
+     * @return true
+     */
+    bool get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res) const;
+
+    /**
      * @brief gets an output's key and unlocked state
      *
-     * @param amount in - the output amount
-     * @param index in - the output global amount index
+     * @param token_id in - the output token_id
+     * @param index in - the output global token_id index
      * @param mask out - the output's RingCT mask
      * @param key out - the output's key
      * @param unlocked out - the output's unlocked state
      */
-    void get_output_key_mask_unlocked(const uint64_t& amount, const uint64_t& index, crypto::public_key& key, rct::key& mask, bool& unlocked) const;
+    void get_output_key_mask_unlocked(const TokenId& token_id, const uint64_t& index, crypto::public_key& key, rct::key& mask, bool& unlocked) const;
 
     /**
      * @brief gets per block distribution of outputs of a given amount
      *
-     * @param amount the amount to get a ditribution for
+     * @param token_id token id to get a distribution for
      * @param from_height the height before which we do not care about the data
      * @param to_height the height after which we do not care about the data
      * @param return-by-reference start_height the height of the first rct output
      * @param return-by-reference distribution the start offset of the first rct output in this block (same as previous if none)
      * @param return-by-reference base how many outputs of that amount are before the stated distribution
      */
-    bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
+    bool get_output_distribution(cryptonote::TokenId    token_id,
+                                 uint64_t               from_height,
+                                 uint64_t               to_height,
+                                 uint64_t              &start_height,
+                                 std::vector<uint64_t> &distribution,
+                                 uint64_t              &base) const;
 
     /**
      * @brief gets the global indices for outputs from a given transaction
@@ -612,6 +630,16 @@ namespace cryptonote
      * @return false if any outputs do not conform, otherwise true
      */
     bool check_tx_outputs(const transaction& tx, tx_verification_context &tvc);
+
+    /**
+     * @brief check if given token_id exists and return token data if requested
+     *
+     * @param token_id token id to check
+     * @param token_summary token data, will be filled on non-null pointer arg
+     *
+     * @return true if token_id is present in lmdb
+     */
+    bool check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary* token_summary = nullptr) const;
 
     /**
      * @brief gets the block weight limit based on recent blocks
@@ -836,7 +864,12 @@ namespace cryptonote
      *
      * @return a set of amount/instances
      */
-    std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count = 0) const;
+    std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
+                                                                     cryptonote::TokenId          token_id,
+                                                                     const std::vector<uint64_t> &amounts,
+                                                                     bool                         unlocked,
+                                                                     uint64_t                     recent_cutoff,
+                                                                     uint64_t                     min_count = 0) const;
 
     /**
      * @brief perform a check on all key images in the blockchain
@@ -878,14 +911,14 @@ namespace cryptonote
     bool for_all_outputs(std::function<bool(uint64_t amount, const crypto::hash &tx_hash, uint64_t height, size_t tx_idx)>) const;
 
     /**
-     * @brief perform a check on all outputs of a given amount in the blockchain
+     * @brief perform a check on all outputs of a given token_id in the blockchain
      *
-     * @param amount the amount to iterate through
+     * @param token_id the token_id to iterate through
      * @param std::function the check to perform, pass/fail
      *
      * @return false if any output fails the check, otherwise true
      */
-    bool for_all_outputs(uint64_t amount, std::function<bool(uint64_t height)>) const;
+    bool for_all_outputs(TokenId token_id, std::function<bool(uint64_t height)>) const;
 
     /**
      * @brief get a reference to the BlockchainDB in use by Blockchain
@@ -1074,6 +1107,8 @@ namespace cryptonote
     template<class visitor_t>
     inline bool scan_outputkeys_for_indexes(size_t tx_version, const txin_to_key& tx_in_to_key, visitor_t &vis, const crypto::hash &tx_prefix_hash, uint64_t* pmax_related_block_height = NULL) const;
 
+    bool check_tgtx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys);
+
     /**
      * @brief collect output public keys of a transaction input set
      *
@@ -1117,6 +1152,37 @@ namespace cryptonote
      * @return false if any validation step fails, otherwise true
      */
     bool check_tx_inputs(transaction& tx, tx_verification_context &tvc, uint64_t* pmax_used_block_height = NULL);
+
+    /**
+     * @brief validate token genesis transaction
+     *
+     * This function validates different aspects of a token genesis transaction (tgtx).
+     * If tgtx passes these checks it is accepted as a valid
+     * and when it is added to the blockchain the new token is created.
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tvc returned information about tx verification
+     * @param bvc metadata concerning the block's validity
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_tgtx(tx_verification_context &tvc, block_verification_context &bvc, const transaction &tx);
+
+    /**
+     * @brief validate correctness of the payment in token genesis transaction
+     *
+     * This function validates correctness of the payment in token genesis transaction.
+     * Required amount in cutcoins must be burnt.
+     *
+     * The return value is 'true' if the coin burn payment is correct.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_tgtx_payment(const transaction &tx);
 
     /**
      * @brief performs a blockchain reorganization according to the longest chain rule

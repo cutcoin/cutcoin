@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 //
 // All rights reserved.
 //
@@ -40,6 +40,9 @@
 #include <cryptonote_basic/difficulty.h>
 #include <mining/miningutil.h>
 #include <net/http_client.h>
+#include <wallet/pending_tx.h>
+#include <wallet/transfer_container.h>
+#include <wallet/transfer_details.h>
 #include <wallet/wallet2.h>
 
 #include <boost/optional/optional.hpp>
@@ -148,13 +151,13 @@ private:
   bool get_mining_info(MiningInfo &info) const;
     // Return actual mining info.
 
-  void get_transfers(tools::wallet2::transfer_container &transfers);
+  void get_transfers(tools::transfer_container &transfers);
     // Get current account transfers.
 
-  bool get_mining_output(const MiningInfo                         &mining_info,
-                         const tools::wallet2::transfer_container &transfers,
-                         tools::wallet2::transfer_details         &pos_output,
-                         mining::StakeDetails                     &stake_details);
+  bool get_mining_output(const MiningInfo                &mining_info,
+                         const tools::transfer_container &transfers,
+                         tools::transfer_details         &pos_output,
+                         mining::StakeDetails            &stake_details);
     // Find the best output appropriate for mining at the current height.
 
   bool get_pos_block_template(cryptonote::block                                        &block_template,
@@ -164,26 +167,26 @@ private:
                               crypto::hash                                             &merkle_root,
                               std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
                               const mining::StakeDetails                               &stake_details,
-                              const tools::wallet2::transfer_details                   &pos_output) const;
+                              const tools::transfer_details                            &pos_output) const;
     // Return POS block template.
 
-  bool create_pos_tx(tools::wallet2::pending_tx                               &stake_tx,
+  bool create_pos_tx(tools::pending_tx                                        &stake_tx,
                      std::vector<uint8_t>                                     &extra,
                      std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-                     const tools::wallet2::transfer_details                   &pos_output,
+                     const tools::transfer_details                            &pos_output,
                      const mining::StakeDetails                               &stake_details,
                      const crypto::hash                                       &prev_crypto_hash,
                      const crypto::hash                                       &merkle_root);
-    // Build POS mining transaction that contains a single input and a single effective output.
+    // Build POS staking transaction that contains a single input and a single effective output.
 
   bool publish_pos_block(const cryptonote::block &block, const cryptonote::transaction &tx);
     // Publish new POS block to the daemon.
 
-  bool fit_stake_requirements(const tools::wallet2::transfer_details &t);
+  bool fit_stake_requirements(const tools::transfer_details &t);
     // Return 'true' if the specified 't' that correspond to a specific unspent output meet
     // conditions on POS stake output.
 
-  bool is_maturing(const tools::wallet2::transfer_details &t);
+  bool is_maturing(const tools::transfer_details &t);
 
   template<typename t_request, typename t_response>
   bool invoke_rpc_request(std::string      method_name,

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -32,17 +32,19 @@
 #include "include_base_utils.h"
 using namespace epee;
 
-#include <atomic>
-#include <boost/algorithm/string.hpp>
-#include "wipeable_string.h"
-#include "string_tools.h"
-#include "serialization/string.h"
-#include "cryptonote_format_utils.h"
-#include "cryptonote_config.h"
 #include "crypto/crypto.h"
 #include "crypto/hash.h"
-#include "ringct/rctSigs.h"
+#include "cryptonote_format_utils.h"
+#include "cryptonote_config.h"
 #include "mining/miningutil.h"
+#include "ringct/rctSigs.h"
+#include "serialization/string.h"
+#include "string_tools.h"
+#include "wipeable_string.h"
+
+#include <boost/algorithm/string.hpp>
+
+#include <atomic>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "cn"
@@ -128,7 +130,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool expand_transaction_1(transaction &tx, bool base_only)
   {
-    if (tx.version >= 2 && !is_coinbase(tx))
+    if (tx.version >= TxVersion::ring_signatures && !is_coinbase(tx))
     {
       rct::rctSig &rv = tx.rct_signatures;
       if (rv.outPk.size() != tx.vout.size())
@@ -146,32 +148,70 @@ namespace cryptonote
         rv.outPk[n].dest = rct::pk2rct(boost::get<txout_to_key>(tx.vout[n].target).key);
       }
 
-      if (!base_only)
-      {
+      if (!base_only) {
         const bool bulletproof = rct::is_rct_bulletproof(rv.type);
-        if (bulletproof)
-        {
-          if (rv.p.bulletproofs.size() != 1)
-          {
-            LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs size in tx " << get_transaction_hash(tx));
-            return false;
+        if (bulletproof) {
+          if (tx.version < TxVersion::tokens) {
+            if (rv.p.bulletproofs.size() != 1) {
+              LOG_PRINT_L1(
+                "Failed to parse transaction from blob, bad bulletproofs size in tx " << get_transaction_hash(tx));
+              return false;
+            }
+            if (rv.p.bulletproofs[0].L.size() < 6) {
+              LOG_PRINT_L1(
+                "Failed to parse transaction from blob, bad bulletproofs L size in tx " << get_transaction_hash(tx));
+              return false;
+            }
+            const size_t max_outputs = 1 << (rv.p.bulletproofs[0].L.size() - 6);
+            if (max_outputs < tx.vout.size()) {
+              LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs max outputs in tx "
+                             << get_transaction_hash(tx));
+              return false;
+            }
+            const size_t n_amounts = tx.vout.size();
+            CHECK_AND_ASSERT_MES(n_amounts == rv.outPk.size(), false, "Internal error filling out V");
+            rv.p.bulletproofs[0].V.resize(n_amounts);
+            for (size_t i = 0; i < n_amounts; ++i)
+              rv.p.bulletproofs[0].V[i] = rct::scalarmultKey(rv.outPk[i].mask, rct::INV_EIGHT);
+          } else {
+            if (rv.p.bigBulletproofs.size() != 1) {
+              LOG_PRINT_L1(
+                "Failed to parse transaction from blob, bad big bulletproofs size in tx " << get_transaction_hash(tx));
+              return false;
+            }
+
+            CHECK_AND_ASSERT_MES(rv.p.bigBulletproofs[0].V.size() == rv.p.bigBulletproofs[0].L.size(), false, "Internal error filling out V");
+
+            const size_t n_amounts = tx.vout.size();
+            CHECK_AND_ASSERT_MES(n_amounts == rv.outPk.size(), false, "Internal error filling out V");
+
+
+            size_t max_outputs = 0;
+            for (size_t i = 0; i < rv.p.bigBulletproofs[0].V.size(); ++i) {
+              const rct::keyV &L = rv.p.bigBulletproofs[0].L[i];
+              if (L.size() < 6) {
+                LOG_PRINT_L1(
+                  "Failed to parse transaction from blob, bad big bulletproofs L size in tx " << get_transaction_hash(tx));
+                return false;
+              }
+
+              max_outputs += (1 << (L.size() - 6));
+            }
+
+            if (max_outputs < tx.vout.size()) {
+              LOG_PRINT_L1("Failed to parse transaction from blob, bad big bulletproofs max outputs in tx "
+                             << get_transaction_hash(tx));
+              return false;
+            }
+
+//            TODO: recover amounts from outPk
+//            for (size_t i = 0; i < rv.p.bigBulletproofs[0].V.size(); ++i) {
+//              rv.p.bigBulletproofs[0].V[i].clear();
+//              for (size_t j = 0; j < rv.p.bigBulletproofs[0].L[i].size(); ++j) {
+//
+//              }
+//            }
           }
-          if (rv.p.bulletproofs[0].L.size() < 6)
-          {
-            LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs L size in tx " << get_transaction_hash(tx));
-            return false;
-          }
-          const size_t max_outputs = 1 << (rv.p.bulletproofs[0].L.size() - 6);
-          if (max_outputs < tx.vout.size())
-          {
-            LOG_PRINT_L1("Failed to parse transaction from blob, bad bulletproofs max outputs in tx " << get_transaction_hash(tx));
-            return false;
-          }
-          const size_t n_amounts = tx.vout.size();
-          CHECK_AND_ASSERT_MES(n_amounts == rv.outPk.size(), false, "Internal error filling out V");
-          rv.p.bulletproofs[0].V.resize(n_amounts);
-          for (size_t i = 0; i < n_amounts; ++i)
-            rv.p.bulletproofs[0].V[i] = rct::scalarmultKey(rv.outPk[i].mask, rct::INV_EIGHT);
         }
       }
     }
@@ -247,6 +287,38 @@ namespace cryptonote
 
     return generate_key_image_helper_precomp(ack, out_key, subaddr_recv_info->derivation, real_output_index, subaddr_recv_info->index, in_ephemeral, ki, hwdev);
   }
+
+  bool generate_tgtx_key_image_helper(const account_keys       &ack,
+                                      const crypto::public_key &out_key,
+                                      size_t                    real_output_index,
+                                      keypair                  &in_ephemeral,
+                                      crypto::key_image        &ki,
+                                      hw::device               &hwdev)
+  {
+    crypto::key_derivation recv_derivation = AUTO_VAL_INIT(recv_derivation);
+    bool r = hwdev.generate_key_derivation(out_key, ack.m_view_secret_key, recv_derivation);
+    if (!r) {
+      MWARNING("tgtx key image helper: failed to generate_key_derivation(" << out_key << ", " << ack.m_view_secret_key << ")");
+      memcpy(&recv_derivation, rct::identity().bytes, sizeof(recv_derivation));
+      return false;
+    }
+
+    r = hwdev.derive_secret_key(recv_derivation, real_output_index, ack.m_spend_secret_key, in_ephemeral.sec);
+    if (!r) {
+      MWARNING("tgtx key image helper: failed to derive secret key");
+      return false;
+    }
+
+    r = hwdev.secret_key_to_public_key(in_ephemeral.sec, in_ephemeral.pub);
+    if (!r) {
+      MWARNING("tgtx key image helper: failed to derive secret key to public key");
+      return false;
+    }
+
+    crypto::generate_key_image(in_ephemeral.pub, in_ephemeral.sec, ki);
+    return true;
+  }
+
   //---------------------------------------------------------------
   bool generate_key_image_helper_precomp(const account_keys& ack, const crypto::public_key& out_key, const crypto::key_derivation& recv_derivation, size_t real_output_index, const subaddress_index& received_index, keypair& in_ephemeral, crypto::key_image& ki, hw::device &hwdev)
   {
@@ -350,19 +422,32 @@ namespace cryptonote
   //---------------------------------------------------------------
   uint64_t get_transaction_weight(const transaction &tx, size_t blob_size)
   {
-    if (tx.version < 2)
+    if (tx.version < TxVersion::ring_signatures)
       return blob_size;
     const rct::rctSig &rv = tx.rct_signatures;
     if (!rct::is_rct_bulletproof(rv.type))
       return blob_size;
     const size_t n_outputs = tx.vout.size();
-    if (n_outputs <= 2)
-      return blob_size;
+    if (tx.version < TxVersion::tokens) {
+      if (n_outputs <= 2)
+        return blob_size;
+    }
+    else {
+      if (n_outputs <= 4)
+        return blob_size;
+    }
     const uint64_t bp_base = 368;
-    const size_t n_padded_outputs = rct::n_bulletproof_max_amounts(rv.p.bulletproofs);
+    size_t n_padded_outputs = tx.version == TxVersion::tokens
+      ? rct::n_big_bulletproof_max_amounts(rv.p.bigBulletproofs)
+      : rct::n_bulletproof_max_amounts(rv.p.bulletproofs);
+
     size_t nlr = 0;
     for (const auto &bp: rv.p.bulletproofs)
       nlr += bp.L.size() * 2;
+    for (const auto &bp: rv.p.bigBulletproofs)
+      for (const auto &L: bp.L)
+        nlr += L.size() * 2;
+
     const size_t bp_size = 32 * (9 + nlr);
     CHECK_AND_ASSERT_THROW_MES_L1(bp_base * n_padded_outputs >= bp_size, "Invalid bulletproof clawback");
     const uint64_t bp_clawback = (bp_base * n_padded_outputs - bp_size) * 4 / 5;
@@ -381,7 +466,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool get_tx_fee(const transaction& tx, uint64_t & fee)
   {
-    if (tx.version > 1)
+    if (tx.version > TxVersion::plain)
     {
       fee = tx.rct_signatures.txnFee;
       return true;
@@ -494,20 +579,6 @@ namespace cryptonote
     return get_additional_tx_pub_keys_from_extra(tx.extra);
   }
   //---------------------------------------------------------------
-  bool get_pos_stamp(const std::vector<uint8_t>& tx_extra, tx_extra_pos_stamp &stamp)
-  {
-    // parse
-    std::vector<tx_extra_field> tx_extra_fields;
-    if (!parse_tx_extra(tx_extra, tx_extra_fields))
-      return false;
-    return find_tx_extra_field_by_type(tx_extra_fields, stamp);
-  }
-  //---------------------------------------------------------------
-  bool get_pos_stamp(const transaction_prefix& tx, tx_extra_pos_stamp &stamp)
-  {
-    return get_pos_stamp(tx.extra, stamp);
-  }
-  //---------------------------------------------------------------
   bool add_additional_tx_pub_keys_to_extra(std::vector<uint8_t>& tx_extra, const std::vector<crypto::public_key>& additional_pub_keys)
   {
     // convert to variant
@@ -541,7 +612,20 @@ namespace cryptonote
     return true;
   }
   //---------------------------------------------------------------
-  bool add_pos_stamp_to_tx_extra(std::vector<uint8_t>& tx_extra, const cryptonote::tx_extra_pos_stamp& pos_stamp)
+  bool get_pos_stamp(const std::vector<uint8_t>& tx_extra, tx_extra_pos_stamp &stamp)
+  {
+    std::vector<tx_extra_field> tx_extra_fields;
+    if (!parse_tx_extra(tx_extra, tx_extra_fields))
+      return false;
+    return find_tx_extra_field_by_type(tx_extra_fields, stamp);
+  }
+  //---------------------------------------------------------------
+  bool get_pos_stamp(const transaction_prefix& tx, tx_extra_pos_stamp &stamp)
+  {
+    return get_pos_stamp(tx.extra, stamp);
+  }
+  //---------------------------------------------------------------
+  bool add_pos_stamp_to_tx_extra(std::vector<uint8_t> &tx_extra, const cryptonote::tx_extra_pos_stamp &pos_stamp)
   {
     // convert to variant
     tx_extra_field field = pos_stamp;
@@ -558,6 +642,72 @@ namespace cryptonote
     tx_extra.resize(tx_extra.size() + tx_extra_str.size());
     memcpy(&tx_extra[pos], tx_extra_str.data(), tx_extra_str.size());
     return true;
+  }
+  //---------------------------------------------------------------
+  bool get_token_data_from_tx_extra(const std::vector<uint8_t>& tx_extra, cryptonote::tx_extra_token_data &token_data)
+  {
+    std::vector<tx_extra_field> tx_extra_fields;
+    if (!parse_tx_extra(tx_extra, tx_extra_fields))
+      return false;
+    return find_tx_extra_field_by_type(tx_extra_fields, token_data);
+  }
+  //---------------------------------------------------------------
+  bool get_token_data(const transaction_prefix &tx, cryptonote::tx_extra_token_data &token_data)
+  {
+    return get_token_data_from_tx_extra(tx.extra, token_data);
+  }
+  //---------------------------------------------------------------
+  bool add_token_data_to_tx_extra(std::vector<uint8_t> &tx_extra, const cryptonote::tx_extra_token_data &token_data)
+  {
+    // convert to variant
+    tx_extra_field field = token_data;
+
+    // serialize
+    std::ostringstream oss;
+    binary_archive<true> ar(oss);
+    bool r = ::do_serialize(ar, field);
+    CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize token data to tx extra");
+
+    // append
+    std::string tx_extra_str = oss.str();
+    size_t pos = tx_extra.size();
+    tx_extra.resize(tx_extra.size() + tx_extra_str.size());
+    memcpy(&tx_extra[pos], tx_extra_str.data(), tx_extra_str.size());
+    return true;
+  }
+
+  bool add_tgtx_keys_to_tx_extra(std::vector<uint8_t> &tx_extra, std::vector<crypto::public_key> &keys)
+  {
+    // convert to variant
+    tx_extra_field field = tx_extra_tgtx_pub_keys{ keys };
+    // serialize
+    std::ostringstream oss;
+    binary_archive<true> ar(oss);
+    bool r = ::do_serialize(ar, field);
+    CHECK_AND_NO_ASSERT_MES_L1(r, false, "failed to serialize tx extra additional tx pub keys");
+    // append
+    std::string tx_extra_str = oss.str();
+    size_t pos = tx_extra.size();
+    tx_extra.resize(tx_extra.size() + tx_extra_str.size());
+    memcpy(&tx_extra[pos], tx_extra_str.data(), tx_extra_str.size());
+    return true;
+  }
+  //---------------------------------------------------------------
+  std::vector<crypto::public_key> get_tgtx_keys_from_tx_extra(const std::vector<uint8_t>& tx_extra)
+  {
+    // parse
+    std::vector<tx_extra_field> tx_extra_fields;
+    parse_tx_extra(tx_extra, tx_extra_fields);
+    // find corresponding field
+    tx_extra_tgtx_pub_keys token_pub_keys;
+    if(!find_tx_extra_field_by_type(tx_extra_fields, token_pub_keys))
+      return {};
+    return token_pub_keys.data;
+  }
+  //---------------------------------------------------------------
+  std::vector<crypto::public_key> get_tgtx_keys_from_tx_extra(const transaction_prefix& tx)
+  {
+    return get_tgtx_keys_from_tx_extra(tx.extra);
   }
   //---------------------------------------------------------------
   bool remove_field_from_tx_extra(std::vector<uint8_t>& tx_extra, const std::type_info &type)
@@ -665,7 +815,7 @@ namespace cryptonote
         << out.target.type().name() << ", expected " << typeid(txout_to_key).name()
         << ", in transaction id=" << get_transaction_hash(tx));
 
-      if (tx.version == 1)
+      if (tx.version == TxVersion::plain)
       {
         CHECK_AND_NO_ASSERT_MES(0 < out.amount, false, "zero amount output in transaction id=" << get_transaction_hash(tx));
       }
@@ -684,7 +834,7 @@ namespace cryptonote
   bool check_inputs_overflow(const transaction& tx)
   {
     uint64_t money = 0;
-    for(const auto& in: tx.vin)
+    for(const auto &in: tx.vin)
     {
       CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
       if(money > tokey_in.amount + money)
@@ -693,15 +843,25 @@ namespace cryptonote
     }
     return true;
   }
+  bool check_outs_nonzero(const transaction &tx, TokenId token_id)
+  {
+    for(const auto &o: tx.vout) {
+      if (o.token_id == token_id && o.amount == 0) {
+        return false;
+      }
+    }
+    return true;
+  }
   //---------------------------------------------------------------
-  bool check_outs_overflow(const transaction& tx)
+  bool check_outs_overflow(const transaction& tx, TokenId token_id)
   {
     uint64_t money = 0;
-    for(const auto& o: tx.vout)
-    {
-      if(money > o.amount + money)
-        return false;
-      money += o.amount;
+    for(const auto &o: tx.vout) {
+      if(o.token_id == token_id) {
+        if(money > o.amount + money)
+          return false;
+        money += o.amount;
+      }
     }
     return true;
   }
@@ -863,7 +1023,7 @@ namespace cryptonote
   //---------------------------------------------------------------
   bool calculate_transaction_prunable_hash(const transaction& t, crypto::hash& res)
   {
-    if (t.version == 1)
+    if (t.version == TxVersion::plain)
       return false;
     transaction &tt = const_cast<transaction&>(t);
     std::stringstream ss;
@@ -871,7 +1031,7 @@ namespace cryptonote
     const size_t inputs = t.vin.size();
     const size_t outputs = t.vout.size();
     const size_t mixin = t.vin.empty() ? 0 : t.vin[0].type() == typeid(txin_to_key) ? boost::get<txin_to_key>(t.vin[0]).key_offsets.size() - 1 : 0;
-    bool r = tt.rct_signatures.p.serialize_rctsig_prunable(ba, t.rct_signatures.type, inputs, outputs, mixin);
+    bool r = tt.rct_signatures.p.serialize_rctsig_prunable(ba, t.rct_signatures.type, inputs, outputs, mixin, t.version);
     CHECK_AND_ASSERT_MES(r, false, "Failed to serialize rct signatures prunable");
     cryptonote::get_blob_hash(ss.str(), res);
     return true;
@@ -919,8 +1079,7 @@ namespace cryptonote
   bool calculate_transaction_hash(const transaction& t, crypto::hash& res, size_t* blob_size)
   {
     // v1 transactions hash the entire blob
-    if (t.version == 1)
-    {
+    if (t.version == TxVersion::plain) {
       size_t ignored_blob_size, &blob_size_ref = blob_size ? *blob_size : ignored_blob_size;
       return get_object_hash(t, res, blob_size_ref);
     }
@@ -931,7 +1090,7 @@ namespace cryptonote
     // prefix
     get_transaction_prefix_hash(t, hashes[0]);
 
-    transaction &tt = const_cast<transaction&>(t);
+    transaction &tt = const_cast<transaction &>(t);
 
     // base rct
     {
@@ -945,13 +1104,11 @@ namespace cryptonote
     }
 
     // prunable rct
-    if (t.rct_signatures.type == rct::RCTTypeNull)
-    {
+    if (rct::is_rct_null(t.rct_signatures.type)) {
       hashes[2] = crypto::null_hash;
-    }
-    else
-    {
-      CHECK_AND_ASSERT_MES(calculate_transaction_prunable_hash(t, hashes[2]), false, "Failed to get tx prunable hash");
+    } else {
+      CHECK_AND_ASSERT_MES(calculate_transaction_prunable_hash(t, hashes[2]), false,
+                           "Failed to get tx prunable hash");
     }
 
     // the tx hash is the hash of the 3 hashes

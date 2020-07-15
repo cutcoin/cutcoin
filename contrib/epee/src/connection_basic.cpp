@@ -2,7 +2,7 @@
 /// @author rfree (current maintainer in monero.cc project)
 /// @brief base for connection, contains e.g. the ratelimit hooks
 
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -35,50 +35,44 @@
 
 #include "net/connection_basic.hpp"
 
-#include <boost/asio.hpp>
-#include <string>
-#include <vector>
-#include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
-#include <atomic>
-
-#include <boost/asio.hpp>
-#include <boost/array.hpp>
-#include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
-#include <boost/enable_shared_from_this.hpp>
-#include <boost/interprocess/detail/atomic.hpp>
-#include <boost/thread/thread.hpp>
-
-#include <memory>
-
+#include "misc_language.h"
+#include "misc_log_ex.h"
+#include "net/abstract_tcp_server2.h"
+#include "net/net_utils_base.h"
+#include "pragma_comp_defs.h"
 #include "syncobj.h"
 
-#include "net/net_utils_base.h" 
-#include "misc_log_ex.h" 
-#include <boost/lambda/bind.hpp>
-#include <boost/lambda/lambda.hpp>
-#include <boost/uuid/random_generator.hpp>
-#include <boost/chrono.hpp>
-#include <boost/utility/value_init.hpp>
+// TODO:
+#include "net/network_throttle-detail.hpp"
+
+#include <boost/array.hpp>
+#include <boost/asio.hpp>
+#include <boost/asio/basic_socket.hpp>
 #include <boost/asio/deadline_timer.hpp>
+#include <boost/asio/ip/unicast.hpp>
+#include <boost/bind/bind.hpp>
+#include <boost/chrono.hpp>
 #include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/thread/thread.hpp>
+#include <boost/enable_shared_from_this.hpp>
 #include <boost/filesystem.hpp>
-#include "misc_language.h"
-#include "pragma_comp_defs.h"
+#include <boost/interprocess/detail/atomic.hpp>
+#include <boost/lambda/lambda.hpp>
+#include <boost/noncopyable.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/thread/thread.hpp>
+#include <boost/uuid/random_generator.hpp>
+#include <boost/utility/value_init.hpp>
+
+#include <string>
+#include <vector>
+#include <atomic>
+#include <memory>
 #include <fstream>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
 #include <mutex>
 
-#include <boost/asio/basic_socket.hpp>
-#include <boost/asio/ip/unicast.hpp>
-#include "net/abstract_tcp_server2.h"
-
-// TODO:
-#include "net/network_throttle-detail.hpp"
 
 #if BOOST_VERSION >= 107000
 #define GET_IO_SERVICE(s) ((boost::asio::io_context&)(s).get_executor().context())

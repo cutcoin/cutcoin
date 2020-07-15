@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -85,6 +85,23 @@ struct variant_reader
     }
     return true;
   }
+
+  template<typename P>
+  static inline bool read(Archive &ar, Variant &v, variant_tag_type t, P &p)
+  {
+    if(variant_serialization_traits<Archive, current_type>::get_tag() == t) {
+      current_type x;
+      if(!::do_serialize(ar, x, p))
+      {
+        ar.stream().setstate(std::ios::failbit);
+        return false;
+      }
+      v = x;
+    } else {
+      return variant_reader<Archive, Variant, TNext, TEnd>::template read<P>(ar, v, t, p);
+    }
+    return true;
+  }
 };
 
 // This one just fails when you call it.... okay
@@ -99,8 +116,14 @@ struct variant_reader<Archive, Variant, TBegin, TBegin>
     ar.stream().setstate(std::ios::failbit);
     return false;
   }
-};
 
+  template<typename P>
+  static inline bool read(Archive &ar, Variant &v, variant_tag_type t, P &p)
+  {
+    ar.stream().setstate(std::ios::failbit);
+    return false;
+  }
+};
 
 template <template <bool> class Archive, BOOST_VARIANT_ENUM_PARAMS(typename T)>
 struct serializer<Archive<false>, boost::variant<BOOST_VARIANT_ENUM_PARAMS(T)>>
@@ -116,6 +139,22 @@ struct serializer<Archive<false>, boost::variant<BOOST_VARIANT_ENUM_PARAMS(T)>>
     if(!variant_reader<Archive<false>, variant_type,
        typename boost::mpl::begin<types>::type,
        typename boost::mpl::end<types>::type>::read(ar, v, t))
+    {
+      ar.stream().setstate(std::ios::failbit);
+      return false;
+    }
+    ar.end_variant();
+    return true;
+  }
+
+  template <typename P>
+  static bool serialize(Archive<false> &ar, variant_type &v, P &p) {
+    variant_tag_type t;
+    ar.begin_variant();
+    ar.read_variant_tag(t);
+    if(!variant_reader<Archive<false>, variant_type,
+      typename boost::mpl::begin<types>::type,
+      typename boost::mpl::end<types>::type>::read(ar, v, t, p))
     {
       ar.stream().setstate(std::ios::failbit);
       return false;
@@ -152,7 +191,34 @@ struct serializer<Archive<true>, boost::variant<BOOST_VARIANT_ENUM_PARAMS(T)>>
     }
   };
 
+  template <typename P>
+  struct pvisitor: public boost::static_visitor<bool> {
+    Archive<true> &ar;
+    P &param;
+
+    pvisitor(Archive<true> &a, P &p) : ar(a), param(p) { }
+
+    template <class T>
+    bool operator ()(T &rv) const
+    {
+      ar.begin_variant();
+      ar.write_variant_tag(variant_serialization_traits<Archive<true>, T>::get_tag());
+      if(!::do_serialize(ar, rv, param))
+      {
+        ar.stream().setstate(std::ios::failbit);
+        return false;
+      }
+      ar.end_variant();
+      return true;
+    }
+  };
+
   static bool serialize(Archive<true> &ar, variant_type &v) {
     return boost::apply_visitor(visitor(ar), v);
+  }
+
+  template <typename P>
+  static bool serialize(Archive<true> &ar, variant_type &v, P &p) {
+    return boost::apply_visitor(pvisitor<P>(ar, p), v);
   }
 };

@@ -35,18 +35,9 @@
 #ifndef _ABSTRACT_TCP_SERVER2_H_ 
 #define _ABSTRACT_TCP_SERVER2_H_ 
 
-
-#include <boost/asio.hpp>
-#include <string>
-#include <vector>
-#include <boost/noncopyable.hpp>
-#include <boost/shared_ptr.hpp>
-#include <atomic>
-#include <map>
-#include <memory>
-
 #include <boost/asio.hpp>
 #include <boost/array.hpp>
+#include <boost/bind/bind.hpp>
 #include <boost/noncopyable.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/enable_shared_from_this.hpp>
@@ -56,6 +47,12 @@
 #include "syncobj.h"
 #include "connection_basic.hpp"
 #include "network_throttle-detail.hpp"
+
+#include <atomic>
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net"
@@ -311,8 +308,8 @@ namespace net_utils
 
     std::atomic<bool> m_stop_signal_sent;
     uint32_t m_port;
-	std::atomic<long> m_sock_count;
-	std::atomic<long> m_sock_number;
+	  std::atomic<long> m_sock_count;
+	  std::atomic<long> m_sock_number;
     std::string m_address;
     std::string m_thread_name_prefix; //TODO: change to enum server_type, now used
     size_t m_threads_count;

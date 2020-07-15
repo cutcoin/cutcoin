@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -78,7 +78,7 @@ int ColdOutputsFuzzer::run(const std::string &filename)
   s = std::string("\x01\x16serialization::archive") + s;
   try
   {
-    std::vector<tools::wallet2::transfer_details> outputs;
+    std::vector<tools::transfer_details> outputs;
     std::stringstream iss;
     iss << s;
     boost::archive::portable_binary_iarchive ar(iss);

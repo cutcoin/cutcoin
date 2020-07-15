@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -66,7 +66,7 @@ private:
 
     int  m_status;
     std::string m_errorString;
-    std::vector<tools::wallet2::pending_tx> m_pending_tx;
+    std::vector<tools::pending_tx> m_pending_tx;
     std::unordered_set<crypto::public_key> m_signers;
 };
 

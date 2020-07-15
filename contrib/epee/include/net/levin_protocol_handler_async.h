@@ -31,15 +31,15 @@
 #include <boost/interprocess/detail/atomic.hpp>
 #include <boost/smart_ptr/make_shared.hpp>
 
-#include <atomic>
-
 #include "levin_base.h"
 #include "misc_language.h"
 #include "syncobj.h"
 #include "misc_os_dependent.h"
 
-#include <random>
+#include <atomic>
 #include <chrono>
+#include <functional>
+#include <random>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "net"
@@ -348,7 +348,7 @@ public:
   void request_callback()
   {
     misc_utils::auto_scope_leave_caller scope_exit_handler = misc_utils::create_scope_leave_handler(
-      boost::bind(&async_protocol_handler::finish_outer_call, this));
+      std::bind(&async_protocol_handler::finish_outer_call, this));
 
     m_pservice_endpoint->request_callback();
   }
@@ -541,7 +541,7 @@ public:
   bool async_invoke(int command, const std::string& in_buff, const callback_t &cb, size_t timeout = LEVIN_DEFAULT_TIMEOUT_PRECONFIGURED)
   {
     misc_utils::auto_scope_leave_caller scope_exit_handler = misc_utils::create_scope_leave_handler(
-      boost::bind(&async_protocol_handler::finish_outer_call, this));
+      std::bind(&async_protocol_handler::finish_outer_call, this));
 
     if(timeout == LEVIN_DEFAULT_TIMEOUT_PRECONFIGURED)
       timeout = m_config.m_invoke_timeout;
@@ -611,7 +611,7 @@ public:
   int invoke(int command, const std::string& in_buff, std::string& buff_out)
   {
     misc_utils::auto_scope_leave_caller scope_exit_handler = misc_utils::create_scope_leave_handler(
-                                      boost::bind(&async_protocol_handler::finish_outer_call, this));
+                                      std::bind(&async_protocol_handler::finish_outer_call, this));
 
     if(m_deletion_initiated)
       return LEVIN_ERROR_CONNECTION_DESTROYED;
@@ -685,7 +685,7 @@ public:
   int notify(int command, const std::string& in_buff)
   {
     misc_utils::auto_scope_leave_caller scope_exit_handler = misc_utils::create_scope_leave_handler(
-                          boost::bind(&async_protocol_handler::finish_outer_call, this));
+                          std::bind(&async_protocol_handler::finish_outer_call, this));
 
     if(m_deletion_initiated)
       return LEVIN_ERROR_CONNECTION_DESTROYED;

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -31,16 +31,19 @@
 
 #pragma once
 
-#include <list>
-#include <string>
-#include <exception>
-#include <boost/program_options.hpp>
 #include "common/command_line.h"
 #include "crypto/hash.h"
 #include "cryptonote_basic/blobdatatype.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/difficulty.h"
 #include "cryptonote_basic/hardfork.h"
+#include "cryptonote_basic/token.h"
+
+#include <boost/program_options.hpp>
+
+#include <exception>
+#include <list>
+#include <string>
 
 /** \file
  * Cryptonote Blockchain Database Interface
@@ -825,7 +828,7 @@ public:
    *
    * @return the block requested
    */
-  virtual cryptonote::blobdata get_block_blob(const crypto::hash& h) const = 0;
+  virtual blobdata get_block_blob(const crypto::hash& h) const = 0;
 
   /**
    * @brief fetches the block with the given hash
@@ -879,7 +882,7 @@ public:
    *
    * @return the block blob
    */
-  virtual cryptonote::blobdata get_block_blob_from_height(const uint64_t& height) const = 0;
+  virtual blobdata get_block_blob_from_height(const uint64_t& height) const = 0;
 
   /**
    * @brief fetch a block by height
@@ -1152,7 +1155,7 @@ public:
    *
    * @return true iff the transaction was found
    */
-  virtual bool get_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const = 0;
+  virtual bool get_tx_blob(const crypto::hash& h, blobdata &tx) const = 0;
 
   /**
    * @brief fetches the pruned transaction blob with the given hash
@@ -1166,7 +1169,7 @@ public:
    *
    * @return true iff the transaction was found
    */
-  virtual bool get_pruned_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const = 0;
+  virtual bool get_pruned_tx_blob(const crypto::hash& h, blobdata &tx) const = 0;
 
   /**
    * @brief fetches the prunable transaction hash
@@ -1223,21 +1226,18 @@ public:
    */
   virtual uint64_t get_tx_block_height(const crypto::hash& h) const = 0;
 
-  // returns the total number of outputs of amount <amount>
+  // returns the total number of outputs of token <token>
   /**
-   * @brief fetches the number of outputs of a given amount
+   * @brief fetches the number of outputs of a given token
    *
-   * The subclass should return a count of outputs of the given amount,
+   * The subclass should return a count of outputs of the given token,
    * or zero if there are none.
    *
-   * <!-- TODO: should outputs spent with a low mixin (especially 0) be
-   * excluded from the count? -->
-   *
-   * @param amount the output amount being looked up
+   * @param token_id the output 'token_id' being looked up
    *
    * @return the number of outputs of the given amount
    */
-  virtual uint64_t get_num_outputs(const uint64_t& amount) const = 0;
+  virtual uint64_t get_num_outputs(const TokenId &token_id) const = 0;
 
   /**
    * @brief return index of the first element (should be hidden, but isn't)
@@ -1250,19 +1250,19 @@ public:
    * @brief get some of an output's data
    *
    * The subclass should return the public key, unlock time, and block height
-   * for the output with the given amount and index, collected in a struct.
+   * for the output with the given 'token_id' and index, collected in a struct.
    *
    * If the output cannot be found, the subclass should throw OUTPUT_DNE.
    *
    * If any of these parts cannot be found, but some are, the subclass
    * should throw DB_ERROR with a message stating as much.
    *
-   * @param amount the output amount
-   * @param index the output's index (indexed by amount)
+   * @param token_id the output 'token_id'
+   * @param index the output's index (indexed by 'token_id')
    *
    * @return the requested output data
    */
-  virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index) = 0;
+  virtual output_data_t get_output_key(const TokenId &token_id, const uint64_t& index) = 0;
 
   /**
    * @brief gets an output's tx hash and index
@@ -1283,25 +1283,25 @@ public:
    * output with the amount and index given, as well as its index in that
    * transaction.
    *
-   * @param amount an output amount
+   * @param token_id an output 'token_id'
    * @param index an output's amount-specific index
    *
    * @return the tx hash and output index
    */
-  virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const = 0;
+  virtual tx_out_index get_output_tx_and_index(const TokenId &token_id, const uint64_t& index) const = 0;
 
   /**
    * @brief gets some outputs' tx hashes and indices
    *
    * This function is a mirror of
-   * get_output_tx_and_index(const uint64_t& amount, const uint64_t& index),
+   * get_output_tx_and_index(const TokenId &token_id, const uint64_t& index),
    * but for a list of outputs rather than just one.
    *
-   * @param amount an output amount
-   * @param offsets a list of amount-specific output indices
+   * @param token_id an output 'token_id'
+   * @param offsets a list of token_id-specific output indices
    * @param indices return-by-reference a list of tx hashes and output indices (as pairs)
    */
-  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const = 0;
+  virtual void get_output_tx_and_index(const TokenId &token_id, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const = 0;
 
   /**
    * @brief gets outputs' data
@@ -1310,11 +1310,11 @@ public:
    * get_output_data(const uint64_t& amount, const uint64_t& index)
    * but for a list of outputs rather than just one.
    *
-   * @param amount an output amount
-   * @param offsets a list of amount-specific output indices
+   * @param token_id an output 'token_id'
+   * @param offsets a list of token_id-specific output indices
    * @param outputs return-by-reference a list of outputs' metadata
    */
-  virtual void get_output_key(const uint64_t &amount, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) = 0;
+  virtual void get_output_key(const TokenId &token_id, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) = 0;
 
   /*
    * FIXME: Need to check with git blame and ask what this does to
@@ -1397,7 +1397,7 @@ public:
    *
    * @return true if the txid was in the txpool, false otherwise
    */
-  virtual bool get_txpool_tx_blob(const crypto::hash& txid, cryptonote::blobdata &bd) const = 0;
+  virtual bool get_txpool_tx_blob(const crypto::hash& txid, blobdata &bd) const = 0;
 
   /**
    * @brief get a txpool transaction's blob
@@ -1406,7 +1406,7 @@ public:
    *
    * @return the blob for that transaction
    */
-  virtual cryptonote::blobdata get_txpool_tx_blob(const crypto::hash& txid) const = 0;
+  virtual blobdata get_txpool_tx_blob(const crypto::hash& txid) const = 0;
 
   /**
    * @brief runs a function over all txpool transactions
@@ -1421,7 +1421,7 @@ public:
    *
    * @return false if the function returns false for any transaction, otherwise true
    */
-  virtual bool for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const cryptonote::blobdata*)>, bool include_blob = false, bool include_unrelayed_txes = true) const = 0;
+  virtual bool for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const blobdata*)>, bool include_blob = false, bool include_unrelayed_txes = true) const = 0;
 
   /**
    * @brief runs a function over all key images stored
@@ -1456,7 +1456,7 @@ public:
    *
    * @return false if the function returns false for any block, otherwise true
    */
-  virtual bool for_blocks_range(const uint64_t& h1, const uint64_t& h2, std::function<bool(uint64_t, const crypto::hash&, const cryptonote::block&)>) const = 0;
+  virtual bool for_blocks_range(const uint64_t& h1, const uint64_t& h2, std::function<bool(uint64_t, const crypto::hash&, const block&)>) const = 0;
 
   /**
    * @brief runs a function over all transactions stored
@@ -1475,7 +1475,7 @@ public:
    *
    * @return false if the function returns false for any transaction, otherwise true
    */
-  virtual bool for_all_transactions(std::function<bool(const crypto::hash&, const cryptonote::transaction&)>, bool pruned) const = 0;
+  virtual bool for_all_transactions(std::function<bool(const crypto::hash&, const transaction&)>, bool pruned) const = 0;
 
   /**
    * @brief runs a function over all outputs stored
@@ -1495,7 +1495,7 @@ public:
    * @return false if the function returns false for any output, otherwise true
    */
   virtual bool for_all_outputs(std::function<bool(uint64_t amount, const crypto::hash &tx_hash, uint64_t height, size_t tx_idx)> f) const = 0;
-  virtual bool for_all_outputs(uint64_t amount, const std::function<bool(uint64_t height)> &f) const = 0;
+  virtual bool for_all_outputs(TokenId token_id, const std::function<bool(uint64_t height)> &f) const = 0;
 
 
 
@@ -1533,6 +1533,7 @@ public:
   /**
    * @brief return a histogram of outputs on the blockchain
    *
+   * @param token_id 'token id' to get a histogram for
    * @param amounts optional set of amounts to lookup
    * @param unlocked whether to restrict count to unlocked outputs
    * @param recent_cutoff timestamp to determine whether an output is recent
@@ -1540,9 +1541,44 @@ public:
    *
    * @return a set of amount/instances
    */
-  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count) const = 0;
+  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
+                                                                     const TokenId               &token_id,
+                                                                     const std::vector<uint64_t> &amounts,
+                                                                     bool                         unlocked,
+                                                                     uint64_t                     recent_cutoff,
+                                                                     uint64_t                     min_count) const = 0;
 
-  virtual bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const = 0;
+  /**
+   * @brief returnoutput distribution
+   *
+   * @param token_id 'token id' to get a distribution for
+   * @param amount the amount to get a distribution for
+   * @param from_height the height before which we do not care about the data
+   * @param to_height the height after which we do not care about the data
+   * @param return-by-reference distribution the start offset of the first rct output in this block (same as previous if none)
+   * @param return-by-reference base how many outputs of that amount are before the stated distribution
+   * @return true on success
+   */
+  virtual bool get_output_distribution(const TokenId             &token_id,
+                                       uint64_t                   from_height,
+                                       uint64_t                   to_height,
+                                       std::vector<uint64_t>     &distribution,
+                                       uint64_t                  &base) const = 0;
+  /**
+   * @brief check if outputs with given token_id exist
+   *
+   * @param token_id token id to check
+   * @return true on success
+   */
+  virtual bool has_outputs_with_token_id(const TokenId &token_id) const = 0;
+
+  /**
+   * @brief return all tokens on the blockchain
+   *
+   * @param tokens returned token ids list
+   * @return void
+   */
+  virtual void get_all_tokens(std::vector<TokenId> &tokens) const = 0;
 
   /**
    * @brief is BlockchainDB in read-only mode?

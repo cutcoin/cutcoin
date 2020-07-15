@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -80,7 +80,7 @@ bool gen_v2_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
   }
 
   // create a tx with the Nth outputs of miner's block reward
-  std::vector<tx_source_entry> sources;
+  tx_sources sources;
   for (size_t out_idx_idx = 0; out_idx[out_idx_idx] >= 0; ++out_idx_idx) {
     sources.resize(sources.size()+1);
     tx_source_entry& src = sources.back();

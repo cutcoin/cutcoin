@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016-2018, The Monero Project
 // 
 // All rights reserved.
@@ -34,6 +34,7 @@
 #include "rpc/message_data_structs.h"
 #include "rpc/daemon_rpc_version.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_basic/token.h"
 
 #define BEGIN_RPC_MESSAGE_CLASS(classname) \
 class classname \
@@ -396,6 +397,7 @@ END_RPC_MESSAGE_CLASS;
 
 BEGIN_RPC_MESSAGE_CLASS(GetOutputHistogram);
   BEGIN_RPC_MESSAGE_REQUEST;
+    RPC_MESSAGE_MEMBER(cryptonote::TokenId, token_id);
     RPC_MESSAGE_MEMBER(std::vector<uint64_t>, amounts);
     RPC_MESSAGE_MEMBER(uint64_t, min_count);
     RPC_MESSAGE_MEMBER(uint64_t, max_count);
@@ -409,7 +411,7 @@ END_RPC_MESSAGE_CLASS;
 
 BEGIN_RPC_MESSAGE_CLASS(GetOutputKeys);
   BEGIN_RPC_MESSAGE_REQUEST;
-    RPC_MESSAGE_MEMBER(std::vector<output_amount_and_index>, outputs);
+    RPC_MESSAGE_MEMBER(std::vector<output_token_id_and_index>, outputs);
   END_RPC_MESSAGE_REQUEST;
   BEGIN_RPC_MESSAGE_RESPONSE;
     RPC_MESSAGE_MEMBER(std::vector<output_key_mask_unlocked>, keys);

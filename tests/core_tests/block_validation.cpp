@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -341,7 +341,7 @@ bool gen_block_miner_tx_has_2_in::generate(std::vector<test_event_entry>& events
   se.rct = false;
   se.real_out_tx_key = get_tx_pub_key_from_extra(blk_0.miner_tx);
   se.real_output_in_tx_index = 0;
-  std::vector<tx_source_entry> sources;
+  tx_sources sources;
   sources.push_back(se);
 
   tx_destination_entry de;
@@ -384,7 +384,7 @@ bool gen_block_miner_tx_with_txin_to_key::generate(std::vector<test_event_entry>
   se.rct = false;
   se.real_out_tx_key = get_tx_pub_key_from_extra(blk_1.miner_tx);
   se.real_output_in_tx_index = 0;
-  std::vector<tx_source_entry> sources;
+  tx_sources sources;
   sources.push_back(se);
 
   tx_destination_entry de;

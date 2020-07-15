@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -29,10 +29,6 @@
 //
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include "include_base_utils.h"
-
-using namespace epee;
-
 #include "checkpoints.h"
 
 #include "common/dns_utils.h"
@@ -40,6 +36,8 @@ using namespace epee;
 #include "string_tools.h"
 #include "storages/portable_storage_template_helper.h" // epee json include
 #include "serialization/keyvalue_serialization.h"
+
+#include <functional>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "checkpoints"
@@ -136,11 +134,10 @@ namespace cryptonote
   //---------------------------------------------------------------------------
   uint64_t checkpoints::get_max_height() const
   {
-    std::map< uint64_t, crypto::hash >::const_iterator highest =
-        std::max_element( m_points.begin(), m_points.end(),
-                         ( boost::bind(&std::map< uint64_t, crypto::hash >::value_type::first, _1) <
-                           boost::bind(&std::map< uint64_t, crypto::hash >::value_type::first, _2 ) ) );
-    return highest->first;
+    if (m_points.empty()) {
+      return 0;
+    }
+    return m_points.rbegin()->first;
   }
   //---------------------------------------------------------------------------
   const std::map<uint64_t, crypto::hash>& checkpoints::get_points() const
@@ -215,23 +212,23 @@ namespace cryptonote
   {
     std::vector<std::string> records;
 
-    // All four MoneroPulse domains have DNSSEC on and valid
-    static const std::vector<std::string> dns_urls = { "checkpoints.moneropulse.se"
-						     , "checkpoints.moneropulse.org"
-						     , "checkpoints.moneropulse.net"
-						     , "checkpoints.moneropulse.co"
+    // All four CutcoinPulse domains have DNSSEC on and valid
+    static const std::vector<std::string> dns_urls = { "checkpoints.cutcoinpulse.se"
+						     , "checkpoints.cutcoinpulse.org"
+						     , "checkpoints.cutcoinpulse.net"
+						     , "checkpoints.cutcoinpulse.co"
     };
 
-    static const std::vector<std::string> testnet_dns_urls = { "testpoints.moneropulse.se"
-							     , "testpoints.moneropulse.org"
-							     , "testpoints.moneropulse.net"
-							     , "testpoints.moneropulse.co"
+    static const std::vector<std::string> testnet_dns_urls = { "testpoints.cutcoinpulse.se"
+							     , "testpoints.cutcoinpulse.org"
+							     , "testpoints.cutcoinpulse.net"
+							     , "testpoints.cutcoinpulse.co"
     };
 
-    static const std::vector<std::string> stagenet_dns_urls = { "stagenetpoints.moneropulse.se"
-                   , "stagenetpoints.moneropulse.org"
-                   , "stagenetpoints.moneropulse.net"
-                   , "stagenetpoints.moneropulse.co"
+    static const std::vector<std::string> stagenet_dns_urls = { "stagenetpoints.cutcoinpulse.se"
+                   , "stagenetpoints.cutcoinpulse.org"
+                   , "stagenetpoints.cutcoinpulse.net"
+                   , "stagenetpoints.cutcoinpulse.co"
     };
 
     if (!tools::dns_utils::load_txt_records_from_dns(records, nettype == TESTNET ? testnet_dns_urls : nettype == STAGENET ? stagenet_dns_urls : dns_urls))

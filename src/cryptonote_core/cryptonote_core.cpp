@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -107,8 +107,9 @@ namespace cryptonote
   , "Do not listen for peers, nor connect to any"
   };
   const command_line::arg_descriptor<bool> arg_disable_dns_checkpoints = {
-    "disable-dns-checkpoints"
-  , "Do not retrieve checkpoints from DNS"
+    "disable-dns-checkpoints",
+    "Do not retrieve checkpoints from DNS",
+    true
   };
 
   static const command_line::arg_descriptor<bool> arg_test_drop_download = {
@@ -688,7 +689,6 @@ namespace cryptonote
       tvc.m_verifivation_failed = true;
       return false;
     }
-    //std::cout << "!"<< tx.vin.size() << std::endl;
 
     bad_semantics_txes_lock.lock();
     for (int idx = 0; idx < 2; ++idx)
@@ -704,10 +704,9 @@ namespace cryptonote
     bad_semantics_txes_lock.unlock();
 
     uint8_t version = m_blockchain_storage.get_current_hard_fork_version();
-    const size_t max_tx_version = version == 1 ? 1 : 2;
-    if (tx.version == 0 || tx.version > max_tx_version)
-    {
-      // v2 is the latest one we know
+    const TxVersion max_tx_version = (version == HF_VERSION_ORIGINAL ? TxVersion::plain : TxVersion::tokens);
+    if (tx.version == TxVersion::none || tx.version > max_tx_version) {
+      LOG_PRINT_L1("Transaction has version " << tx.version << " that is not allowed");
       tvc.m_verifivation_failed = true;
       return false;
     }
@@ -750,6 +749,19 @@ namespace cryptonote
     return true;
   }
   //-----------------------------------------------------------------------------------------------
+  static bool is_canonical_big_bulletproof_layout(const std::vector<rct::BigBulletproof> &proofs)
+  {
+    if (proofs.size() != 1)
+      return false;
+
+    for (const auto &v: proofs[0].V) {
+      const size_t sz = v.size();
+      if (sz == 0 || sz > BULLETPROOF_MAX_OUTPUTS)
+        return false;
+    }
+    return true;
+  }
+  //-----------------------------------------------------------------------------------------------
   bool core::handle_incoming_tx_accumulated_batch(std::vector<tx_verification_batch_info> &tx_info, bool keeped_by_block)
   {
     bool ret = true;
@@ -760,6 +772,7 @@ namespace cryptonote
     }
 
     std::vector<const rct::rctSig*> rvv;
+    std::vector<const rct::rctSig*> rvvb;
     for (size_t n = 0; n < tx_info.size(); ++n)
     {
       if (!check_tx_semantic(*tx_info[n].tx, keeped_by_block))
@@ -774,14 +787,14 @@ namespace cryptonote
         continue;
       const rct::rctSig &rv = tx_info[n].tx->rct_signatures;
       switch (rv.type) {
-        case rct::RCTTypeNull:
+        case (uint8_t)rct::RctType::RCTTypeNull:
           // coinbase should not come here, so we reject for all other types
           MERROR_VER("Unexpected Null rctSig type");
           set_semantics_failed(tx_info[n].tx_hash);
           tx_info[n].tvc.m_verifivation_failed = true;
           tx_info[n].result = false;
           break;
-        case rct::RCTTypeSimple:
+        case (uint8_t)rct::RctType::RCTTypeSimple:
           if (!rct::verRctSemanticsSimple(rv))
           {
             MERROR_VER("rct signature semantics check failed");
@@ -791,7 +804,7 @@ namespace cryptonote
             break;
           }
           break;
-        case rct::RCTTypeFull:
+        case (uint8_t)rct::RctType::RCTTypeFull:
           if (!rct::verRct(rv, true))
           {
             MERROR_VER("rct signature semantics check failed");
@@ -801,7 +814,7 @@ namespace cryptonote
             break;
           }
           break;
-        case rct::RCTTypeBulletproof:
+        case (uint8_t)rct::RctType::RCTTypeBulletproof:
           if (!is_canonical_bulletproof_layout(rv.p.bulletproofs))
           {
             MERROR_VER("Bulletproof does not have canonical form");
@@ -811,6 +824,17 @@ namespace cryptonote
             break;
           }
           rvv.push_back(&rv); // delayed batch verification
+          break;
+        case (uint8_t)rct::RctType::RCTTypeBigBulletproof:
+          if (!is_canonical_big_bulletproof_layout(rv.p.bigBulletproofs))
+          {
+            MERROR_VER("Bulletproof does not have canonical form");
+            set_semantics_failed(tx_info[n].tx_hash);
+            tx_info[n].tvc.m_verifivation_failed = true;
+            tx_info[n].result = false;
+            break;
+          }
+          rvvb.push_back(&rv); // delayed batch verification
           break;
         default:
           MERROR_VER("Unknown rct type: " << rv.type);
@@ -829,7 +853,7 @@ namespace cryptonote
       {
         if (!tx_info[n].result)
           continue;
-        if (tx_info[n].tx->rct_signatures.type != rct::RCTTypeBulletproof)
+        if (tx_info[n].tx->rct_signatures.type != rct::RctType::RCTTypeBulletproof)
           continue;
         if (assumed_bad || !rct::verRctSemanticsSimple(tx_info[n].tx->rct_signatures))
         {
@@ -838,6 +862,26 @@ namespace cryptonote
           tx_info[n].result = false;
         }
       }
+    }
+
+    if (!rvvb.empty() && !rct::verRctSemanticsSimpleBig(rvvb))
+    {
+      LOG_PRINT_L1("One transaction among this group has bad semantics, verifying one at a time");
+      ret = false;
+      const bool assumed_bad = rvv.size() == 1; // if there's only one tx, it must be the bad one
+//      for (size_t n = 0; n < tx_info.size(); ++n)
+//      {
+//        if (!tx_info[n].result)
+//          continue;
+//        if (tx_info[n].tx->rct_signatures.type != rct::RCTTypeBigBulletproof)
+//          continue;
+//        if (assumed_bad || !rct::verRctSemanticsSimpleBig(tx_info[n].tx->rct_signatures))
+//        {
+//          set_semantics_failed(tx_info[n].tx_hash);
+//          tx_info[n].tvc.m_verifivation_failed = true;
+//          tx_info[n].result = false;
+//        }
+//      }
     }
 
     return ret;
@@ -977,7 +1021,7 @@ namespace cryptonote
       MERROR_VER("tx with invalid outputs, rejected for tx id= " << get_transaction_hash(tx));
       return false;
     }
-    if (tx.version > 1)
+    if (tx.version > TxVersion::plain)
     {
       if (tx.rct_signatures.outPk.size() != tx.vout.size())
       {
@@ -992,7 +1036,7 @@ namespace cryptonote
       return false;
     }
 
-    if (tx.version == 1)
+    if (tx.version == TxVersion::plain)
     {
       uint64_t amount_in = 0;
       get_inputs_money_amount(tx, amount_in);
@@ -1096,11 +1140,11 @@ namespace cryptonote
   //-----------------------------------------------------------------------------------------------
   bool core::check_tx_inputs_keyimages_diff(const transaction& tx) const
   {
-    std::unordered_set<crypto::key_image> ki;
+    std::map<cryptonote::TokenId, std::unordered_set<crypto::key_image>> ki;
     for(const auto& in: tx.vin)
     {
       CHECKED_GET_SPECIFIC_VARIANT(in, const txin_to_key, tokey_in, false);
-      if(!ki.insert(tokey_in.k_image).second)
+      if(!ki[tokey_in.token_id].insert(tokey_in.k_image).second)
         return false;
     }
     return true;
@@ -1233,9 +1277,24 @@ namespace cryptonote
     return m_blockchain_storage.get_outs(req, res);
   }
   //-----------------------------------------------------------------------------------------------
-  bool core::get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const
+  bool core::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res) const
   {
-    return m_blockchain_storage.get_output_distribution(amount, from_height, to_height, start_height, distribution, base);
+    return m_blockchain_storage.get_tokens(req, res);
+  }
+  //-----------------------------------------------------------------------------------------------
+  bool core::get_output_distribution(cryptonote::TokenId    token_id,
+                                     uint64_t               from_height,
+                                     uint64_t               to_height,
+                                     uint64_t              &start_height,
+                                     std::vector<uint64_t> &distribution,
+                                     uint64_t              &base) const
+  {
+    return m_blockchain_storage.get_output_distribution(token_id,
+                                                        from_height,
+                                                        to_height,
+                                                        start_height,
+                                                        distribution,
+                                                        base);
   }
   //-----------------------------------------------------------------------------------------------
   bool core::get_tx_outputs_gindexs(const crypto::hash& tx_id, std::vector<uint64_t>& indexs) const

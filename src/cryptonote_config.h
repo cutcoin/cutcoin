@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -31,22 +31,25 @@
 
 #pragma once
 
-#include <string>
 #include <boost/uuid/uuid.hpp>
+
+#include <stdexcept>
+#include <string>
 
 #define CRYPTONOTE_DNS_TIMEOUT_MS                       20000
 
 #define CRYPTONOTE_MAX_BLOCK_NUMBER                     500000000
 #define CRYPTONOTE_MAX_BLOCK_SIZE                       500000000  // block header blob limit, never used!
-#define CRYPTONOTE_GETBLOCKTEMPLATE_MAX_BLOCK_SIZE	196608 //size of block (bytes) that is the maximum that miners will produce
+#define CRYPTONOTE_GETBLOCKTEMPLATE_MAX_BLOCK_SIZE	    196608 //size of block (bytes) that is the maximum that miners will produce
 #define CRYPTONOTE_MAX_TX_SIZE                          1000000000
 #define CRYPTONOTE_PUBLIC_ADDRESS_TEXTBLOB_VER          0
 #define CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW            60
-#define CURRENT_TRANSACTION_VERSION                     2
+#define CURRENT_TRANSACTION_VERSION                     3
 #define CURRENT_BLOCK_MAJOR_VERSION                     1
 #define CURRENT_BLOCK_MINOR_VERSION                     0
 #define CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT              30
 #define CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE             10
+#define DEFAULT_MIX                                     10
 
 #define BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW               1
 
@@ -136,6 +139,7 @@
 
 #define THREAD_STACK_SIZE                       5 * 1024 * 1024
 
+#define HF_VERSION_ORIGINAL                     1
 #define HF_VERSION_DYNAMIC_FEE                  4
 #define HF_VERSION_MIN_MIXIN_4                  6
 #define HF_VERSION_MIN_MIXIN_6                  7
@@ -143,6 +147,7 @@
 #define HF_VERSION_ENFORCE_RCT                  6
 #define HF_VERSION_PER_BYTE_FEE                 8
 #define HF_VERSION_POS                         10
+#define HF_VERSION_TOKENS                      11
 
 #define PER_KB_FEE_QUANTIZATION_DECIMALS        8
 
@@ -173,6 +178,10 @@ namespace config
     } };
   std::string const GENESIS_TX = "023c01ff0001808090f89bf986470268d8134071036318f254d6c05b600bea85608b5347029eaf5218b074843ecf3f210183617f51102b3544f2aec3e7d7fd13a1f81f185ebc9903fd08d67673227afe8e00";
   uint32_t const GENESIS_NONCE = 42;
+
+  uint64_t const TOKEN_GENESIS_AMOUNT = 100 * COIN;
+
+  uint64_t const TOKEN_UNLOCK_TIME = CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
 
   namespace testnet
   {

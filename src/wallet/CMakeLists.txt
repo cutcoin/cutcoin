@@ -33,16 +33,21 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
 set(wallet_sources
   account_view.cpp
-  wallet2.cpp
-  wallet_args.cpp
+  node_rpc_proxy.cpp
   ringdb.cpp
-  node_rpc_proxy.cpp)
+  wallet2.cpp
+  wallet_args.cpp)
 
 set(wallet_private_headers
   account_view.h
+  confirmed_transfer_details.h
+  multisig_tx_set.h
+  node_rpc_proxy.h
+  payment_details.h
   pending_tx.h
-  transfer_container.h
+  ringdb.h
   transfer_details.h
+  tx_construction_data.h
   tx_creation_context.h
   unconfirmed_transfer_details.h
   wallet2.h
@@ -50,9 +55,7 @@ set(wallet_private_headers
   wallet_errors.h
   wallet_rpc_server.h
   wallet_rpc_server_commands_defs.h
-  wallet_rpc_server_error_codes.h
-  ringdb.h
-  node_rpc_proxy.h)
+  wallet_rpc_server_error_codes.h)
 
 cutcoin_private_headers(wallet
   ${wallet_private_headers})

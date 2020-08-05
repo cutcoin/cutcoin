@@ -1198,7 +1198,9 @@ void BlockchainLMDB::open(const std::string& filename, const int db_flags)
       || boost::filesystem::exists(old_files / CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME))
   {
     LOG_PRINT_L0("Found existing LMDB files in " << old_files.string());
-    LOG_PRINT_L0("Move " << CRYPTONOTE_BLOCKCHAINDATA_FILENAME << " and/or " << CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME << " to " << filename << ", or delete them, and then restart");
+    LOG_PRINT_L0("Move " << CRYPTONOTE_BLOCKCHAINDATA_FILENAME
+                 << " and/or " << CRYPTONOTE_BLOCKCHAINDATA_LOCK_FILENAME
+                 << " to " << filename << ", or delete them, and then restart");
     throw DB_ERROR("Database could not be opened");
   }
 
@@ -1206,7 +1208,9 @@ void BlockchainLMDB::open(const std::string& filename, const int db_flags)
   if (is_hdd_result)
   {
     if (is_hdd_result.value())
-        MCLOG_RED(el::Level::Warning, "global", "The blockchain is on a rotating drive: this will be very slow, use a SSD if possible");
+        MCLOG_RED(el::Level::Warning,
+                  "global",
+                  "The blockchain is on a rotating drive: this will be very slow, use a SSD if possible");
   }
 
   m_folder = filename;

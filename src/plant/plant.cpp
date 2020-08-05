@@ -42,7 +42,6 @@
 #include <rpc/core_rpc_server_commands_defs.h>
 #include <storages/http_abstract_invoke.h>
 #include <string_tools.h>
-#include <wallet/transfer_container.h>
 #include <wallet/transfer_details.h>
 #include <wallet/wallet2.h>
 

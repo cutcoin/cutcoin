@@ -1,4 +1,11 @@
 
+###Release v 3.0.3
+* Repair multisignature transactions (for Cutcoins)
+* Fix multiple printing / formatting issues on token payments
+* Repair input/export blockchain utils
+* Add asking about fees when sanding tokens
+* Add token commands to RPC server
+
 ###Release v 3.0.2
 
 * Fix problems with boost 1.7+ build

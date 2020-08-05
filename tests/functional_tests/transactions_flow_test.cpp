@@ -35,7 +35,7 @@
 
 #include "include_base_utils.h"
 using namespace epee;
-#include "wallet/transfer_container.h"
+#include "wallet/transfer_details.h"
 #include "wallet/wallet2.h"
 using namespace cryptonote;
 

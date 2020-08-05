@@ -105,7 +105,91 @@ namespace wallet_rpc
     };
   };
 
-    struct COMMAND_RPC_GET_ADDRESS
+  struct COMMAND_RPC_GET_TOKEN_BALANCE
+  {
+    struct request
+    {
+      uint32_t account_index;
+      std::set<uint32_t> address_indices;
+      cryptonote::TokenId token_id;
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(account_index)
+        KV_SERIALIZE(address_indices)
+        KV_SERIALIZE(token_id)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct per_subaddress_info
+    {
+      uint32_t address_index;
+      std::string address;
+      uint64_t balance;
+      uint64_t unlocked_balance;
+      std::string label;
+      uint64_t num_unspent_outputs;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(address_index)
+        KV_SERIALIZE(address)
+        KV_SERIALIZE(balance)
+        KV_SERIALIZE(unlocked_balance)
+        KV_SERIALIZE(label)
+        KV_SERIALIZE(num_unspent_outputs)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      uint64_t 	 balance;
+      uint64_t 	 unlocked_balance;
+      bool       multisig_import_needed;
+      std::vector<per_subaddress_info> per_subaddress;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(balance)
+        KV_SERIALIZE(unlocked_balance)
+        KV_SERIALIZE(multisig_import_needed)
+        KV_SERIALIZE(per_subaddress)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+  struct COMMAND_RPC_GET_TOKENS
+  {
+    struct request
+    {
+      std::string prefix;
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(prefix)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct token_info
+    {
+      cryptonote::TokenId   id;
+      std::string           type;
+      cryptonote::TokenUnit supply;
+      std::uint64_t         unit;
+
+    BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(id)
+        KV_SERIALIZE(type)
+        KV_SERIALIZE(supply)
+        KV_SERIALIZE(unit)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      std::vector<token_info> tokens;
+
+    BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(tokens)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+  struct COMMAND_RPC_GET_ADDRESS
   {
     struct request
     {
@@ -745,6 +829,86 @@ namespace wallet_rpc
       std::string unsigned_txset;
 
       BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(tx_hash)
+        KV_SERIALIZE(tx_key)
+        KV_SERIALIZE(amount)
+        KV_SERIALIZE(fee)
+        KV_SERIALIZE(tx_blob)
+        KV_SERIALIZE(tx_metadata)
+        KV_SERIALIZE(multisig_txset)
+        KV_SERIALIZE(unsigned_txset)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+  struct COMMAND_RPC_CREATE_TOKEN
+  {
+    struct request
+    {
+      std::string           token_name;
+      cryptonote::TokenUnit token_supply;
+      std::string           token_type;
+      std::uint64_t         token_unit;
+
+    BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(token_name)
+        KV_SERIALIZE(token_supply)
+        KV_SERIALIZE(token_type)
+        KV_SERIALIZE(token_unit)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      std::string tx_id;
+      uint64_t fee;
+      std::string tx_blob;
+
+    BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(tx_id)
+        KV_SERIALIZE(fee)
+        KV_SERIALIZE(tx_blob)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+  struct COMMAND_RPC_TRANSFER_TOKEN
+  {
+    struct request
+    {
+      std::list<transfer_destination> destinations;
+      uint32_t account_index;
+      std::set<uint32_t> subaddr_indices;
+      uint64_t ring_size;
+      uint64_t unlock_time;
+      std::string payment_id;
+      bool get_tx_hex;
+      bool get_tx_metadata;
+
+    BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(destinations)
+        KV_SERIALIZE(account_index)
+        KV_SERIALIZE(subaddr_indices)
+        KV_SERIALIZE_OPT(ring_size, (uint64_t)0)
+        KV_SERIALIZE(unlock_time)
+        KV_SERIALIZE(payment_id)
+        KV_SERIALIZE_OPT(get_tx_hex, false)
+        KV_SERIALIZE_OPT(get_tx_metadata, false)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      std::string tx_hash;
+      std::string tx_key;
+      uint64_t amount;
+      uint64_t fee;
+      std::string tx_blob;
+      std::string tx_metadata;
+      std::string multisig_txset;
+      std::string unsigned_txset;
+
+    BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(tx_hash)
         KV_SERIALIZE(tx_key)
         KV_SERIALIZE(amount)

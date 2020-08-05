@@ -85,7 +85,8 @@ const std::set<cryptonote::TokenId> &AccountView::get_wallet_tokens() const
   return this->d_tokens;
 }
 
-uint64_t AccountView::get_token_subaddress_num_unspent_outputs(cryptonote::TokenId token_id, const Subaddress subaddress_index) const
+uint64_t AccountView::get_token_subaddress_num_unspent_outputs(cryptonote::TokenId token_id,
+                                                               const Subaddress subaddress_index) const
 {
   const std::set<Index> &token_indices = d_token_indices.at(token_id);
 
@@ -101,7 +102,7 @@ uint64_t AccountView::get_token_subaddress_num_unspent_outputs(cryptonote::Token
   return num_unspent_outputs;
 }
 
-bool AccountView::unlocked_amount(Amount                    &amount,
+bool AccountView::unlocked_amount(cryptonote::Amount        &amount,
                                   cryptonote::TokenId        token_id,
                                   const Subaddresses        &user_indices) const
 {
@@ -122,12 +123,14 @@ bool AccountView::unlocked_amount(Amount                    &amount,
   amount = 0;
   std::for_each(filtered_balances.begin(),
                 filtered_balances.end(),
-                [&](const std::unordered_map<Subaddress, Amount>::value_type &p) {amount += p.second;});
+                [&](const std::unordered_map<Subaddress, cryptonote::Amount>::value_type &p) {amount += p.second;});
   return true;
 }
 
 
-bool AccountView::amount(Amount &amount, cryptonote::TokenId token_id, const Subaddresses &user_indices) const
+bool AccountView::amount(cryptonote::Amount  &amount,
+                         cryptonote::TokenId  token_id,
+                         const Subaddresses  &user_indices) const
 {
   const SubaddressBalances &token_balances = d_balance[token_id];
   SubaddressBalances filtered_balances;
@@ -146,7 +149,7 @@ bool AccountView::amount(Amount &amount, cryptonote::TokenId token_id, const Sub
   amount = 0;
   std::for_each(filtered_balances.begin(),
                 filtered_balances.end(),
-                [&](const std::unordered_map<Subaddress, Amount>::value_type &p) {amount += p.second;});
+                [&](const std::unordered_map<Subaddress, cryptonote::Amount>::value_type &p) {amount += p.second;});
   return true;
 }
 
@@ -170,8 +173,8 @@ void AccountView::find_balances_per_token()
     d_tokens.insert(token_id);
     SubaddressBalances &token_balance   = d_balance[token_id];
     for (const Index &i: indexes) {
-      const Subaddress &s = d_transfers[i].m_subaddr_index.minor;
-      const Amount     &a = d_transfers[i].amount();
+      const Subaddress         &s = d_transfers[i].m_subaddr_index.minor;
+      const cryptonote::Amount &a = d_transfers[i].amount();
       token_balance[s] += a;
     }
   }
@@ -184,8 +187,8 @@ void AccountView::find_unlocked_balances_per_token(const uint64_t &blockchain_he
     const std::set<Index>     &indexes         = ti.second;
     SubaddressBalances        &token_balance   = d_unlocked_balance[token_id];
     for (const Index &i: indexes) {
-      const Subaddress &s = d_transfers[i].m_subaddr_index.minor;
-      const Amount     &a = is_transfer_unlocked(d_transfers[i], blockchain_height) ? d_transfers[i].amount(): 0;
+      const Subaddress         &s = d_transfers[i].m_subaddr_index.minor;
+      const cryptonote::Amount &a = is_transfer_unlocked(d_transfers[i], blockchain_height) ? d_transfers[i].amount(): 0;
       token_balance[s] += a;
     }
   }
@@ -193,10 +196,12 @@ void AccountView::find_unlocked_balances_per_token(const uint64_t &blockchain_he
   for (const auto &utx: d_unconfirmed_transfers) {
     if (utx.second.m_subaddr_account == d_index_major
         && utx.second.m_state != unconfirmed_transfer_details::failed) {
-      const cryptonote::TokenId &token_id      = utx.second.m_token_id;
-      SubaddressBalances        &token_balance = d_balance[token_id];
-      // all changes go to 0-th subaddress (in the current subaddress account)
-      token_balance[0] += utx.second.m_change;
+      for (const auto &d: utx.second.m_change) {
+        const cryptonote::TokenId &token_id      = d.first;
+        SubaddressBalances        &token_balance = d_balance[token_id];
+        // all changes go to 0-th subaddress (in the current subaddress account)
+        token_balance[0] += d.second;
+      }
     }
   }
 }

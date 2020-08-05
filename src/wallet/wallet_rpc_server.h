@@ -92,6 +92,10 @@ namespace tools
         MAP_JON_RPC_WE("sweep_unmixable",    on_sweep_dust,         wallet_rpc::COMMAND_RPC_SWEEP_DUST)
         MAP_JON_RPC_WE("sweep_all",          on_sweep_all,          wallet_rpc::COMMAND_RPC_SWEEP_ALL)
         MAP_JON_RPC_WE("sweep_single",       on_sweep_single,       wallet_rpc::COMMAND_RPC_SWEEP_SINGLE)
+        MAP_JON_RPC_WE("create_token",       on_create_token,       wallet_rpc::COMMAND_RPC_CREATE_TOKEN)
+        MAP_JON_RPC_WE("transfer_token",     on_transfer_token,     wallet_rpc::COMMAND_RPC_TRANSFER_TOKEN)
+        MAP_JON_RPC_WE("token_balance",      on_get_token_balance,  wallet_rpc::COMMAND_RPC_GET_TOKEN_BALANCE)
+        MAP_JON_RPC_WE("get_tokens",         on_get_tokens,         wallet_rpc::COMMAND_RPC_GET_TOKENS)
         MAP_JON_RPC_WE("relay_tx",           on_relay_tx,           wallet_rpc::COMMAND_RPC_RELAY_TX)
         MAP_JON_RPC_WE("store",              on_store,              wallet_rpc::COMMAND_RPC_STORE)
         MAP_JON_RPC_WE("get_payments",       on_get_payments,       wallet_rpc::COMMAND_RPC_GET_PAYMENTS)
@@ -162,6 +166,7 @@ namespace tools
       bool on_set_account_tag_description(const wallet_rpc::COMMAND_RPC_SET_ACCOUNT_TAG_DESCRIPTION::request& req, wallet_rpc::COMMAND_RPC_SET_ACCOUNT_TAG_DESCRIPTION::response& res, epee::json_rpc::error& er);
       bool on_getheight(const wallet_rpc::COMMAND_RPC_GET_HEIGHT::request& req, wallet_rpc::COMMAND_RPC_GET_HEIGHT::response& res, epee::json_rpc::error& er);
       bool validate_transfer(const std::list<wallet_rpc::transfer_destination>& destinations, const std::string& payment_id, std::vector<cryptonote::tx_destination_entry>& dsts, std::vector<uint8_t>& extra, bool at_least_one_destination, epee::json_rpc::error& er);
+      bool validate_token_transfer(const std::list<wallet_rpc::transfer_destination>& destinations, const std::string& payment_id, std::vector<cryptonote::tx_destination_entry>& dsts, std::vector<uint8_t>& extra, bool at_least_one_destination, epee::json_rpc::error& er);
       bool on_transfer(const wallet_rpc::COMMAND_RPC_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_TRANSFER::response& res, epee::json_rpc::error& er);
       bool on_transfer_split(const wallet_rpc::COMMAND_RPC_TRANSFER_SPLIT::request& req, wallet_rpc::COMMAND_RPC_TRANSFER_SPLIT::response& res, epee::json_rpc::error& er);
       bool on_sign_transfer(const wallet_rpc::COMMAND_RPC_SIGN_TRANSFER::request& req, wallet_rpc::COMMAND_RPC_SIGN_TRANSFER::response& res, epee::json_rpc::error& er);
@@ -169,6 +174,10 @@ namespace tools
       bool on_sweep_dust(const wallet_rpc::COMMAND_RPC_SWEEP_DUST::request& req, wallet_rpc::COMMAND_RPC_SWEEP_DUST::response& res, epee::json_rpc::error& er);
       bool on_sweep_all(const wallet_rpc::COMMAND_RPC_SWEEP_ALL::request& req, wallet_rpc::COMMAND_RPC_SWEEP_ALL::response& res, epee::json_rpc::error& er);
       bool on_sweep_single(const wallet_rpc::COMMAND_RPC_SWEEP_SINGLE::request& req, wallet_rpc::COMMAND_RPC_SWEEP_SINGLE::response& res, epee::json_rpc::error& er);
+      bool on_create_token(const wallet_rpc::COMMAND_RPC_CREATE_TOKEN::request& req, wallet_rpc::COMMAND_RPC_CREATE_TOKEN::response& res, epee::json_rpc::error& er);
+      bool on_transfer_token(const wallet_rpc::COMMAND_RPC_TRANSFER_TOKEN::request& req, wallet_rpc::COMMAND_RPC_TRANSFER_TOKEN::response& res, epee::json_rpc::error& er);
+      bool on_get_token_balance(const wallet_rpc::COMMAND_RPC_GET_TOKEN_BALANCE::request& req, wallet_rpc::COMMAND_RPC_GET_TOKEN_BALANCE::response& res, epee::json_rpc::error& er);
+      bool on_get_tokens(const wallet_rpc::COMMAND_RPC_GET_TOKENS::request& req, wallet_rpc::COMMAND_RPC_GET_TOKENS::response& res, epee::json_rpc::error& er);
       bool on_relay_tx(const wallet_rpc::COMMAND_RPC_RELAY_TX::request& req, wallet_rpc::COMMAND_RPC_RELAY_TX::response& res, epee::json_rpc::error& er);
       bool on_make_integrated_address(const wallet_rpc::COMMAND_RPC_MAKE_INTEGRATED_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_MAKE_INTEGRATED_ADDRESS::response& res, epee::json_rpc::error& er);
       bool on_split_integrated_address(const wallet_rpc::COMMAND_RPC_SPLIT_INTEGRATED_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_SPLIT_INTEGRATED_ADDRESS::response& res, epee::json_rpc::error& er);
@@ -225,17 +234,41 @@ namespace tools
       bool on_query_key(const wallet_rpc::COMMAND_RPC_QUERY_KEY::request& req, wallet_rpc::COMMAND_RPC_QUERY_KEY::response& res, epee::json_rpc::error& er);
 
       // helpers
-      void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &txid, const crypto::hash &payment_id, const tools::wallet2::payment_details &pd);
-      void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &txid, const tools::wallet2::confirmed_transfer_details &pd);
+      void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &txid, const crypto::hash &payment_id, const tools::payment_details &pd);
+      void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &txid, const tools::confirmed_transfer_details &pd);
       void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &txid, const tools::unconfirmed_transfer_details &pd);
-      void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &payment_id, const tools::wallet2::pool_payment_details &pd);
+      void fill_transfer_entry(tools::wallet_rpc::transfer_entry &entry, const crypto::hash &payment_id, const tools::pool_payment_details &pd);
       bool not_open(epee::json_rpc::error& er);
       void handle_rpc_exception(const std::exception_ptr& e, epee::json_rpc::error& er, int default_error_code);
 
       template<typename Ts, typename Tu>
       bool fill_response(std::vector<tools::pending_tx> &ptx_vector,
-          bool get_tx_key, Ts& tx_key, Tu &amount, Tu &fee, std::string &multisig_txset, std::string &unsigned_txset, bool do_not_relay,
-          Ts &tx_hash, bool get_tx_hex, Ts &tx_blob, bool get_tx_metadata, Ts &tx_metadata, epee::json_rpc::error &er);
+                         bool                            get_tx_key,
+                         Ts                             &tx_key,
+                         Tu                             &amount,
+                         Tu                             &fee,
+                         std::string                    &multisig_txset,
+                         std::string                    &unsigned_txset,
+                         bool                            do_not_relay,
+                         Ts                             &tx_hash,
+                         bool                            get_tx_hex,
+                         Ts                             &tx_blob,
+                         bool                            get_tx_metadata,
+                         Ts                             &tx_metadata,
+                         epee::json_rpc::error          &er);
+
+    template<typename Ts, typename Tu>
+    bool fill_token_response(std::vector<tools::pending_tx> &ptx_vector,
+                             Tu                             &amount,
+                             Tu                             &fee,
+                             std::string                    &multisig_txset,
+                             std::string                    &unsigned_txset,
+                             Ts                             &tx_hash,
+                             bool                            get_tx_hex,
+                             Ts                             &tx_blob,
+                             bool                            get_tx_metadata,
+                             Ts                             &tx_metadata,
+                             epee::json_rpc::error          &er);
 
       wallet2 *m_wallet;
       std::string m_wallet_dir;

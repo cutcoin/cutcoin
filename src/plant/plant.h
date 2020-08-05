@@ -41,7 +41,6 @@
 #include <mining/miningutil.h>
 #include <net/http_client.h>
 #include <wallet/pending_tx.h>
-#include <wallet/transfer_container.h>
 #include <wallet/transfer_details.h>
 #include <wallet/wallet2.h>
 

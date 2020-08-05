@@ -142,8 +142,8 @@ namespace cryptonote
     bool set_segregation_height(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_ignore_fractional_outputs(const std::vector<std::string> &args = std::vector<std::string>());
     bool help(const std::vector<std::string> &args = std::vector<std::string>());
-    bool start_mining(const std::vector<std::string> &args);
-    bool stop_mining(const std::vector<std::string> &args);
+    bool start_staking(const std::vector<std::string> &args);
+    bool stop_staking(const std::vector<std::string> &args);
     bool set_daemon(const std::vector<std::string> &args);
     bool save_bc(const std::vector<std::string> &args);
     bool refresh(const std::vector<std::string> &args);
@@ -220,7 +220,7 @@ namespace cryptonote
     bool exchange_multisig_keys(const std::vector<std::string> &args);
     bool export_multisig(const std::vector<std::string>& args);
     bool import_multisig(const std::vector<std::string>& args);
-    bool accept_loaded_tx(const tools::wallet2::multisig_tx_set &txs);
+    bool accept_loaded_tx(const tools::multisig_tx_set &txs);
     bool sign_multisig(const std::vector<std::string>& args);
     bool submit_multisig(const std::vector<std::string>& args);
     bool export_raw_multisig(const std::vector<std::string>& args);
@@ -238,7 +238,7 @@ namespace cryptonote
     bool accept_loaded_tx(const std::function<size_t()> get_num_txes, const std::function<const tools::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message = std::string());
     bool accept_loaded_tx(const tools::wallet2::unsigned_tx_set &txs);
     bool accept_loaded_tx(const tools::wallet2::signed_tx_set &txs);
-    bool print_ring_members(const tools::ptx_v &ptx_vector, std::ostream &ostr);
+    bool print_ring_members(const tools::pending_tx_v &ptx_vector, std::ostream &ostr);
     std::string get_prompt() const;
     bool print_seed(bool encrypted);
 
@@ -261,7 +261,7 @@ namespace cryptonote
      * \brief When --do-not-relay option is specified, save the raw tx hex blob to a file instead of calling m_wallet->commit_tx(ptx).
      * \param ptx_vector Pending tx(es) created by transfer/sweep_all
      */
-    void commit_or_save(tools::ptx_v &ptx_vector, bool do_not_relay);
+    void commit_or_save(tools::pending_tx_v &ptx_vector, bool do_not_relay);
 
     //----------------- i_wallet2_callback ---------------------
     virtual void on_new_block(uint64_t height, const cryptonote::block& block);

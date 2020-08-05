@@ -68,6 +68,7 @@ namespace rct {
         printf("\"");
         printf("\n");
     }
+
     void dp(keyV a) {
         size_t j = 0;
         printf("[");
@@ -80,6 +81,7 @@ namespace rct {
         printf("]");
         printf("\n");
     }
+
     void dp(keyM a) {
         size_t j = 0;
         printf("[");
@@ -92,6 +94,7 @@ namespace rct {
         printf("]");
         printf("\n");
     }
+
     void dp(xmr_amount vali) {
         printf("x: ");
         std::cout << vali;
@@ -102,6 +105,7 @@ namespace rct {
         printf("x: %d\n", vali);
         printf("\n");
     }
+
     void dp(bits amountb) {
         for (int i = 0; i < 64; i++) {
             printf("%d", amountb[i]);

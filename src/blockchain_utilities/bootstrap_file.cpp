@@ -479,9 +479,7 @@ uint64_t BootstrapFile::count_blocks(const std::string& import_file_path, std::s
     }
     bytes_read += count_bytes(import_file, progress_interval, blocks, quit);
     h += blocks;
-    std::cout << "\r" << "block height: " << h-1 <<
-      "    " <<
-      std::flush;
+    std::cout << "\r" << "block height: " << h - 1 << "    " << std::flush;
 
     // std::cout << refresh_string;
     MDEBUG("Number bytes scanned: " << bytes_read);

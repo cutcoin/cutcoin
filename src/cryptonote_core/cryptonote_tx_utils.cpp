@@ -306,7 +306,7 @@ void classify_addresses(const std::vector<tx_destination_entry>       &destinati
     uint64_t summary_inputs_money = 0;
     //fill inputs
     int idx = -1;
-    for(const tx_source_entry& src_entr:  sources)
+    for(const tx_source_entry &src_entr: sources)
     {
       ++idx;
       if(src_entr.real_output >= src_entr.outputs.size())
@@ -662,11 +662,11 @@ void classify_addresses(const std::vector<tx_destination_entry>       &destinati
       if (use_simple_rct) {
         if (tx.version != TxVersion::tokens) {
           tx.rct_signatures = rct::genRctSimple(calc_message, inSk, destinations, inamounts, outamounts[CUTCOIN_ID],
-                                                amount_in[CUTCOIN_ID] - amount_out[CUTCOIN_ID], mixRing, amount_keys, msout ? &kLRki : NULL,
+                                                amount_in[CUTCOIN_ID] - amount_out[CUTCOIN_ID], mixRing, amount_keys, msout ? &kLRki : nullptr,
                                                 msout, index, outSk, range_proof_type, hwdev);
         } else {
           tx.rct_signatures = rct::genRctSimpleBig(calc_message, inSk, destinations, inamounts, outamounts,
-                                                amount_in[CUTCOIN_ID] - amount_out[CUTCOIN_ID], mixRing, amount_keys, msout ? &kLRki : NULL,
+                                                amount_in[CUTCOIN_ID] - amount_out[CUTCOIN_ID], mixRing, amount_keys, msout ? &kLRki : nullptr,
                                                 msout, index, outSk, hwdev);
         }
       } else {
@@ -677,7 +677,7 @@ void classify_addresses(const std::vector<tx_destination_entry>       &destinati
                                         outamounts[CUTCOIN_ID],
                                         mixRing,
                                         amount_keys,
-                                        msout ? &kLRki[0] : NULL,
+                                        msout ? &kLRki[0] : nullptr,
                                         msout,
                                         sources[0].real_output,
                                         outSk,
@@ -1003,8 +1003,8 @@ bool construct_token_tx_with_tx_key(const account_keys                          
                                              c_amount_fee,
                                              mixRing,
                                              amount_keys,
-                                             NULL,
-                                             NULL,
+                                             nullptr,
+                                             nullptr,
                                              index,
                                              outSk,
                                              hwdev);
@@ -1021,21 +1021,21 @@ bool construct_token_tx_with_tx_key(const account_keys                          
   return true;
 }
   //---------------------------------------------------------------
-  bool construct_tx_and_get_tx_key(const account_keys& sender_account_keys,
-                                   const std::unordered_map<crypto::public_key, subaddress_index>& subaddresses,
-                                   tx_sources& sources,
-                                   std::vector<tx_destination_entry>& destinations,
-                                   const boost::optional<account_public_address>& change_addr,
-                                   std::vector<uint8_t> extra,
-                                   transaction& tx,
-                                   uint64_t unlock_time,
-                                   crypto::secret_key &tx_key,
-                                   std::vector<crypto::secret_key> &additional_tx_keys,
-                                   bool use_tokens,
-                                   bool rct,
-                                   rct::RangeProofType range_proof_type,
-                                   rct::multisig_out *msout,
-                                   bool tgtx)
+  bool construct_tx_and_get_tx_key(const account_keys                                             &sender_account_keys,
+                                   const std::unordered_map<crypto::public_key, subaddress_index> &subaddresses,
+                                   tx_sources                                                     &sources,
+                                   std::vector<tx_destination_entry>                              &destinations,
+                                   const boost::optional<account_public_address>                  &change_addr,
+                                   std::vector<uint8_t>                                            extra,
+                                   transaction                                                    &tx,
+                                   uint64_t                                                        unlock_time,
+                                   crypto::secret_key                                             &tx_key,
+                                   std::vector<crypto::secret_key>                                &additional_tx_keys,
+                                   bool                                                            use_tokens,
+                                   bool                                                            rct,
+                                   rct::RangeProofType                                             range_proof_type,
+                                   rct::multisig_out                                              *msout,
+                                   bool                                                            tgtx)
   {
     hw::device &hwdev = sender_account_keys.get_device();
     hwdev.open_tx(tx_key);
@@ -1053,7 +1053,22 @@ bool construct_token_tx_with_tx_key(const account_keys                          
         additional_tx_keys.push_back(keypair::generate(sender_account_keys.get_device()).sec);
     }
 
-    bool r = construct_tx_with_tx_key(sender_account_keys, subaddresses, sources, destinations, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, use_tokens, rct, range_proof_type, msout, true, tgtx);
+    bool r = construct_tx_with_tx_key(sender_account_keys,
+                                      subaddresses,
+                                      sources,
+                                      destinations,
+                                      change_addr,
+                                      extra,
+                                      tx,
+                                      unlock_time,
+                                      tx_key,
+                                      additional_tx_keys,
+                                      use_tokens,
+                                      rct,
+                                      range_proof_type,
+                                      msout,
+                                      true,
+                                      tgtx);
     hwdev.close_tx();
     return r;
   }
@@ -1107,7 +1122,7 @@ bool construct_token_tx_with_tx_key(const account_keys                          
      crypto::secret_key tx_key;
      std::vector<crypto::secret_key> additional_tx_keys;
      std::vector<tx_destination_entry> destinations_copy = destinations;
-     return construct_tx_and_get_tx_key(sender_account_keys, subaddresses, sources, destinations_copy, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, false, false, rct::RangeProofBorromean, NULL);
+     return construct_tx_and_get_tx_key(sender_account_keys, subaddresses, sources, destinations_copy, change_addr, extra, tx, unlock_time, tx_key, additional_tx_keys, false, false, rct::RangeProofBorromean, nullptr);
   }
   //---------------------------------------------------------------
   bool generate_genesis_block(

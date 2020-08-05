@@ -26,25 +26,46 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#ifndef CUTCOIN_AMOUNT_H
-#define CUTCOIN_AMOUNT_H
+#ifndef CUTCOIN_MULTISIG_TX_SET_H
+#define CUTCOIN_MULTISIG_TX_SET_H
 
-#include "token.h"
+#include <crypto/crypto.h>
+#include "pending_tx.h"
 
-#include <cinttypes>
-#include <unordered_map>
+#include <boost/serialization/version.hpp>
 
-namespace cryptonote {
+#include <unordered_set>
+#include <vector>
 
-using Amount = uint64_t;
-  // Unified type for coin or token amount representation.
+namespace tools {
 
-using TokenAmount = std::pair<TokenId, Amount>;
-  // Token amount with the specified id.
+struct multisig_tx_set
+{
+  pending_tx_v m_ptx;
+  std::unordered_set<crypto::public_key> m_signers;
 
-using TokenAmounts = std::unordered_map<TokenId, Amount>;
-  // Basic container for different token amounts.
+  BEGIN_SERIALIZE_OBJECT()
+  FIELD(m_ptx)
+  FIELD(m_signers)
+  END_SERIALIZE()
+};
 
-}  // namespace cryptonote
+}  // namespace tools
 
-#endif //CUTCOIN_AMOUNT_H
+BOOST_CLASS_VERSION(tools::multisig_tx_set, 1)
+
+namespace boost {
+namespace serialization {
+
+template <typename Archive>
+inline
+void serialize(Archive &a, tools::multisig_tx_set &x, const boost::serialization::version_type /*ver*/)
+{
+  a & x.m_ptx;
+  a & x.m_signers;
+}
+
+}  // namespace serialization
+}  // namespace boost
+
+#endif //CUTCOIN_MULTISIG_TX_SET_H

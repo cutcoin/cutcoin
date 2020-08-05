@@ -31,7 +31,7 @@
 
 #include "gtest/gtest.h"
 
-#include "wallet/transfer_container.h"
+#include "wallet/transfer_details.h"
 #include "wallet/wallet2.h"
 #include <string>
 

@@ -99,7 +99,6 @@ static const struct {
 } mainnet_hard_forks[] = {
   // use version 1 in the first block of the blockchain
   { 1, 0, 0, 1341378000 },
-
   { 9, 1, 0, 1535889548 },       // Cutcoin fork
   { 10, 52000, 0, 1566518400 },  // enabled POS
 };
@@ -111,12 +110,9 @@ static const struct {
   uint8_t threshold;
   time_t time;
 } testnet_hard_forks[] = {
-  // use version 1 in the first block of the blockchain
-  { 1, 0, 0, 1341378000 },
-
-  // and version 9 for the rest of blocks
-  { 9, 1, 0, 1533297600 },
-  { 10, 10000, 0, 1566213210 },
+  { 1, 0, 0, 1341378000 },       // use version 1 in the first block of the blockchain
+  { 9, 1, 0, 1533297600 },       // and version 9 for the rest of blocks
+  { 10, 10000, 0, 1566213210 },  // enabled POS
   { 11, 373000, 0, 1592911000 }  // enabled tokens
 };
 static const uint64_t testnet_hard_fork_version_1_till = 1;
@@ -127,11 +123,8 @@ static const struct {
   uint8_t threshold;
   time_t time;
 } stagenet_hard_forks[] = {
-  // use version 1 in the first block of the blockchain
-  { 1, 0, 0, 1341378000 },
-
-  // and version 9 for the rest of blocks
-  { 9, 1, 0, 1537821771 },
+  { 1, 0, 0, 1341378000 },       // use version 1 in the first block of the blockchain
+  { 9, 1, 0, 1537821771 },       // and version 9 for the rest of blocks
 };
 
 //------------------------------------------------------------------
@@ -4590,7 +4583,7 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
           continue;
         }
 
-        // check first block and skip all blocks if its not chained properly
+        // check first block and skip all blocks if it's not chained properly
         if (i == 0 && j == 0)
         {
           crypto::hash tophash = m_db->top_block_hash();
@@ -4679,7 +4672,7 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
 
   // [input] stores all unique tokens found
   std::vector < TokenId > tokens;
-  // [input] stores all absolute_offsets for each amount
+  // [input] stores all absolute_offsets for each token id
   std::map<TokenId, std::vector<uint64_t>> offset_map;
   // [output] stores all output_data_t for each absolute_offset
   std::map<TokenId, std::vector<output_data_t>> tx_map;

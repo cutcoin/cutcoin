@@ -29,7 +29,8 @@
 #ifndef CUTCOIN_ACCOUNT_VIEW_H
 #define CUTCOIN_ACCOUNT_VIEW_H
 
-#include "transfer_container.h"
+#include "cryptonote_basic/amount.h"
+#include "cryptonote_basic/token.h"
 #include "transfer_details.h"
 #include "unconfirmed_transfer_details.h"
 
@@ -59,9 +60,6 @@ private:
   using Index                        = std::size_t;
     // Zero-based user tx index in the array of all user txs.
 
-  using Amount                       = uint64_t;
-    // Cutcoin or Token amount.
-
   using Subaddress                   = uint32_t;
     // Account subaddress corresponding to tx minor index.
 
@@ -77,7 +75,7 @@ private:
 public:
   // Types
 
-  using SubaddressBalances           = std::unordered_map<Subaddress, Amount>;
+  using SubaddressBalances           = std::unordered_map<Subaddress, cryptonote::Amount>;
   // Subaddress balances.
 
   using BalancesPerToken             = std::unordered_map<cryptonote::TokenId, SubaddressBalances>;
@@ -110,12 +108,12 @@ public:
   uint64_t get_token_subaddress_num_unspent_outputs(cryptonote::TokenId token_id, const Subaddress) const;
     // Count unspent outputs for specified token and subaddress.
 
-  bool unlocked_amount(Amount &amount, cryptonote::TokenId token_id, const Subaddresses &user_indices) const;
+  bool unlocked_amount(cryptonote::Amount &amount, cryptonote::TokenId token_id, const Subaddresses &user_indices = {}) const;
     // Return true on success. Assign to 'amount' current unlocked balance for the specified 'token_id'
     // and the specified 'user_indices'. If user_indices are empty use all the indices with
     // non-zero unlocked balance.
 
-  bool amount(Amount &amount, cryptonote::TokenId token_id, const Subaddresses &user_indices) const;
+  bool amount(cryptonote::Amount &amount, cryptonote::TokenId token_id, const Subaddresses &user_indices = {}) const;
     // Return true on success. Assign to 'amount' current balance for the specified 'token_id'
     // and the specified 'user_indices'. If user_indices are empty use all the indices with
     // non-zero balance.
@@ -144,7 +142,7 @@ public:
       std::unordered_map<uint32_t, std::vector<size_t> > &unused_dust_indices_per_subaddress,
       const Subaddresses                                 &user_indices,
       const cryptonote::TokenId                           token_id,
-      const uint64_t                                      fractional_threshold,
+      const cryptonote::Amount                            fractional_threshold,
       std::pair<uint64_t, uint64_t>                       range,
       bool                                                ignore_fractional_outputs,
       bool                                                use_rct,

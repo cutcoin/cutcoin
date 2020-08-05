@@ -1,4 +1,4 @@
-// Copyright (c) 2019, CUT coin
+// Copyright (c) 2019-2020, CUT coin
 //
 // All rights reserved.
 //
@@ -37,6 +37,7 @@
 #include <ringct/rctTypes.h>
 
 #include <boost/serialization/serialization.hpp>
+#include <boost/serialization/version.hpp>
 
 #include <vector>
 
@@ -89,7 +90,10 @@ struct transfer_details
 
   bool is_rct() const { return m_rct; }
   uint64_t amount() const { return m_amount; }
-  const crypto::public_key &get_public_key() const { return boost::get<const cryptonote::txout_to_key>(m_tx.vout[m_internal_output_index].target).key; }
+  const crypto::public_key &get_public_key() const
+  {
+    return boost::get<const cryptonote::txout_to_key>(m_tx.vout[m_internal_output_index].target).key;
+  }
 
   BEGIN_SERIALIZE_OBJECT()
     FIELD(m_block_height)
@@ -113,37 +117,43 @@ struct transfer_details
   END_SERIALIZE()
 };
 
+using transfer_container = std::vector<transfer_details>;
+  // Vector of transfer details.
+
 } // namespace tools
+
+BOOST_CLASS_VERSION(tools::multisig_info, 1)
+BOOST_CLASS_VERSION(tools::transfer_details, 10)
 
 namespace boost {
 namespace serialization {
 
-template <class Archive>
+template <typename Archive>
 inline
-void serialize(Archive &a, tools::multisig_info::LR &x, const boost::serialization::version_type ver)
+void serialize(Archive &a, tools::multisig_info::LR &x, const boost::serialization::version_type /*ver*/)
 {
   a & x.m_L;
   a & x.m_R;
 }
 
-template <class Archive>
+template <typename Archive>
 inline
-void serialize(Archive &a, tools::multisig_info &x, const boost::serialization::version_type ver)
+void serialize(Archive &a, tools::multisig_info &x, const boost::serialization::version_type /*ver*/)
 {
   a & x.m_signer;
   a & x.m_LR;
   a & x.m_partial_key_images;
 }
 
-template <class Archive>
+template <typename Archive>
 inline
 typename std::enable_if<!Archive::is_loading::value, void>::type initialize_transfer_details(
-                                                                         Archive                                  &a,
-                                                                         tools::transfer_details                  &x,
-                                                                         const boost::serialization::version_type  ver)
+                                                                     Archive                                  &a,
+                                                                     tools::transfer_details                  &x,
+                                                                     const boost::serialization::version_type  /*ver*/)
 {
 }
-template <class Archive>
+template <typename Archive>
 inline
 typename std::enable_if<Archive::is_loading::value, void>::type initialize_transfer_details(
                                                                          Archive                                  &a,
@@ -179,8 +189,9 @@ typename std::enable_if<Archive::is_loading::value, void>::type initialize_trans
   }
 }
 
-template <class Archive>
-inline void serialize(Archive &a, tools::transfer_details &x, const boost::serialization::version_type ver)
+template <typename Archive>
+inline
+void serialize(Archive &a, tools::transfer_details &x, const boost::serialization::version_type ver)
 {
   a & x.m_block_height;
   a & x.m_global_output_index;

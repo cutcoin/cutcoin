@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -29,9 +29,12 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <boost/lexical_cast.hpp>
-#include "misc_log_ex.h"
 #include "rctOps.h"
+
+#include "misc_log_ex.h"
+
+#include <boost/lexical_cast.hpp>
+
 using namespace crypto;
 using namespace std;
 
@@ -117,9 +120,16 @@ namespace rct {
     }
 
     //generates C =aG + bH from b, a is given..
-    void genC(key & C, const key & a, xmr_amount amount) {
+    void genC(key & C, const key & a, xmr_amount amount)
+    {
         key bH = scalarmultH(d2h(amount));
         addKeys1(C, a, bH);
+    }
+
+    void gp_genC(key & C, const key & a, const key & o, xmr_amount amount)
+    {
+      key bH = scalarmultKey(o, d2h(amount));
+      addKeys1(C, a, bH);
     }
 
     //generates a <secret , public> / Pedersen commitment to the amount
@@ -149,12 +159,27 @@ namespace rct {
         return addKeys(G, bH);
     }
 
+    key gp_zeroCommit(xmr_amount amount, const key &o) {
+      key am = d2h(amount);
+      key bH = scalarmultKey(o, am);
+      return addKeys(G, bH);
+    }
+
+
     key commit(xmr_amount amount, const key &mask) {
         key c = scalarmultBase(mask);
         key am = d2h(amount);
         key bH = scalarmultH(am);
         addKeys(c, c, bH);
         return c;
+    }
+
+    key gp_commit(xmr_amount amount, const key &mask, const key &omega) {
+      key c = scalarmultBase(mask);
+      key am = d2h(amount);
+      key bH = scalarmultKey(omega, am);
+      addKeys(c, c, bH);
+      return c;
     }
 
     //generates a random uint long long (for testing)
@@ -165,7 +190,7 @@ namespace rct {
     //Scalar multiplications of curve points
 
     //does a * G where a is a scalar and G is the curve basepoint
-    void scalarmultBase(key &aG,const key &a) {
+    void scalarmultBase(key &aG, const key &a) {
         ge_p3 point;
         sc_reduce32copy(aG.bytes, a.bytes); //do this beforehand!
         ge_scalarmult_base(&point, aG.bytes);
@@ -501,5 +526,33 @@ namespace rct {
         //decode
         sc_sub(masked.mask.bytes, masked.mask.bytes, sharedSec1.bytes);
         sc_sub(masked.amount.bytes, masked.amount.bytes, sharedSec2.bytes);
+    }
+
+    key smearBits(uint64_t value)
+    {
+        const uint8_t mask{0xff};
+        return key {static_cast<unsigned char>( value         & mask),
+                    static_cast<unsigned char>((value >> 8U ) & mask),
+                    static_cast<unsigned char>((value >> 16U) & mask),
+                    static_cast<unsigned char>((value >> 24U) & mask),
+                    static_cast<unsigned char>((value >> 32U) & mask),
+                    static_cast<unsigned char>((value >> 40U) & mask),
+                    static_cast<unsigned char>((value >> 48U) & mask),
+                    static_cast<unsigned char>((value >> 56U) & mask)};
+    }
+
+    key tokenIdToPoint(cryptonote::TokenId token_id)
+    {
+        return token_id ? hashToPoint(smearBits(token_id)) : H;
+    }
+
+    keyV tokenIdToPoint(const std::vector<cryptonote::TokenId> &token_ids)
+    {
+        keyV points;
+        points.reserve(token_ids.size());
+        for (const auto &id: token_ids) {
+            points.emplace_back(tokenIdToPoint(id));
+        }
+        return points;
     }
 }

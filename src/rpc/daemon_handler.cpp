@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -618,7 +618,10 @@ void DaemonHandler::handle(const GetMiningInfo::Request& req, GetMiningInfo::Res
     std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t> > histogram;
     try
     {
-      histogram = m_core.get_blockchain_storage().get_output_histogram(req.amounts, req.unlocked, req.recent_cutoff);
+      histogram = m_core.get_blockchain_storage().get_output_histogram(req.token_id,
+                                                                       req.amounts,
+                                                                       req.unlocked,
+                                                                       req.recent_cutoff);
     }
     catch (const std::exception &e)
     {
@@ -647,7 +650,7 @@ void DaemonHandler::handle(const GetMiningInfo::Request& req, GetMiningInfo::Res
         crypto::public_key key;
         rct::key mask;
         bool unlocked;
-        m_core.get_blockchain_storage().get_output_key_mask_unlocked(i.amount, i.index, key, mask, unlocked);
+        m_core.get_blockchain_storage().get_output_key_mask_unlocked(i.token_id, i.index, key, mask, unlocked);
         res.keys.emplace_back(output_key_mask_unlocked{key, mask, unlocked});
       }
     }

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016-2018, The Monero Project
 // 
 // All rights reserved.
@@ -852,23 +852,23 @@ void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_amount_c
   GET_FROM_JSON_OBJECT(val, out.recent_count, recent_count);
 }
 
-void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_amount_and_index& out, rapidjson::Value& val)
+void toJsonValue(rapidjson::Document& doc, const cryptonote::rpc::output_token_id_and_index& out, rapidjson::Value& val)
 {
   val.SetObject();
 
-  INSERT_INTO_JSON_OBJECT(val, doc, amount, out.amount);
+  INSERT_INTO_JSON_OBJECT(val, doc, token_id, out.token_id);
   INSERT_INTO_JSON_OBJECT(val, doc, index, out.index);
 }
 
 
-void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_amount_and_index& out)
+void fromJsonValue(const rapidjson::Value& val, cryptonote::rpc::output_token_id_and_index& out)
 {
   if (!val.IsObject())
   {
     throw WRONG_TYPE("json object");
   }
 
-  GET_FROM_JSON_OBJECT(val, out.amount, amount);
+  GET_FROM_JSON_OBJECT(val, out.token_id, token_id);
   GET_FROM_JSON_OBJECT(val, out.index, index);
 }
 

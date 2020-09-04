@@ -1,17 +1,41 @@
 # CUT coin
 
-Copyright (c) 2018-2019 CUT coin.   
+Copyright (c) 2018-2020 CUT coin.
+
+Copyright (c) 2014-2017 The Monero Project.
+
 Portions Copyright (c) 2012-2013 The Cryptonote developers.
+
+## Content
+
+  - [Development resources](#development-resources)
+  - [Research](#research)
+  - [Translations](#translations)
+  - [Introduction](#introduction)
+  - [About this project](#about-this-project)
+  - [Supporting the project](#supporting-the-project)
+  - [License](#license)
+  - [Contributing](#contributing)
+  - [Release staging schedule and protocol](#release-staging-schedule-and-protocol)
+  - [Compiling Cutcoin from source](#compiling-monero-from-source)
+    - [Dependencies](#dependencies)
+  - [Internationalization](#Internationalization)
+  - [Debugging](#Debugging)
+
 
 ## Development resources
 
 - Web: [cutcoin.org](https://cutcoin.org)
+- Forum: [https://bitcointalk.org/index.php?topic=5087550.msg48784779#msg48784779](https://bitcointalk.org/index.php?topic=5087550.msg48784779#msg48784779)
 - Mail: [info@cutcoin.org](mailto:info@cutcoin.org)
 - GitHub: [https://github.com/cutcoin](https://github.com/cutcoin)
+- Documentation: [https://github.com/cutcoin/documentation](https://github.com/cutcoin/documentation)
 
-## Build
+## Research
 
-### IMPORTANT 
+Cutcoin Team has a solid conviction that the further advances in CryptoNote protocol development should be based on research work.
+We do our own researches and utilize results that presented in respectable scientific sources.
+If you have great ideas of how to make CryptoNote more reliable, secure and fast please contact us [info@cutcoin.org](mailto:info@cutcoin.org).
 
 ## Introduction
 
@@ -19,13 +43,13 @@ Concealed untraceable transactions coin that establishes a new level of privacy 
 
 ## License
 
-See [LICENSE](LICENSE).
+See our [LICENSE](LICENSE).
 
 ## Contributing
 
-If you want to help out, see [CONTRIBUTING](CONTRIBUTING.md) for a set of guidelines.
-
-## Scheduled software upgrades
+If you want to help out, see [CONTRIBUTING](CONTRIBUTING.md) for a set of guidelines. 
+Our community's help is appreciated much and the most active members became Cutcoin Ambassadors, 
+that gives different benefits.
 
 ## Compiling CUT coin from source
 
@@ -62,16 +86,20 @@ library archives (`.a`).
 
 
 [^] On Debian/Ubuntu `libgtest-dev` only includes sources and headers. You must
-build the library binary manually. This can be done with the following command ```sudo apt-get install libgtest-dev && cd /usr/src/gtest && sudo cmake . && sudo make && sudo mv libg* /usr/lib/ ```
+build the library binary manually. This can be done with the following command 
+
+```sudo apt-get install libgtest-dev && cd /usr/src/gtest && sudo cmake . && sudo make && sudo mv libg* /usr/lib/ ```
 
 Debian / Ubuntu one liner for all dependencies  
-``` sudo apt update && sudo apt install build-essential cmake pkg-config libboost-all-dev libssl-dev libzmq3-dev libunbound-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev doxygen graphviz libpgm-dev```
+
+``` sudo apt update && sudo apt install git build-essential cmake pkg-config libboost-all-dev libssl-dev libzmq3-dev libunbound-dev libsodium-dev libunwind8-dev liblzma-dev libreadline6-dev libldns-dev libexpat1-dev doxygen graphviz libpgm-dev```
 
 Install all dependencies at once on macOS with the provided Brewfile: ```brew update && brew bundle --file=contrib/brew/Brewfile```
 
 FreeBSD one liner for required to build dependencies ```pkg install git gmake cmake pkgconf boost-libs cppzmq libsodium```
 
 Debug mode build also requires QT4, on Debian / Ubuntu
+
 ``` sudo apt install qt4-default ```
 
 ### Cloning the repository
@@ -133,6 +161,95 @@ to build them yourself with -fPIC. Refer to their documentation for how to build
 * **Optional**: build documentation in `doc/html` (omit `HAVE_DOT=YES` if `graphviz` is not installed):
 
         HAVE_DOT=YES doxygen Doxyfile
+
+#### On Windows:
+
+Binaries for Windows are built on Windows using the MinGW toolchain within
+[MSYS2 environment](https://www.msys2.org). The MSYS2 environment emulates a
+POSIX system. The toolchain runs within the environment and *cross-compiles*
+binaries that can run outside of the environment as a regular Windows
+application.
+
+**Preparing the build environment**
+
+* Download and install the [MSYS2 installer](https://www.msys2.org), either the 64-bit or the 32-bit package, depending on your system.
+* Open the MSYS shell via the `MSYS2 Shell` shortcut
+* Update packages using pacman:  
+
+    ```bash
+    pacman -Syu
+    ```
+
+* Exit the MSYS shell using Alt+F4  
+* Edit the properties for the `MSYS2 Shell` shortcut changing "msys2_shell.bat" to "msys2_shell.cmd -mingw64" for 64-bit builds or "msys2_shell.cmd -mingw32" for 32-bit builds
+* Restart MSYS shell via modified shortcut and update packages again using pacman:  
+
+    ```bash
+    pacman -Syu
+    ```
+
+
+* Install dependencies:
+
+    To build for 64-bit Windows:
+
+    ```bash
+    pacman -S mingw-w64-x86_64-toolchain make mingw-w64-x86_64-cmake mingw-w64-x86_64-boost mingw-w64-x86_64-openssl mingw-w64-x86_64-zeromq mingw-w64-x86_64-libsodium mingw-w64-x86_64-hidapi git
+    ```
+
+    To build for 32-bit Windows:
+
+    ```bash
+    pacman -S mingw-w64-i686-toolchain make mingw-w64-i686-cmake mingw-w64-i686-boost mingw-w64-i686-openssl mingw-w64-i686-zeromq mingw-w64-i686-libsodium mingw-w64-i686-hidapi git
+    ```
+
+* Open the MingW shell via `MinGW-w64-Win64 Shell` shortcut on 64-bit Windows
+  or `MinGW-w64-Win64 Shell` shortcut on 32-bit Windows. Note that if you are
+  running 64-bit Windows, you will have both 64-bit and 32-bit MinGW shells.
+
+**Cloning**
+
+* To git clone, run:
+
+    ```bash
+    git clone --recursive https://github.com/cutcoin/cutcoin.git
+    ```
+
+**Building**
+
+* Change to the cloned directory, run:
+
+    ```bash
+    cd cutcoin
+    ```
+
+* If you are on a 64-bit system, run:
+
+    ```bash
+    make release-static-win64
+    ```
+
+* If you are on a 32-bit system, run:
+
+    ```bash
+    make release-static-win32
+    ```
+
+* The resulting executables can be found in `build/release/bin`
+
+* **Optional**: to build Windows binaries suitable for debugging on a 64-bit system, run:
+
+    ```bash
+    make debug-static-win64
+    ```
+
+* **Optional**: to build Windows binaries suitable for debugging on a 32-bit system, run:
+
+    ```bash
+    make debug-static-win32
+    ```
+
+* The resulting executables can be found in `build/debug/bin`
 
 ## Running cutcoind
 

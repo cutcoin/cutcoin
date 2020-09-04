@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -573,11 +573,23 @@ namespace cryptonote
      bool get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res) const;
 
      /**
+      * @copydoc Blockchain::get_tokens
+      *
+      * @note see Blockchain::get_tokens
+      */
+     bool get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res) const;
+
+     /**
       * @copydoc Blockchain::get_output_distribution
       *
       * @brief get per block distribution of outputs of a given amount
       */
-     bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, uint64_t &start_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
+     bool get_output_distribution(cryptonote::TokenId    token_id,
+                                  uint64_t               from_height,
+                                  uint64_t               to_height, 
+                                  uint64_t              &start_height, 
+                                  std::vector<uint64_t> &distribution, 
+                                  uint64_t              &base) const;
 
      /**
       * @copydoc miner::pause

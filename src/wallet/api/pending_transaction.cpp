@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -201,7 +201,7 @@ std::string PendingTransactionImpl::multisigSignData() {
             throw std::runtime_error("wallet is not multisig");
         }
 
-        tools::wallet2::multisig_tx_set txSet;
+        tools::multisig_tx_set txSet;
         txSet.m_ptx = m_pending_tx;
         txSet.m_signers = m_signers;
         auto cipher = m_wallet.m_wallet->save_multisig_tx(txSet);
@@ -219,7 +219,7 @@ void PendingTransactionImpl::signMultisigTx() {
     try {
         std::vector<crypto::hash> ignore;
 
-        tools::wallet2::multisig_tx_set txSet;
+        tools::multisig_tx_set txSet;
         txSet.m_ptx = m_pending_tx;
         txSet.m_signers = m_signers;
 

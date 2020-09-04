@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,16 +31,17 @@
 
 #include "gtest/gtest.h"
 
+#include "wallet/transfer_details.h"
 #include "wallet/wallet2.h"
 #include <string>
 
-static tools::wallet2::transfer_container make_transfers_container(size_t N)
+static tools::transfer_details_v make_transfers_container(size_t N)
 {
-  tools::wallet2::transfer_container transfers;
+  tools::transfer_details_v transfers;
   for (size_t n = 0; n < N; ++n)
   {
-    transfers.push_back(AUTO_VAL_INIT(tools::wallet2::transfer_details()));
-    tools::wallet2::transfer_details &td = transfers.back();
+    transfers.push_back(AUTO_VAL_INIT(tools::transfer_details()));
+    tools::transfer_details &td = transfers.back();
     td.m_block_height = 1000;
     td.m_spent = false;
     td.m_txid = crypto::null_hash;
@@ -74,7 +75,7 @@ TEST(select_outputs, one_out_of_N)
   // check that if there are N-1 outputs of the same height, one of them
   // already selected, the next one selected is the one that's from a
   // different height
-  tools::wallet2::transfer_container transfers = make_transfers_container(10);
+  tools::transfer_details_v transfers = make_transfers_container(10);
   transfers[6].m_block_height = 700;
   std::vector<size_t> unused_indices({0, 1, 2, 3, 4, 5, 6, 7, 8, 9});
   std::vector<size_t> selected;
@@ -87,7 +88,7 @@ TEST(select_outputs, order)
   tools::wallet2 w;
 
   // check that most unrelated heights are picked in order
-  tools::wallet2::transfer_container transfers = make_transfers_container(5);
+  tools::transfer_details_v transfers = make_transfers_container(5);
   transfers[0].m_block_height = 700;
   transfers[1].m_block_height = 700;
   transfers[2].m_block_height = 704;

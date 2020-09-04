@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,12 +31,15 @@
 
 #pragma once 
 
-#include <boost/program_options.hpp>
-#include <boost/logic/tribool_fwd.hpp>
-#include <atomic>
 #include "cryptonote_basic.h"
 #include "difficulty.h"
 #include "math_helper.h"
+
+#include <boost/logic/tribool_fwd.hpp>
+#include <boost/program_options.hpp>
+
+#include <atomic>
+
 #ifdef _WIN32
 #include <windows.h>
 #elif defined(__linux__)

@@ -1,3 +1,35 @@
+
+###Release v 3.0.4
+* Add mainnet release name
+
+###Release v 3.0.3
+* Repair multisignature transactions (for Cutcoins)
+* Fix multiple printing / formatting issues on token payments
+* Repair input/export blockchain utils
+* Add asking about fees when sending tokens
+* Add token commands to RPC server
+
+###Release v 3.0.2
+
+* Fix problems with boost 1.7+ build
+* Fix building on Windows due to _FORTIFY_SOURCE changes in MSYS2
+* Make all token names that start from 'Cut' not allowed in the system
+* Optimize token_balance command output
+
+###Release v 3.0.1
+
+* Added RCT format for token genesis tx, this feature improves orerall privacy of the process of tokens creation
+* Print token's name in 'show_transfers' command output
+* 'token_id' -> 'token_name' in 'create_token' help
+
+###Release v 3.0.0
+
+* Overall, added major functionality that provide support for private tokens. This includes modified bulletproofs for the range commitments, tokens serialization, changes in LMDB, accounts and transactions logic. 
+* Added 'create_token' command that creates named token.
+* Added 'transfer_token' command that transfers token between wallets.
+* Added 'token_balance' command that prints token bakance splits.
+* Added 'get_tokens' command that prints known tokens in the system.
+
 ###Release v 2.0.6 Byzantine Berserker
 
 * Disabled DNS pulse lookup by default.

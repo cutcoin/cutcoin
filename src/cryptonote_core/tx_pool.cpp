@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -118,7 +118,7 @@ namespace cryptonote
     CRITICAL_REGION_LOCAL(m_transactions_lock);
 
     PERF_TIMER(add_tx);
-    if (tx.version == 0)
+    if (tx.version == TxVersion::none)
     {
       // v0 never accepted
       LOG_PRINT_L1("transaction version 0 is invalid");
@@ -146,7 +146,7 @@ namespace cryptonote
     // fee per kilobyte, size rounded up.
     uint64_t fee;
 
-    if (tx.version == 1)
+    if (tx.version == TxVersion::plain)
     {
       uint64_t inputs_amount = 0;
       if(!get_inputs_money_amount(tx, inputs_amount))
@@ -215,6 +215,27 @@ namespace cryptonote
       tvc.m_verifivation_failed = true;
       tvc.m_invalid_output = true;
       return false;
+    }
+
+    if (tx.is_token_genesis()) {
+      tx_extra_token_data token_data;
+      if (!get_token_data(tx, token_data)) {
+        LOG_PRINT_L1("Could not extract token data from token genesis transaction");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+      if (token_genesis_in_mempool(token_data.d_id))
+      {
+        LOG_PRINT_L1("Token genesis transaction with same token_id already exists in mempool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+      if (m_blockchain.check_existing_token_id(token_data.d_id))
+      {
+        LOG_PRINT_L1("Token already exists in blockchain");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
     }
 
     // assume failure during verification steps until success is certain
@@ -1140,6 +1161,26 @@ namespace cryptonote
     return ss.str();
   }
   //---------------------------------------------------------------------------------
+  bool tx_memory_pool::token_genesis_in_mempool(TokenId token_id) const
+  {
+    CRITICAL_REGION_LOCAL(m_transactions_lock);
+    CRITICAL_REGION_LOCAL1(m_blockchain);
+    bool not_in_mempool = m_blockchain.for_all_txpool_txes([token_id](const crypto::hash &txid, const txpool_tx_meta_t &meta, const cryptonote::blobdata *bd){
+      transaction tx;
+      if (!parse_and_validate_tx_from_blob(*bd, tx))
+      {
+        MERROR("Failed to parse tx from txpool");
+        // break
+        return false;
+      }
+      tx_extra_token_data token_data;
+      get_token_data(tx, token_data);
+      if (token_data.d_id == token_id) return false;
+      return true;
+    }, true, true);
+    return !not_in_mempool;
+  }
+  //---------------------------------------------------------------------------------
   //TODO: investigate whether boolean return is appropriate
   bool tx_memory_pool::fill_block_template(block &bl, size_t median_weight, uint64_t already_generated_coins, size_t &total_weight, uint64_t &fee,
                                            uint64_t &expected_reward, uint8_t version, size_t reserve_weight)
@@ -1150,6 +1191,7 @@ namespace cryptonote
     uint64_t best_coinbase = 0, coinbase = 0;
     total_weight = reserve_weight;
     fee = 0;
+    bool token_genesis_block = false;
 
     //baseline empty block
     get_block_reward(median_weight, total_weight, already_generated_coins, best_coinbase, version);
@@ -1234,6 +1276,25 @@ namespace cryptonote
       {
         LOG_PRINT_L2("  key images already seen");
         continue;
+      }
+      if (tx.is_token_genesis())
+      {
+        if (token_genesis_block)
+        {
+          LOG_PRINT_L2("  second token genesis not allowed");
+          continue;
+        }
+        else token_genesis_block = true;
+        
+        std::vector<tx_extra_field> tx_extra_fields;
+        parse_tx_extra(tx.extra, tx_extra_fields);
+        tx_extra_token_data token_data;
+        get_token_data(tx, token_data);
+        if (m_blockchain.check_existing_token_id(token_data.d_id))
+        {
+          LOG_PRINT_L2("  token already exists in blockchain");
+          continue;
+        }
       }
 
       bl.tx_hashes.push_back(sorted_it->second);

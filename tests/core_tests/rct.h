@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -72,7 +72,7 @@ struct gen_rct_tx_validation_base : public test_chain_unit_base
 
   bool generate_with(std::vector<test_event_entry>& events, const int *out_idx, int mixin,
       uint64_t amount_paid, bool valid,
-      const std::function<void(std::vector<cryptonote::tx_source_entry> &sources, std::vector<cryptonote::tx_destination_entry> &destinations)> &pre_tx,
+      const std::function<void(cryptonote::tx_sources &sources, std::vector<cryptonote::tx_destination_entry> &destinations)> &pre_tx,
       const std::function<void(cryptonote::transaction &tx)> &post_tx) const;
 
 private:

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -66,6 +66,7 @@ namespace cryptonote
    */
   class simple_wallet : public tools::i_wallet2_callback
   {
+
   public:
     static const char *tr(const char *str) { return i18n_translate(str, "cryptonote::simple_wallet"); }
 
@@ -141,24 +142,29 @@ namespace cryptonote
     bool set_segregation_height(const std::vector<std::string> &args = std::vector<std::string>());
     bool set_ignore_fractional_outputs(const std::vector<std::string> &args = std::vector<std::string>());
     bool help(const std::vector<std::string> &args = std::vector<std::string>());
-    bool start_mining(const std::vector<std::string> &args);
-    bool stop_mining(const std::vector<std::string> &args);
+    bool start_staking(const std::vector<std::string> &args);
+    bool stop_staking(const std::vector<std::string> &args);
     bool set_daemon(const std::vector<std::string> &args);
     bool save_bc(const std::vector<std::string> &args);
     bool refresh(const std::vector<std::string> &args);
     bool show_balance_unlocked(bool detailed = false);
     bool show_balance(const std::vector<std::string> &args = std::vector<std::string>());
+    bool show_token_balance(const std::vector<std::string> &args = std::vector<std::string>());
     bool show_incoming_transfers(const std::vector<std::string> &args);
     bool show_payments(const std::vector<std::string> &args);
     bool show_blockchain_height(const std::vector<std::string> &args);
     bool transfer_main(int transfer_type, const std::vector<std::string> &args);
+    bool transfer_token_main(const std::vector<std::string> &args);
     bool transfer(const std::vector<std::string> &args);
+    bool transfer_token(const std::vector<std::string> &args);
     bool locked_transfer(const std::vector<std::string> &args);
     bool locked_sweep_all(const std::vector<std::string> &args);
     bool sweep_main(uint64_t below, bool locked, const std::vector<std::string> &args);
     bool sweep_all(const std::vector<std::string> &args);
     bool sweep_below(const std::vector<std::string> &args);
     bool sweep_single(const std::vector<std::string> &args);
+    bool create_token(const std::vector<std::string> &args);
+    bool get_tokens(const std::vector<std::string> &args);
     bool sweep_unmixable(const std::vector<std::string> &args);
     bool donate(const std::vector<std::string> &args);
     bool sign_transfer(const std::vector<std::string> &args);
@@ -188,6 +194,7 @@ namespace cryptonote
     bool check_reserve_proof(const std::vector<std::string> &args);
     bool show_transfers(const std::vector<std::string> &args);
     bool unspent_outputs(const std::vector<std::string> &args);
+    bool unspent_token_outputs(const std::vector<std::string> &args);
     bool rescan_blockchain(const std::vector<std::string> &args);
     bool refresh_main(uint64_t start_height, bool reset = false, bool is_init = false);
     bool set_tx_note(const std::vector<std::string> &args);
@@ -214,7 +221,7 @@ namespace cryptonote
     bool exchange_multisig_keys(const std::vector<std::string> &args);
     bool export_multisig(const std::vector<std::string>& args);
     bool import_multisig(const std::vector<std::string>& args);
-    bool accept_loaded_tx(const tools::wallet2::multisig_tx_set &txs);
+    bool accept_loaded_tx(const tools::multisig_tx_set &txs);
     bool sign_multisig(const std::vector<std::string>& args);
     bool submit_multisig(const std::vector<std::string>& args);
     bool export_raw_multisig(const std::vector<std::string>& args);
@@ -229,10 +236,10 @@ namespace cryptonote
     uint64_t get_daemon_blockchain_height(std::string& err);
     bool try_connect_to_daemon(bool silent = false, uint32_t* version = nullptr);
     bool ask_wallet_create_if_needed();
-    bool accept_loaded_tx(const std::function<size_t()> get_num_txes, const std::function<const tools::wallet2::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message = std::string());
+    bool accept_loaded_tx(const std::function<size_t()> get_num_txes, const std::function<const tools::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message = std::string());
     bool accept_loaded_tx(const tools::wallet2::unsigned_tx_set &txs);
     bool accept_loaded_tx(const tools::wallet2::signed_tx_set &txs);
-    bool print_ring_members(const std::vector<tools::wallet2::pending_tx>& ptx_vector, std::ostream& ostr);
+    bool print_ring_members(const tools::pending_tx_v &ptx_vector, std::ostream &ostr);
     std::string get_prompt() const;
     bool print_seed(bool encrypted);
 
@@ -255,13 +262,30 @@ namespace cryptonote
      * \brief When --do-not-relay option is specified, save the raw tx hex blob to a file instead of calling m_wallet->commit_tx(ptx).
      * \param ptx_vector Pending tx(es) created by transfer/sweep_all
      */
-    void commit_or_save(std::vector<tools::wallet2::pending_tx>& ptx_vector, bool do_not_relay);
+    void commit_or_save(tools::pending_tx_v &ptx_vector, bool do_not_relay);
 
     //----------------- i_wallet2_callback ---------------------
     virtual void on_new_block(uint64_t height, const cryptonote::block& block);
-    virtual void on_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index);
+
+    virtual void on_money_received(uint64_t                            height,
+                                   const crypto::hash                 &txid,
+                                   const cryptonote::transaction      &tx,
+                                   const cryptonote::TokenId          &token_id,
+                                   uint64_t                            amount,
+                                   const cryptonote::subaddress_index &subaddr_index);
+      // This callback is called when the wallet receives any new utxo.
+
     virtual void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index);
-    virtual void on_money_spent(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& in_tx, uint64_t amount, const cryptonote::transaction& spend_tx, const cryptonote::subaddress_index& subaddr_index);
+
+    virtual void on_money_spent(uint64_t                            height,
+                                const crypto::hash                 &txid,
+                                const cryptonote::transaction      &in_tx,
+                                const cryptonote::TokenId          &token_id,
+                                uint64_t                            amount,
+                                const cryptonote::transaction      &spend_tx,
+                                const cryptonote::subaddress_index &subaddr_index);
+      // This callback is called when the wallet spends any utxo.
+
     virtual void on_skip_transaction(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx);
     virtual boost::optional<epee::wipeable_string> on_get_password(const char *reason);
     //----------------------------------------------------------

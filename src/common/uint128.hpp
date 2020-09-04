@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 //
 // All rights reserved.
 //
@@ -90,7 +90,7 @@ struct u128_t {
   }
 
   explicit operator std::string () const {
-    return std::move(get_string());
+    return get_string();
   }
 
   explicit operator bool () const {

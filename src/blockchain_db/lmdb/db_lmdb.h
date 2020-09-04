@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // All rights reserved.
 //
@@ -69,7 +69,7 @@ typedef struct mdb_txn_cursors
 #define m_cur_block_heights	m_cursors->m_txc_block_heights
 #define m_cur_block_info	m_cursors->m_txc_block_info
 #define m_cur_output_txs	m_cursors->m_txc_output_txs
-#define m_cur_output_amounts	m_cursors->m_txc_output_amounts
+#define m_cur_output_amounts	m_cursors->m_txc_output_amounts // TODO: rename 'm_cur_output_amounts' to 'm_cur_output_tokens'
 #define m_cur_txs	m_cursors->m_txc_txs
 #define m_cur_txs_pruned	m_cursors->m_txc_txs_pruned
 #define m_cur_txs_prunable	m_cursors->m_txc_txs_prunable
@@ -241,18 +241,19 @@ public:
 
   virtual uint64_t get_tx_block_height(const crypto::hash& h) const;
 
-  virtual uint64_t get_num_outputs(const uint64_t& amount) const;
+  virtual uint64_t get_num_outputs(const TokenId& token_id) const;
 
-  virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index);
-  virtual void get_output_key(const uint64_t &amount, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false);
+  virtual output_data_t get_output_key(const TokenId& token_id, const uint64_t& index);
+  virtual void get_output_key(const TokenId &token_id, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false);
 
   virtual tx_out_index get_output_tx_and_index_from_global(const uint64_t& index) const;
   virtual void get_output_tx_and_index_from_global(const std::vector<uint64_t> &global_indices,
       std::vector<tx_out_index> &tx_out_indices) const;
 
-  virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const;
-  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const;
+  virtual tx_out_index get_output_tx_and_index(const TokenId& token_id, const uint64_t& index) const;
+  virtual void get_output_tx_and_index(const TokenId& token_id, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const;
 
+  // TODO: rename 'get_tx_amount_output_indices' to 'get_tx_token_output_indices'
   virtual std::vector<uint64_t> get_tx_amount_output_indices(const uint64_t tx_id) const;
 
   virtual bool has_key_image(const crypto::key_image& img) const;
@@ -297,18 +298,55 @@ public:
   virtual bool can_thread_bulk_indices() const { return true; }
 
   /**
+   * @brief return all tokens on the blockchain
+   *
+   * @param tokens returned token ids list
+   * @return void
+   */
+  virtual void get_all_tokens(std::vector<TokenId> &tokens) const;
+
+  /**
    * @brief return a histogram of outputs on the blockchain
    *
+   * @param token_id token id to get a histogram for
    * @param amounts optional set of amounts to lookup
    * @param unlocked whether to restrict count to unlocked outputs
-   * @param recent_cutoff timestamp to determine which outputs are recent
+   * @param recent_cutoff timestamp to determine whether an output is recent
    * @param min_count return only amounts with at least that many instances
    *
    * @return a set of amount/instances
    */
-  std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count) const;
+  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
+                                                                         const cryptonote::TokenId   &token_id,
+                                                                         const std::vector<uint64_t> &amounts,
+                                                                         bool                         unlocked,
+                                                                         uint64_t                     recent_cutoff,
+                                                                         uint64_t                     min_count) const;
 
-  bool get_output_distribution(uint64_t amount, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const;
+  /**
+   * @brief return output distribution
+   *
+   * @param token_id token id to get a distribution for
+   * @param amount the amount to get a distribution for
+   * @param from_height the height before which we do not care about the data
+   * @param to_height the height after which we do not care about the data
+   * @param return-by-reference distribution the start offset of the first rct output in this block (same as previous if none)
+   * @param return-by-reference base how many outputs of that amount are before the stated distribution
+   * @return true on success
+   */
+  virtual bool get_output_distribution(const cryptonote::TokenId &token_id,
+                                       uint64_t                   from_height,
+                                       uint64_t                   to_height,
+                                       std::vector<uint64_t>     &distribution,
+                                       uint64_t                  &base) const;
+
+  /**
+   * @brief check if outputs with given token_id exists
+   *
+   * @param token_id token id to check
+   * @return true on success
+   */
+  virtual bool has_outputs_with_token_id(const cryptonote::TokenId &token_id) const;
 
 private:
   void do_resize(uint64_t size_increase=0);
@@ -338,13 +376,14 @@ private:
       const rct::key *commitment
       );
 
+  // TODO: we can rename it to 'add_tx_token_output_indices', for inst
   virtual void add_tx_amount_output_indices(const uint64_t tx_id,
       const std::vector<uint64_t>& amount_output_indices
       );
 
   void remove_tx_outputs(const uint64_t tx_id, const transaction& tx);
 
-  void remove_output(const uint64_t amount, const uint64_t& out_index);
+  void remove_output(const TokenId amount, const uint64_t& out_index);
 
   virtual void add_spent_key(const crypto::key_image& k_image);
 

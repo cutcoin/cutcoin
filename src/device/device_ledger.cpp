@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -1266,7 +1266,7 @@ namespace hw {
         this->exchange();
 
         //pseudoOuts
-        if (type == rct::RCTTypeSimple) {
+        if (type == rct::RctType::RCTTypeSimple) {
           for ( i = 0; i < inputs_size; i++) {
             offset = set_command_header(INS_VALIDATE, 0x01, i+2);
             //options

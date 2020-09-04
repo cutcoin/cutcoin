@@ -374,7 +374,7 @@ bool cp_server_impl<TProtocol>::run_server(int threads_count = 0)
 	}
 	for(int i = 0; i != threads_count; i++)
 	{
-		boost::thread(boost::bind(&cp_server_impl::worker_thread_member, this));
+		boost::thread(std::bind(&cp_server_impl::worker_thread_member, this));
 		//HANDLE h_thread = threads_helper::create_thread(worker_thread, this);
 		InterlockedIncrement(&m_worker_thread_counter);
 		//::CloseHandle(h_thread);

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 //
 // All rights reserved.
@@ -101,12 +101,12 @@ int main(int argc, char* argv[])
   SL(nodetool::basic_node_data);
   SL(cryptonote::CORE_SYNC_DATA);
 
-  SL(tools::wallet2::transfer_details);
-  SL(tools::wallet2::payment_details);
-  SL(tools::wallet2::unconfirmed_transfer_details);
-  SL(tools::wallet2::confirmed_transfer_details);
-  SL(tools::wallet2::tx_construction_data);
-  SL(tools::wallet2::pending_tx);
+  SL(tools::transfer_details);
+  SL(tools::payment_details);
+  SL(tools::unconfirmed_transfer_details);
+  SL(tools::confirmed_transfer_details);
+  SL(tools::tx_construction_data);
+  SL(tools::pending_tx);
   SL(tools::wallet2::unsigned_tx_set);
   SL(tools::wallet2::signed_tx_set);
 

@@ -22,9 +22,9 @@ set_tx_note
 show_transfers
 sign
 spendkey
-start_mining
+start_staking
 status
-stop_mining
+stop_staking
 sweep_all
 sweep_unmixable
 transfer

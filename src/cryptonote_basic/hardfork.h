@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,8 +29,8 @@
 
 #pragma once
 
-#include "syncobj.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "syncobj.h"
 
 namespace cryptonote
 {

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -69,7 +69,7 @@ TEST(DNSResolver, IPv4Failure)
   ASSERT_EQ(0, ips.size());
 }
 
-TEST(DNSResolver, DNSSECSuccess)
+TEST(DNSResolver, DISABLED_DNSSECSuccess)
 {
   tools::DNSResolver resolver = tools::DNSResolver::create();
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -136,7 +136,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const transacti
   {
     tx_hash = *tx_hash_ptr;
   }
-  if (tx.version >= 2)
+  if (tx.version >= TxVersion::ring_signatures)
   {
     if (!tx_prunable_hash_ptr)
       tx_prunable_hash = get_transaction_prunable_hash(tx);
@@ -179,9 +179,9 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const transacti
   {
     // miner v2 txes have their coinbase output in one single out to save space,
     // and we store them as rct outputs with an identity mask
-    if (miner_tx && tx.version == 2)
+    if (miner_tx && tx.version >= TxVersion::ring_signatures)
     {
-      cryptonote::tx_out vout = tx.vout[i];
+      tx_out vout = tx.vout[i];
       rct::key commitment = rct::zeroCommit(vout.amount);
       vout.amount = 0;
       amount_output_indices.push_back(add_output(tx_hash, vout, i, tx.unlock_time,
@@ -190,7 +190,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const transacti
     else
     {
       amount_output_indices.push_back(add_output(tx_hash, tx.vout[i], i, tx.unlock_time,
-        tx.version > 1 ? &tx.rct_signatures.outPk[i].mask : NULL));
+        tx.version > TxVersion::plain ? &tx.rct_signatures.outPk[i].mask : NULL));
     }
   }
   add_tx_amount_output_indices(tx_id, amount_output_indices);
@@ -222,7 +222,7 @@ uint64_t BlockchainDB::add_block( const block& blk
 
   uint64_t num_rct_outs = 0;
   add_transaction(blk_hash, blk.miner_tx);
-  if (blk.miner_tx.version == 2)
+  if (blk.miner_tx.version >= TxVersion::ring_signatures)
     num_rct_outs += blk.miner_tx.vout.size();
   int tx_i = 0;
   crypto::hash tx_hash = crypto::null_hash;
@@ -342,7 +342,7 @@ block BlockchainDB::get_block(const crypto::hash& h) const
   return b;
 }
 
-bool BlockchainDB::get_tx(const crypto::hash& h, cryptonote::transaction &tx) const
+bool BlockchainDB::get_tx(const crypto::hash& h, transaction &tx) const
 {
   blobdata bd;
   if (!get_tx_blob(h, bd))

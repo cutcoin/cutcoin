@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -63,7 +63,7 @@ bool make_tx(blockchain_storage& bch)
   std::vector<std::pair<crypto::hash, size_t> > v;
   bch.get_outs_for_amounts(3000000000000, v);
 
-  std::vector<tx_source_entry> sources(11);
+  tx_sources sources(11);
   sources[0].amount = 3000000000000;
   sources[0].outputs.push_back(make_outptu_entr_for_gindex(1, txs, v));
   sources[0].outputs.push_back(make_outptu_entr_for_gindex(2, txs, v));

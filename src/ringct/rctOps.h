@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -34,19 +34,19 @@
 #ifndef RCTOPS_H
 #define RCTOPS_H
 
-#include <cstddef>
-#include <tuple>
-
+#include "crypto/crypto.h"
 #include "crypto/generic-ops.h"
+#include "cryptonote_basic/token.h"
+#include "rctTypes.h"
 
 extern "C" {
 #include "crypto/random.h"
 #include "crypto/keccak.h"
 #include "rctCryptoOps.h"
 }
-#include "crypto/crypto.h"
 
-#include "rctTypes.h"
+#include <cstddef>
+#include <tuple>
 
 //Define this flag when debugging to get additional info on the console
 #ifdef DBG
@@ -103,12 +103,16 @@ namespace rct {
     std::tuple<ctkey, ctkey> ctskpkGen(xmr_amount amount);
     //generates C =aG + bH from b, a is random
     void genC(key & C, const key & a, xmr_amount amount);
+    //generates C =aG + bo from b, a is random, o is the generator point
+    void gp_genC(key & C, const key & a, const key & o, xmr_amount amount);
     //this one is mainly for testing, can take arbitrary amounts..
     std::tuple<ctkey, ctkey> ctskpkGen(const key &bH);
     // make a pedersen commitment with given key
     key commit(xmr_amount amount, const key &mask);
+    key gp_commit(xmr_amount amount, const key &mask, const key &omega);
     // make a pedersen commitment with zero key
     key zeroCommit(xmr_amount amount);
+    key gp_zeroCommit(xmr_amount amount, const key &omega);
     //generates a random uint long long
     xmr_amount randXmrAmount(xmr_amount upperlimit);
 
@@ -184,5 +188,14 @@ namespace rct {
     // where C= aG + bH
     void ecdhEncode(ecdhTuple & unmasked, const key & sharedSec);
     void ecdhDecode(ecdhTuple & masked, const key & sharedSec);
+
+    key smearBits(uint64_t value);
+      // Smear bits of 64-bit value over a 'key'.
+
+    rct::key tokenIdToPoint(cryptonote::TokenId token_id);
+      // Return the ECDH point corresponding to the specified 'token_id'.
+
+    rct::keyV tokenIdToPoint(const std::vector<cryptonote::TokenId> &token_ids);
+    // Return the vector of ECDH points, each of them corresponds to the element of vector 'token_ids'.
 }
 #endif  /* RCTOPS_H */

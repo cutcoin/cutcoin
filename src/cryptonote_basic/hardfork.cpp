@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -27,12 +27,13 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "hardfork.h"
+
+#include "blockchain_db/blockchain_db.h"
+#include "cryptonote_basic/cryptonote_basic.h"
+
 #include <algorithm>
 #include <cstdio>
-
-#include "cryptonote_basic/cryptonote_basic.h"
-#include "blockchain_db/blockchain_db.h"
-#include "hardfork.h"
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "hardfork"

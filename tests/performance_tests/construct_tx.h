@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -62,7 +62,7 @@ public:
 
     for (size_t i = 0; i < out_count; ++i)
     {
-      m_destinations.push_back(tx_destination_entry(this->m_source_amount / out_count, m_alice.get_keys().m_account_address, false));
+      m_destinations.push_back(tx_destination_entry(0, this->m_source_amount / out_count, m_alice.get_keys().m_account_address, false));
     }
 
     return true;

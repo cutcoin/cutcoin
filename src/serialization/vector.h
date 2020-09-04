@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -61,6 +61,13 @@ namespace serialization
 
 template <template <bool> class Archive, class T>
 bool do_serialize(Archive<false> &ar, std::vector<T> &v) { return do_serialize_container(ar, v); }
+
 template <template <bool> class Archive, class T>
 bool do_serialize(Archive<true> &ar, std::vector<T> &v) { return do_serialize_container(ar, v); }
+
+template <template <bool> class Archive, class T, typename S>
+bool do_serialize(Archive<false> &ar, std::vector<T> &v, S &serializer) { return do_serialize_container(ar, v, serializer); }
+
+template <template <bool> class Archive, class T, typename S>
+bool do_serialize(Archive<true> &ar, std::vector<T> &v, S &serializer) { return do_serialize_container(ar, v, serializer); }
 

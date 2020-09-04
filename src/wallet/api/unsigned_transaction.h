@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -59,7 +59,7 @@ public:
 
 private:
     // Callback function to check all loaded tx's and generate confirmationMessage
-    bool checkLoadedTx(const std::function<size_t()> get_num_txes, const std::function<const tools::wallet2::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message);
+    bool checkLoadedTx(const std::function<size_t()> get_num_txes, const std::function<const tools::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message);
     
     friend class WalletImpl;
     WalletImpl &m_wallet;

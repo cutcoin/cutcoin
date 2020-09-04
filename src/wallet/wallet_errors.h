@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -461,6 +461,32 @@ namespace tools
       uint64_t m_available;
       uint64_t m_tx_amount;
     };
+  //----------------------------------------------------------------------------------------------------
+  struct not_enough_unlocked_tokens : public transfer_error
+  {
+    explicit not_enough_unlocked_tokens(std::string&& loc, uint64_t available, uint64_t tx_amount)
+      : transfer_error(std::move(loc), "Not enough unlocked tokens")
+      , m_available(available)
+      , m_tx_amount(tx_amount)
+    {
+    }
+
+    uint64_t available() const { return m_available; }
+    uint64_t tx_amount() const { return m_tx_amount; }
+
+    std::string to_string() const
+    {
+      std::ostringstream ss;
+      ss << transfer_error::to_string() <<
+         ", available = " << cryptonote::print_money(m_available) <<
+         ", tx_amount = " << cryptonote::print_money(m_tx_amount);
+      return ss.str();
+    }
+
+  private:
+    uint64_t m_available;
+    uint64_t m_tx_amount;
+  };
     //----------------------------------------------------------------------------------------------------
     struct not_enough_money : public transfer_error
     {
@@ -477,9 +503,9 @@ namespace tools
       std::string to_string() const
       {
         std::ostringstream ss;
-        ss << transfer_error::to_string() <<
-          ", available = " << cryptonote::print_money(m_available) <<
-          ", tx_amount = " << cryptonote::print_money(m_tx_amount);
+        ss << transfer_error::to_string()
+           << ", available = " << cryptonote::print_money(m_available)
+           << ", tx_amount = " << cryptonote::print_money(m_tx_amount);
         return ss.str();
       }
 
@@ -487,6 +513,30 @@ namespace tools
       uint64_t m_available;
       uint64_t m_tx_amount;
     };
+  //----------------------------------------------------------------------------------------------------
+  struct not_enough_tokens: public transfer_error {
+    explicit not_enough_tokens(std::string&& loc, uint64_t available, uint64_t tx_amount)
+      : transfer_error(std::move(loc), "Not enough tokens")
+      , m_available(available)
+      , m_tx_amount(tx_amount)
+    {
+    }
+    uint64_t available() const { return m_available; }
+    uint64_t tx_amount() const { return m_tx_amount; }
+
+    std::string to_string() const
+    {
+      std::ostringstream ss;
+      ss << transfer_error::to_string()
+         << ", available = " << cryptonote::print_money(m_available)
+         << ", tx_amount = " << cryptonote::print_money(m_tx_amount);
+      return ss.str();
+    }
+
+  private:
+    uint64_t m_available;
+    uint64_t m_tx_amount;
+  };
     //----------------------------------------------------------------------------------------------------
     struct tx_not_possible : public transfer_error
     {
@@ -550,13 +600,12 @@ namespace tools
     //----------------------------------------------------------------------------------------------------
     struct tx_not_constructed : public transfer_error
     {
-      typedef std::vector<cryptonote::tx_source_entry> sources_t;
       typedef std::vector<cryptonote::tx_destination_entry> destinations_t;
 
       explicit tx_not_constructed(
           std::string && loc
-        , sources_t const & sources
-        , destinations_t const & destinations
+        , cryptonote::tx_sources const &sources
+        , destinations_t const &destinations
         , uint64_t unlock_time
         , cryptonote::network_type nettype
         )
@@ -568,7 +617,7 @@ namespace tools
       {
       }
 
-      const sources_t& sources() const { return m_sources; }
+      const cryptonote::tx_sources &sources() const { return m_sources; }
       const destinations_t& destinations() const { return m_destinations; }
       uint64_t unlock_time() const { return m_unlock_time; }
 
@@ -608,7 +657,7 @@ namespace tools
       }
 
     private:
-      sources_t m_sources;
+      cryptonote::tx_sources m_sources;
       destinations_t m_destinations;
       uint64_t m_unlock_time;
       cryptonote::network_type m_nettype;
@@ -649,16 +698,14 @@ namespace tools
     //----------------------------------------------------------------------------------------------------
     struct tx_sum_overflow : public transfer_error
     {
-      explicit tx_sum_overflow(
-          std::string && loc
-        , const std::vector<cryptonote::tx_destination_entry>& destinations
-        , uint64_t fee
-        , cryptonote::network_type nettype
-        )
-        : transfer_error(std::move(loc), "transaction sum + fee exceeds " + cryptonote::print_money(std::numeric_limits<uint64_t>::max()))
-        , m_destinations(destinations)
-        , m_fee(fee)
-        , m_nettype(nettype)
+      explicit tx_sum_overflow(std::string &&loc,
+                               const std::vector<cryptonote::tx_destination_entry> &destinations,
+                               uint64_t fee,
+                               cryptonote::network_type nettype)
+      : transfer_error(std::move(loc), "transaction sum + fee exceeds " + cryptonote::print_money(std::numeric_limits<uint64_t>::max()))
+      , m_destinations(destinations)
+      , m_fee(fee)
+      , m_nettype(nettype)
       {
       }
 
@@ -719,6 +766,41 @@ namespace tools
       {
       }
     };
+  //----------------------------------------------------------------------------------------------------
+  struct different_tokens_in_tx: public transfer_error {
+    explicit different_tokens_in_tx(std::string &&loc)
+    :transfer_error(std::move(loc), "tokens of different types are mixed in a single tx")
+    {
+    }
+  };
+  //----------------------------------------------------------------------------------------------------
+  struct unexpected_token_in_tx: public transfer_error {
+    explicit unexpected_token_in_tx(std::string &&loc)
+      :transfer_error(std::move(loc), "unexpected token in the tx")
+    {
+    }
+  };
+  //----------------------------------------------------------------------------------------------------
+  struct token_creation_not_possible: public transfer_error{
+    explicit token_creation_not_possible(std::string &&loc)
+    :transfer_error(std::move(loc), "token creation not possible")
+    {
+    }
+  };
+  //----------------------------------------------------------------------------------------------------
+  struct fake_input_not_constructed: public transfer_error{
+    explicit fake_input_not_constructed(std::string &&loc)
+    : transfer_error(std::move(loc), "fake input not constructed")
+    {
+    }
+  };
+
+  struct wrong_subaddress_indicies: public transfer_error{
+    explicit wrong_subaddress_indicies(std::string &&loc)
+      :transfer_error(std::move(loc), "wrong subaddress indicies")
+    {
+    }
+  };
     //----------------------------------------------------------------------------------------------------
     struct wallet_rpc_error : public wallet_logic_error
     {
@@ -854,7 +936,7 @@ namespace tools
 
 #define THROW_WALLET_EXCEPTION(err_type, ...)                                                               \
   do {                                                                                                      \
-    LOG_ERROR("THROW EXCEPTION: " << #err_type);                                                 \
+    LOG_ERROR("THROW EXCEPTION: " << #err_type);                                                            \
     tools::error::throw_wallet_ex<err_type>(std::string(__FILE__ ":" STRINGIZE(__LINE__)), ## __VA_ARGS__); \
   } while(0)
 

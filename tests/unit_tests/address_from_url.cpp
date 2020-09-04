@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -83,7 +83,7 @@ TEST(AddressFromTXT, Failure)
   ASSERT_STREQ("", res.c_str());
 }
 
-TEST(AddressFromURL, Success)
+TEST(AddressFromURL, DISABLED_Success)
 {
   const std::string addr = CUTCOIN_DONATION_ADDR;
   
@@ -106,7 +106,7 @@ TEST(AddressFromURL, Success)
   }
 }
 
-TEST(AddressFromURL, Failure)
+TEST(AddressFromURL, DISABLED_Failure)
 {
   bool dnssec_result = false;
 

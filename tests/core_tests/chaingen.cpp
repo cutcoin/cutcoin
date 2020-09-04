@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -305,7 +305,7 @@ typedef pair<uint64_t, size_t>  outloc_t;
 
 namespace
 {
-  uint64_t get_inputs_amount(const vector<tx_source_entry> &s)
+  uint64_t get_inputs_amount(const cryptonote::tx_sources &s)
   {
     uint64_t r = 0;
     BOOST_FOREACH(const tx_source_entry &e, s)
@@ -425,7 +425,7 @@ bool fill_output_entries(std::vector<output_index>& out_indices, size_t sender_o
   return 0 == rest && sender_out_found;
 }
 
-bool fill_tx_sources(std::vector<tx_source_entry>& sources, const std::vector<test_event_entry>& events,
+bool fill_tx_sources(cryptonote::tx_sources &sources, const std::vector<test_event_entry>& events,
                      const block& blk_head, const cryptonote::account_base& from, uint64_t amount, size_t nmix)
 {
     map_output_idx_t outs;
@@ -486,7 +486,7 @@ bool fill_tx_destination(tx_destination_entry &de, const cryptonote::account_bas
 
 void fill_tx_sources_and_destinations(const std::vector<test_event_entry>& events, const block& blk_head,
                                       const cryptonote::account_base& from, const cryptonote::account_base& to,
-                                      uint64_t amount, uint64_t fee, size_t nmix, std::vector<tx_source_entry>& sources,
+                                      uint64_t amount, uint64_t fee, size_t nmix, cryptonote::tx_sources &sources,
                                       std::vector<tx_destination_entry>& destinations)
 {
   sources.clear();
@@ -551,7 +551,7 @@ bool construct_miner_tx_manually(size_t height, uint64_t already_generated_coins
   out.target = txout_to_key(out_eph_public_key);
   tx.vout.push_back(out);
 
-  tx.version = 1;
+  tx.version = TxVersion::plain;
   tx.unlock_time = height + CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW;
 
   return true;
@@ -561,7 +561,7 @@ bool construct_tx_to_key(const std::vector<test_event_entry>& events, cryptonote
                          const cryptonote::account_base& from, const cryptonote::account_base& to, uint64_t amount,
                          uint64_t fee, size_t nmix)
 {
-  vector<tx_source_entry> sources;
+  cryptonote::tx_sources sources;
   vector<tx_destination_entry> destinations;
   fill_tx_sources_and_destinations(events, blk_head, from, to, amount, fee, nmix, sources, destinations);
 

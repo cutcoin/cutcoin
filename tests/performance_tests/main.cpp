@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -248,7 +248,7 @@ int main(int argc, char** argv)
   TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_addKeys);
   TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_scalarmultBase);
   TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_scalarmultKey);
-  TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_scalarmultH);
+//  TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_scalarmultH);
   TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_scalarmult8);
   TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_ge_double_scalarmult_base_vartime);
   TEST_PERFORMANCE1(filter, p, test_crypto_ops, op_ge_double_scalarmult_precomp_vartime);

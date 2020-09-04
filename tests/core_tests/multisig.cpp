@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -129,7 +129,7 @@ void make_multisig_accounts(std::vector<cryptonote::account_base>& account, uint
 bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry>& events,
     size_t inputs, size_t mixin, uint64_t amount_paid, bool valid,
     size_t threshold, size_t total, size_t creator, std::vector<size_t> signers,
-    const std::function<void(std::vector<tx_source_entry> &sources, std::vector<tx_destination_entry> &destinations)> &pre_tx,
+    const std::function<void(tx_sources &sources, std::vector<tx_destination_entry> &destinations)> &pre_tx,
     const std::function<void(transaction &tx)> &post_tx) const
 {
   uint64_t ts_start = 1338224400;
@@ -322,7 +322,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
 #endif
 
   // create a tx: we have 8 outputs, all from coinbase, so "fake" rct - use 2
-  std::vector<tx_source_entry> sources;
+  tx_sources sources;
   for (size_t n = 0; n < inputs; ++n)
   {
     sources.resize(sources.size() + 1);
@@ -366,7 +366,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
 #endif
   std::vector<crypto::secret_key> additional_tx_secret_keys;
   auto sources_copy = sources;
-  r = construct_tx_and_get_tx_key(miner_account[creator].get_keys(), subaddresses, sources, destinations, boost::none, std::vector<uint8_t>(), tx, 0, tx_key, additional_tx_secret_keys, true, rct::RangeProofBorromean, msoutp);
+  r = construct_tx_and_get_tx_key(miner_account[creator].get_keys(), subaddresses, sources, destinations, boost::none, std::vector<uint8_t>(), tx, 0, tx_key, additional_tx_secret_keys, false, true, rct::RangeProofBorromean, msoutp);
   CHECK_AND_ASSERT_MES(r, false, "failed to construct transaction");
 
 #ifndef NO_MULTISIG

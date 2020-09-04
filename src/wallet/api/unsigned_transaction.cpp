@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -77,7 +77,7 @@ bool UnsignedTransactionImpl::sign(const std::string &signedFileName)
      m_status = Status_Error;
      return false;
   }
-  std::vector<tools::wallet2::pending_tx> ptx;
+  std::vector<tools::pending_tx> ptx;
   try
   {
     bool r = m_wallet.m_wallet->sign_tx(m_unsigned_tx_set, signedFileName, ptx);
@@ -98,7 +98,7 @@ bool UnsignedTransactionImpl::sign(const std::string &signedFileName)
 }
 
 //----------------------------------------------------------------------------------------------------
-bool UnsignedTransactionImpl::checkLoadedTx(const std::function<size_t()> get_num_txes, const std::function<const tools::wallet2::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message)
+bool UnsignedTransactionImpl::checkLoadedTx(const std::function<size_t()> get_num_txes, const std::function<const tools::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message)
 {
   // gather info to ask the user
   uint64_t amount = 0, amount_to_dests = 0, change = 0;
@@ -108,7 +108,7 @@ bool UnsignedTransactionImpl::checkLoadedTx(const std::function<size_t()> get_nu
   std::string payment_id_string = "";
   for (size_t n = 0; n < get_num_txes(); ++n)
   {
-    const tools::wallet2::tx_construction_data &cd = get_tx(n);
+    const tools::tx_construction_data &cd = get_tx(n);
 
     std::vector<cryptonote::tx_extra_field> tx_extra_fields;
     bool has_encrypted_payment_id = false;
@@ -160,36 +160,36 @@ bool UnsignedTransactionImpl::checkLoadedTx(const std::function<size_t()> get_nu
         i->second.second += entry.amount;
       amount_to_dests += entry.amount;
     }
-    if (cd.change_dts.amount > 0)
+    if (cd.change_dts.find(cryptonote::CUTCOIN_ID) != cd.change_dts.end() && cd.change_dts.at(cryptonote::CUTCOIN_ID).amount > 0)
     {
-      auto it = dests.find(cd.change_dts.addr);
+      auto it = dests.find(cd.change_dts.at(cryptonote::CUTCOIN_ID).addr);
       if (it == dests.end())
       {
         m_status = Status_Error;
         m_errorString = tr("Claimed change does not go to a paid address");
         return false;
       }
-      if (it->second.second < cd.change_dts.amount)
+      if (it->second.second < cd.change_dts.at(cryptonote::CUTCOIN_ID).amount)
       {
         m_status = Status_Error;
         m_errorString = tr("Claimed change is larger than payment to the change address");
         return  false;
       }
-      if (cd.change_dts.amount > 0)
+      if (cd.change_dts.at(cryptonote::CUTCOIN_ID).amount > 0)
       {
         if (first_known_non_zero_change_index == -1)
           first_known_non_zero_change_index = n;
-        if (memcmp(&cd.change_dts.addr, &get_tx(first_known_non_zero_change_index).change_dts.addr, sizeof(cd.change_dts.addr)))
+        if (memcmp(&cd.change_dts.at(cryptonote::CUTCOIN_ID).addr, &get_tx(first_known_non_zero_change_index).change_dts.at(cryptonote::CUTCOIN_ID).addr, sizeof(cd.change_dts.at(cryptonote::CUTCOIN_ID).addr)))
         {
           m_status = Status_Error;
           m_errorString = tr("Change goes to more than one address");
           return false;
         }
       }
-      change += cd.change_dts.amount;
-      it->second.second -= cd.change_dts.amount;
+      change += cd.change_dts.at(cryptonote::CUTCOIN_ID).amount;
+      it->second.second -= cd.change_dts.at(cryptonote::CUTCOIN_ID).amount;
       if (it->second.second == 0)
-        dests.erase(cd.change_dts.addr);
+        dests.erase(cd.change_dts.at(cryptonote::CUTCOIN_ID).addr);
     }
   }
   std::string dest_string;
@@ -204,9 +204,9 @@ bool UnsignedTransactionImpl::checkLoadedTx(const std::function<size_t()> get_nu
     dest_string = tr("with no destinations");
 
   std::string change_string;
-  if (change > 0)
+  if (get_tx(0).change_dts.find(cryptonote::CUTCOIN_ID) != get_tx(0).change_dts.end() && change > 0)
   {
-    std::string address = get_account_address_as_str(m_wallet.m_wallet->nettype(), get_tx(0).subaddr_account > 0, get_tx(0).change_dts.addr);
+    std::string address = get_account_address_as_str(m_wallet.m_wallet->nettype(), get_tx(0).subaddr_account > 0, get_tx(0).change_dts.at(cryptonote::CUTCOIN_ID).addr);
     change_string += (boost::format(tr("%s change to %s")) % cryptonote::print_money(change) % address).str();
   }
   else

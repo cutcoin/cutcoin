@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -44,7 +44,7 @@ using namespace cryptonote;
 
 bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& events,
     size_t mixin, size_t n_txes, const uint64_t *amounts_paid, bool valid, const rct::RangeProofType *range_proof_type,
-    const std::function<bool(std::vector<tx_source_entry> &sources, std::vector<tx_destination_entry> &destinations, size_t tx_idx)> &pre_tx,
+    const std::function<bool(tx_sources &sources, std::vector<tx_destination_entry> &destinations, size_t tx_idx)> &pre_tx,
     const std::function<bool(transaction &tx, size_t tx_idx)> &post_tx) const
 {
   uint64_t ts_start = 1338224400;
@@ -90,9 +90,10 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
   cryptonote::block blk_txes;
   std::vector<crypto::hash> starting_rct_tx_hashes;
   static const uint64_t input_amounts_available[] = {5000000000000, 30000000000000, 100000000000, 80000000000};
+  rct::keyV omega(n_txes, rct::H);
   for (size_t n = 0; n < n_txes; ++n)
   {
-    std::vector<tx_source_entry> sources;
+    tx_sources sources;
 
     sources.resize(1);
     tx_source_entry& src = sources.back();
@@ -158,8 +159,8 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
       crypto::secret_key amount_key;
       crypto::derivation_to_scalar(derivation, o, amount_key);
       rct::key rct_tx_mask;
-      if (rct_txes.back().rct_signatures.type == rct::RCTTypeSimple || rct_txes.back().rct_signatures.type == rct::RCTTypeBulletproof)
-        rct::decodeRctSimple(rct_txes.back().rct_signatures, rct::sk2rct(amount_key), o, rct_tx_mask, hw::get_device("default"));
+      if (rct_txes.back().rct_signatures.type == rct::RctType::RCTTypeSimple || rct_txes.back().rct_signatures.type == rct::RctType::RCTTypeBulletproof)
+        rct::decodeRctSimple(rct_txes.back().rct_signatures, rct::sk2rct(amount_key), omega, o, rct_tx_mask, hw::get_device("default"));
       else
         rct::decodeRct(rct_txes.back().rct_signatures, rct::sk2rct(amount_key), o, rct_tx_mask, hw::get_device("default"));
     }
@@ -188,7 +189,7 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
 bool gen_bp_tx_validation_base::check_bp(const cryptonote::transaction &tx, size_t tx_idx, const size_t *sizes, const char *context) const
 {
   DEFINE_TESTS_ERROR_CONTEXT(context);
-  CHECK_TEST_CONDITION(tx.version >= 2);
+  CHECK_TEST_CONDITION(tx.version >= TxVersion::ring_signatures);
   CHECK_TEST_CONDITION(rct::is_rct_bulletproof(tx.rct_signatures.type));
   size_t n_sizes = 0, n_amounts = 0;
   for (size_t n = 0; n < tx_idx; ++n)
@@ -299,7 +300,7 @@ bool gen_bp_tx_invalid_not_enough_proofs::generate(std::vector<test_event_entry>
   const uint64_t amounts_paid[] = {5000, 5000, (uint64_t)-1};
   const rct::RangeProofType range_proof_type[] = { rct::RangeProofBulletproof };
   return generate_with(events, mixin, 1, amounts_paid, false, range_proof_type, NULL, [&](cryptonote::transaction &tx, size_t idx){
-    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RCTTypeBulletproof);
+    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RctType::RCTTypeBulletproof);
     CHECK_TEST_CONDITION(!tx.rct_signatures.p.bulletproofs.empty());
     tx.rct_signatures.p.bulletproofs.pop_back();
     CHECK_TEST_CONDITION(!tx.rct_signatures.p.bulletproofs.empty());
@@ -314,7 +315,7 @@ bool gen_bp_tx_invalid_empty_proofs::generate(std::vector<test_event_entry>& eve
   const uint64_t amounts_paid[] = {50000, 50000, (uint64_t)-1};
   const rct::RangeProofType range_proof_type[] = { rct::RangeProofBulletproof };
   return generate_with(events, mixin, 1, amounts_paid, false, range_proof_type, NULL, [&](cryptonote::transaction &tx, size_t idx){
-    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RCTTypeBulletproof);
+    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RctType::RCTTypeBulletproof);
     tx.rct_signatures.p.bulletproofs.clear();
     return true;
   });
@@ -327,7 +328,7 @@ bool gen_bp_tx_invalid_too_many_proofs::generate(std::vector<test_event_entry>& 
   const uint64_t amounts_paid[] = {10000, (uint64_t)-1};
   const rct::RangeProofType range_proof_type[] = { rct::RangeProofBulletproof };
   return generate_with(events, mixin, 1, amounts_paid, false, range_proof_type, NULL, [&](cryptonote::transaction &tx, size_t idx){
-    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RCTTypeBulletproof);
+    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RctType::RCTTypeBulletproof);
     CHECK_TEST_CONDITION(!tx.rct_signatures.p.bulletproofs.empty());
     tx.rct_signatures.p.bulletproofs.push_back(tx.rct_signatures.p.bulletproofs.back());
     return true;
@@ -341,7 +342,7 @@ bool gen_bp_tx_invalid_wrong_amount::generate(std::vector<test_event_entry>& eve
   const uint64_t amounts_paid[] = {10000, (uint64_t)-1};
   const rct::RangeProofType range_proof_type[] = { rct::RangeProofBulletproof };
   return generate_with(events, mixin, 1, amounts_paid, false, range_proof_type, NULL, [&](cryptonote::transaction &tx, size_t idx){
-    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RCTTypeBulletproof);
+    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RctType::RCTTypeBulletproof);
     CHECK_TEST_CONDITION(!tx.rct_signatures.p.bulletproofs.empty());
     tx.rct_signatures.p.bulletproofs.back() = rct::bulletproof_PROVE(1000, rct::skGen());
     return true;
@@ -355,8 +356,8 @@ bool gen_bp_tx_invalid_borromean_type::generate(std::vector<test_event_entry>& e
   const uint64_t amounts_paid[] = {5000, 5000, (uint64_t)-1};
   const rct::RangeProofType range_proof_type[] = {rct::RangeProofPaddedBulletproof};
   return generate_with(events, mixin, 1, amounts_paid, false, range_proof_type, NULL, [&](cryptonote::transaction &tx, size_t tx_idx){
-    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RCTTypeBulletproof);
-    tx.rct_signatures.type = rct::RCTTypeSimple;
+    CHECK_TEST_CONDITION(tx.rct_signatures.type == rct::RctType::RCTTypeBulletproof);
+    tx.rct_signatures.type = (uint8_t)rct::RctType::RCTTypeSimple;
     return true;
   });
 }

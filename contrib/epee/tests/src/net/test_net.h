@@ -27,10 +27,11 @@
 #pragma once
 
 #include <boost/thread.hpp>
-#include <boost/bind.hpp> 
 
 #include "net/levin_server_cp2.h"
 #include "storages/abstract_invoke.h"
+
+#include <functional>
 
 namespace epee
 {
@@ -258,8 +259,8 @@ namespace tests
     srv1.set_thread_prefix("SRV_A");
     srv2.set_thread_prefix("SRV_B");
 
-    boost::thread th1( boost::bind(&test_levin_server::run, &srv1));
-    boost::thread th2( boost::bind(&test_levin_server::run, &srv2));
+    boost::thread th1( std::bind(&test_levin_server::run, &srv1));
+    boost::thread th2( std::bind(&test_levin_server::run, &srv2));
 
     LOG_PRINT_L0("Initialized servers, waiting for worker threads started...");
     misc_utils::sleep_no_w(1000);  
@@ -364,8 +365,8 @@ namespace tests
     srv1.set_thread_prefix("SRV_A");
     srv2.set_thread_prefix("SRV_B");
 
-    boost::thread thmain1( boost::bind(&test_levin_server::run, &srv1));
-    boost::thread thmain2( boost::bind(&test_levin_server::run, &srv2));
+    boost::thread thmain1( std::bind(&test_levin_server::run, &srv1));
+    boost::thread thmain2( std::bind(&test_levin_server::run, &srv2));
 
     LOG_PRINT_L0("Initalized servers, waiting for worker threads started...");
     misc_utils::sleep_no_w(1000);  
@@ -379,14 +380,14 @@ namespace tests
     COMMAND_EXAMPLE_1::request resp;
 
 
-    boost::thread work_1( boost::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
-    boost::thread work_2( boost::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
-    boost::thread work_3( boost::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
-    boost::thread work_4( boost::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
-    boost::thread work_5( boost::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
-    boost::thread work_6( boost::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
-    boost::thread work_7( boost::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
-    boost::thread work_8( boost::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
+    boost::thread work_1( std::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
+    boost::thread work_2( std::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
+    boost::thread work_3( std::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
+    boost::thread work_4( std::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
+    boost::thread work_5( std::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
+    boost::thread work_6( std::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
+    boost::thread work_7( std::bind(do_test2_work_with_srv, boost::ref(srv1), port2));
+    boost::thread work_8( std::bind(do_test2_work_with_srv, boost::ref(srv2), port1));
 
 
     work_1.join();

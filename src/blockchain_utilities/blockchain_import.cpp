@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -182,14 +182,31 @@ int check_flush(cryptonote::core &core, std::vector<block_complete_entry> &block
   for (const auto &b: blocks)
   {
     cryptonote::block block;
-    if (!parse_and_validate_block_from_blob(b.block, block))
-    {
+    if (!parse_and_validate_block_from_blob(b.block, block)) {
       MERROR("Failed to parse block: "
-          << epee::string_tools::pod_to_hex(get_blob_hash(b.block)));
+             << epee::string_tools::pod_to_hex(get_blob_hash(b.block)));
       core.cleanup_handle_incoming_blocks();
       return 1;
     }
     hashes.push_back(cryptonote::get_block_hash(block));
+    if (block.major_version >= HF_VERSION_POS) {
+      if (b.txs.size() < 1) {
+        MERROR("Failed to parse block (could not find coinstake tx): "
+               << epee::string_tools::pod_to_hex(get_blob_hash(b.block)));
+        core.cleanup_handle_incoming_blocks();
+        return 1;
+      }
+
+      auto &tx_blob               = b.txs[0];
+      tx_verification_context tvc = AUTO_VAL_INIT(tvc);
+      core.handle_incoming_tx(tx_blob, tvc, true, true, false);
+      if(tvc.m_verifivation_failed) {
+        MERROR("transaction verification failed, tx_id = "
+                 << epee::string_tools::pod_to_hex(get_blob_hash(tx_blob)));
+        core.cleanup_handle_incoming_blocks();
+        return 1;
+      }
+    }
   }
   core.prevalidate_block_hashes(core.get_blockchain_storage().get_db().height(), hashes);
 

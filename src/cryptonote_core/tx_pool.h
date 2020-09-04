@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2020, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -105,8 +105,9 @@ namespace cryptonote
     /**
      * @copydoc add_tx(transaction&, tx_verification_context&, bool, bool, uint8_t)
      *
-     * @param id the transaction's hash
-     * @param tx_weight the transaction's weight
+     * @param body of the transaction that intended to be stored.
+     * @param id the transaction's hash.
+     * @param tx_weight the transaction's weight.
      */
     bool add_tx(transaction &tx, const crypto::hash &id, size_t tx_weight, tx_verification_context& tvc, bool kept_by_block, bool relayed, bool do_not_relay, uint8_t version);
 
@@ -350,6 +351,8 @@ namespace cryptonote
      * @return the string
      */
     std::string print_pool(bool short_format) const;
+
+    bool token_genesis_in_mempool(TokenId token_id) const;
 
     /**
      * @brief remove transactions from the pool which are no longer valid

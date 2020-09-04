@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2019, CUT coin
+# Copyright (c) 2018-2020, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -27,7 +27,8 @@
 # STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-set(unit_tests_sources
+set(
+  unit_tests_sources
   account.cpp
   apply_permutation.cpp
   address_from_url.cpp
@@ -37,6 +38,7 @@ set(unit_tests_sources
   block_queue.cpp
   block_reward.cpp
   bulletproofs.cpp
+  big_bulletproofs.cpp
   canonical_amounts.cpp
   chacha.cpp
   checkpoints.cpp
@@ -82,10 +84,11 @@ set(unit_tests_sources
   ringdb.cpp
   wipeable_string.cpp
   is_hdd.cpp
-  aligned.cpp)
+  aligned.cpp
+)
 
 set(unit_tests_headers
-  unit_tests_utils.h)
+  unit_tests_utils.h big_bulletproofs.cpp)
 
 add_executable(unit_tests
   ${unit_tests_sources}

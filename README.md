@@ -1,4 +1,14 @@
-# CUT coin
+# Cutcoin
+
+Cutcoin Project unites privacy focused digital currency, private tokens and bunch 
+of basic instruments to handle them. The coin uses Proof of Stake (PoS) consensus, 
+and that means less electricity consumption and eco-friendliness. Cutcoin belongs 
+to CryptoNote family and it's the first coin among others that combines exceptional 
+privacy, PoS consensus and tokens support.
+
+## License
+
+Cutcoin is an open source software, see the full license text [here](LICENSE).
 
 Copyright (c) 2018-2020 CUT coin.
 
@@ -8,13 +18,12 @@ Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
 ## Content
 
-  - [Development resources](#development-resources)
-  - [Research](#research)
+  - [Development resources](##development resources)
+  - [Research](##research)
   - [Translations](#translations)
   - [Introduction](#introduction)
   - [About this project](#about-this-project)
   - [Supporting the project](#supporting-the-project)
-  - [License](#license)
   - [Contributing](#contributing)
   - [Release staging schedule and protocol](#release-staging-schedule-and-protocol)
   - [Compiling Cutcoin from source](#compiling-monero-from-source)
@@ -33,32 +42,50 @@ Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
 ## Research
 
-Cutcoin Team has a solid conviction that the further advances in CryptoNote protocol development should be based on research work.
-We do our own researches and utilize results that presented in respectable scientific sources.
-If you have great ideas of how to make CryptoNote more reliable, secure and fast please contact us [info@cutcoin.org](mailto:info@cutcoin.org).
+Cutcoin Team has a solid conviction that the further advances in CryptoNote protocol 
+development should be based on research work. We do our own researches and utilize 
+results that presented in respectable scientific sources. If you have great ideas 
+of how to make CryptoNote more reliable, secure and fast please contact us 
+[info@cutcoin.org](mailto:info@cutcoin.org).
 
 ## Introduction
 
-Concealed untraceable transactions coin that establishes a new level of privacy and usability.
+CUTcoin (Concealed Untraceable Transactions) is the coin that establishes a new level 
+of privacy and usability. Cutcoin transactions keep in secret transferred amounts of funds, 
+untracable and unlinkable. Users don't reveal their addresses and share one-time 
+addresses instead. PoS consensus algorithm reduces power consumption and lets block 
+pass (on average) in more predictable periods of time. This allows to increase 
+Transaction per Second (TPS) rate if required.
 
-## License
+PoS algorithm don't reveal any user's data except for amount of the output that 
+subscribes a block. The output is spent during this process in special staking transaction,
+this helps keep overall privacy and generate constant flow of the fresh unspent outputs. 
 
-See our [LICENSE](LICENSE).
+[CryptoNote Tokens (CNT-1)](https://cutcoin.org/cutokens) implemented in Cutcoin 
+is the extension of CryptoNote protocol that allows creating and manipulating 
+named tokens. Tokens are very similar to the coin itself, and that's one of their 
+advantages: well known and time proved protocol that guarantees reliable privacy 
+and security. The only place where the information about tokens is stored 
+is the Cutcoin blockchain, and this means no additional centralization were brought.
+
+CNT-1 is extremely exciting as provides first known realization of private tokens. 
+Tokens can be created, owned or transferred via common Cutcoin transaction. 
+This give them all privacy features intrinsic to Cutcoin itself.
 
 ## Contributing
 
 If you want to help out, see [CONTRIBUTING](CONTRIBUTING.md) for a set of guidelines. 
-Our community's help is appreciated much and the most active members became Cutcoin Ambassadors, 
-that gives different benefits.
+Our community's help is appreciated much and the most active members become official 
+Cutcoin Ambassadors, that gives different benefits.
 
-## Compiling CUT coin from source
+## Compiling Cutcoin from source
 
 ### Dependencies
 
-The following table summarizes the tools and libraries required to build. A
-few of the libraries are also included in this repository (marked as
-"Vendored"). By default, the build uses the library installed on the system,
-and ignores the vendored sources. However, if no library is found installed on
+The following table summarizes the tools and libraries required to build the sources. 
+A few of the libraries are also included in this repository (marked as "Vendored"). 
+By default, the build uses the library installed on the system, and ignores 
+the vendored sources. However, if no library is found installed on
 the system, then the vendored source will be built and used. The vendored
 sources are also used for statically-linked builds because distribution
 packages often include only shared library binaries (`.so`) but not static
@@ -114,7 +141,7 @@ If you already have a repo cloned, initialize and update:
 
 ### Build instructions
 
-CUT coin uses the CMake build system and a top-level [Makefile](Makefile) that
+Cutcoin uses the CMake build system and a top-level [Makefile](Makefile) that
 invokes cmake commands as needed.
 
 #### On Linux and OS X
@@ -251,7 +278,7 @@ application.
 
 * The resulting executables can be found in `build/debug/bin`
 
-## Running cutcoind
+## Running the daemon (cutcoind)
 
 The build places the binary in `bin/` sub-directory within the build directory
 from which cmake was invoked (repository root by default). To run in

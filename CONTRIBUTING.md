@@ -1,6 +1,6 @@
 # Contributing to Cutcoin
 
-We preciate any help that supports the project. Please conact
+We appreciate any help that supports the project. Please contact
 
 - Forum: [https://bitcointalk.org/index.php?topic=5087550.msg48784779#msg48784779](https://bitcointalk.org/index.php?topic=5087550.msg48784779#msg48784779)
 - Mail: [info@cutcoin.org](mailto:info@cutcoin.org)

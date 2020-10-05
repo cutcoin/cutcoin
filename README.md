@@ -18,7 +18,7 @@ Portions Copyright (c) 2012-2013 The Cryptonote developers.
 
 ## Content
 
-  - [Development resources](#development resources)
+  - [Development resources](#development-resources)
   - [Research](#research)
   - [Translations](#translations)
   - [Introduction](#introduction)

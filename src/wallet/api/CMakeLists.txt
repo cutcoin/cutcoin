@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2020, CUT coin
+# Copyright (c) 2018-2021, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -41,6 +41,7 @@ set(wallet_api_sources
   address_book.cpp
   subaddress.cpp
   subaddress_account.cpp
+  token_info.cpp
   unsigned_transaction.cpp)
 
 set(wallet_api_headers
@@ -56,6 +57,7 @@ set(wallet_api_private_headers
   address_book.h
   subaddress.h
   subaddress_account.h
+  token_info.h
   unsigned_transaction.h)
 
 cutcoin_private_headers(wallet_api

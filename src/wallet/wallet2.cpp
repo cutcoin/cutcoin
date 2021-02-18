@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -71,6 +71,7 @@ using namespace epee;
 #include "tx_creation_context.h"
 #include "tx_template.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_core/tx_construction_context.h"
 
 extern "C"
 {
@@ -5556,8 +5557,12 @@ void wallet2::commit_tx(pending_tx &ptx)
   if (store_tx_info()) {
     payment_id = get_payment_id(ptx);
     dests = ptx.dests;
-    for(size_t idx: ptx.selected_transfers)
+    for (size_t i = 0; i < ptx.selected_transfers.size(); i++)
+    {
+      if (i == ptx.selected_transfers.size() - 1 && ptx.tx.is_token_genesis()) continue;
+      uint64_t idx = ptx.selected_transfers[i];
       amounts_in[m_transfers[idx].m_token_id] += m_transfers[idx].amount();
+    }
   }
   add_unconfirmed_tx(ptx.tx,
                      amounts_in,
@@ -5743,27 +5748,22 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, pending_tx_v &txs, signed_t
     LOG_PRINT_L1(" " << (n+1) << ": " << sd.sources.size() << " inputs, ring size " << sd.sources[0].outputs.size());
     signed_txes.ptx.push_back(pending_tx());
     tools::pending_tx &ptx = signed_txes.ptx.back();
-    rct::RangeProofType range_proof_type = rct::RangeProofBorromean;
-    if (sd.use_bulletproofs) {
-      range_proof_type = rct::RangeProofPaddedBulletproof;
-    }
-    crypto::secret_key tx_key;
-    std::vector<crypto::secret_key> additional_tx_keys;
     rct::multisig_out msout;
-    bool r = cryptonote::construct_tx_and_get_tx_key(m_account.get_keys(),
-                                                     m_subaddresses,
-                                                     sd.sources,
-                                                     sd.splitted_dsts,
-                                                     sd.change_dts[CUTCOIN_ID].addr,
-                                                     sd.extra,
-                                                     ptx.tx,
-                                                     sd.unlock_time,
-                                                     tx_key,
-                                                     additional_tx_keys,
-                                                     use_fork_rules(11),
-                                                     sd.use_rct,
-                                                     range_proof_type,
-                                                     m_multisig ? &msout : nullptr);
+
+    TxConstructionContext context;
+    context.d_sender_account_keys = m_account.get_keys();
+    context.d_subaddresses        = m_subaddresses;
+    context.d_sources             = sd.sources;
+    context.d_destinations        = sd.splitted_dsts;
+    context.d_change_addr         = sd.change_dts[CUTCOIN_ID].addr;
+    context.d_extra               = sd.extra;
+    context.d_unlock_time         = sd.unlock_time;
+    context.d_tx_version          = sd.use_rct ? (use_fork_rules(HF_VERSION_TOKENS) ? TxVersion::tokens: TxVersion::ring_signatures): TxVersion::plain;
+    context.d_range_proof_type    = sd.use_bulletproofs ? rct::RangeProofPaddedBulletproof: rct::RangeProofBorromean;
+    context.d_msout               = m_multisig ? &msout: nullptr;
+
+    bool r = cryptonote::construct_tx_and_get_tx_key(context, ptx.tx);
+
     THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sd.sources, sd.splitted_dsts, sd.unlock_time, m_nettype);
     // we don't test tx size, because we don't know the current limit, due to not having a blockchain,
     // and it's a bit pointless to fail there anyway, since it'd be a (good) guess only. We sign anyway,
@@ -5776,8 +5776,8 @@ bool wallet2::sign_tx(unsigned_tx_set &exported_txs, pending_tx_v &txs, signed_t
     if (store_tx_info())
     {
       const crypto::hash txid = get_transaction_hash(ptx.tx);
-      m_tx_keys.insert(std::make_pair(txid, tx_key));
-      m_additional_tx_keys.insert(std::make_pair(txid, additional_tx_keys));
+      m_tx_keys.insert(std::make_pair(txid, context.d_tx_key));
+      m_additional_tx_keys.insert(std::make_pair(txid, context.d_additional_tx_keys));
     }
 
     std::string key_images;
@@ -6206,21 +6206,22 @@ bool wallet2::sign_multisig_tx(multisig_tx_set &exported_txs, std::vector<crypto
         if (p.V.size() > 1)
           range_proof_type = rct::RangeProofPaddedBulletproof;
     }
-    bool r = construct_tx_with_tx_key(m_account.get_keys(),
-                                      m_subaddresses,
-                                      sources,
-                                      sd.splitted_dsts,
-                                      ptx.change_dts[CUTCOIN_ID].addr,
-                                      sd.extra,
-                                      tx,
-                                      sd.unlock_time,
-                                      ptx.tx_key,
-                                      ptx.additional_tx_keys,
-                                      use_fork_rules(11),
-                                      sd.use_rct,
-                                      range_proof_type,
-                                      &msout,
-                                      false);
+
+    TxConstructionContext context;
+    context.d_sender_account_keys = m_account.get_keys();
+    context.d_subaddresses        = m_subaddresses;
+    context.d_sources             = sources;
+    context.d_destinations        = sd.splitted_dsts;
+    context.d_change_addr         = ptx.change_dts[CUTCOIN_ID].addr;
+    context.d_extra               = sd.extra;
+    context.d_unlock_time         = sd.unlock_time;
+    context.d_tx_key              = ptx.tx_key;
+    context.d_additional_tx_keys  = ptx.additional_tx_keys;
+    context.d_tx_version          = sd.use_rct ? (use_fork_rules(HF_VERSION_TOKENS) ? TxVersion::tokens: TxVersion::ring_signatures): TxVersion::plain;
+    context.d_range_proof_type    = range_proof_type;
+    context.d_msout               = &msout;
+
+    bool r = construct_tx_with_tx_key(context, tx);
     THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sd.sources, sd.splitted_dsts, sd.unlock_time, m_nettype);
 
     THROW_WALLET_EXCEPTION_IF(get_transaction_prefix_hash(tx) != get_transaction_prefix_hash(ptx.tx),
@@ -7533,7 +7534,7 @@ void wallet2::transfer_selected(const std::vector<cryptonote::tx_destination_ent
   LOG_PRINT_L2("preparing outputs");
   typedef cryptonote::tx_source_entry::output_entry tx_output_entry;
   size_t i = 0, out_index = 0;
-  tx_sources sources;
+  TxSources sources;
   for(size_t idx: selected_transfers)
   {
     sources.resize(sources.size()+1);
@@ -7597,11 +7598,22 @@ void wallet2::transfer_selected(const std::vector<cryptonote::tx_destination_ent
     dust += d.amount;
   }
 
-  crypto::secret_key tx_key;
-  std::vector<crypto::secret_key> additional_tx_keys;
   rct::multisig_out msout;
+
+  TxConstructionContext context;
+  context.d_sender_account_keys = m_account.get_keys();
+  context.d_subaddresses        = m_subaddresses;
+  context.d_sources             = sources;
+  context.d_destinations        = splitted_dsts;
+  context.d_change_addr         = change_dts.addr;
+  context.d_extra               = extra;
+  context.d_unlock_time         = unlock_time;
+  context.d_tx_version          = TxVersion::plain;
+  context.d_range_proof_type    = rct::RangeProofBulletproof;
+  context.d_msout               = m_multisig ? &msout: nullptr;
+
   LOG_PRINT_L2("constructing tx");
-  bool r = cryptonote::construct_tx_and_get_tx_key(m_account.get_keys(), m_subaddresses, sources, splitted_dsts, change_dts.addr, extra, tx, unlock_time, tx_key, additional_tx_keys, use_fork_rules(11), false, rct::RangeProofBulletproof, m_multisig ? &msout : nullptr);
+  bool r = construct_tx_and_get_tx_key(context, tx);
   LOG_PRINT_L2("constructed tx, r="<<r);
   THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, splitted_dsts, unlock_time, m_nettype);
   THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx), error::tx_too_big, tx, upper_transaction_weight_limit);
@@ -7628,8 +7640,8 @@ void wallet2::transfer_selected(const std::vector<cryptonote::tx_destination_ent
   ptx.tx = tx;
   ptx.change_dts[CUTCOIN_ID] = change_dts;
   ptx.selected_transfers = selected_transfers;
-  ptx.tx_key = tx_key;
-  ptx.additional_tx_keys = additional_tx_keys;
+  ptx.tx_key = context.d_tx_key;
+  ptx.additional_tx_keys = context.d_additional_tx_keys;
   ptx.dests = dsts;
   ptx.construction_data.sources = {sources};
   ptx.construction_data.change_dts[CUTCOIN_ID] = change_dts;
@@ -7722,10 +7734,9 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   //prepare inputs
   LOG_PRINT_L2("preparing outputs");
   size_t i = 0, out_index = 0;
-  tx_sources sources;
+  TxSources sources;
   std::unordered_set<rct::key> used_L;
-  for(size_t idx: selected_transfers)
-  {
+  for(size_t idx: selected_transfers) {
     sources.resize(sources.size()+1);
     tx_source_entry &src = sources.back();
     const transfer_details& td = m_transfers[idx];
@@ -7737,8 +7748,7 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     THROW_WALLET_EXCEPTION_IF(outs[out_index].size() < fake_outputs_count ,  error::wallet_internal_error, "fake_outputs_count > random outputs found");
 
     typedef tx_source_entry::output_entry tx_output_entry;
-    for (size_t n = 0; n < fake_outputs_count + 1; ++n)
-    {
+    for (size_t n = 0; n < fake_outputs_count + 1; ++n) {
       tx_output_entry oe;
       oe.first = std::get<0>(outs[out_index][n]);
       oe.second.dest = rct::pk2rct(std::get<1>(outs[out_index][n]));
@@ -7805,31 +7815,31 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
     splitted_dsts.push_back(change_dts);
   }
 
-  crypto::secret_key tx_key;
-  std::vector<crypto::secret_key> additional_tx_keys;
+  TxConstructionContext context;
   rct::multisig_out msout;
-  LOG_PRINT_L2("constructing tx");
   auto sources_copy = sources;
-  bool r = construct_tx_and_get_tx_key(m_account.get_keys(),
-                                       m_subaddresses,
-                                       sources,
-                                       splitted_dsts,
-                                       change_dts.addr,
-                                       extra,
-                                       tx,
-                                       unlock_time,
-                                       tx_key,
-                                       additional_tx_keys,
-                                       use_fork_rules(11),
-                                       true,
-                                       range_proof_type,
-                                       m_multisig ? &msout : nullptr);
-  LOG_PRINT_L2("constructed tx, r="<<r);
-  THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, dsts, unlock_time, m_nettype);
-  THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx),
-                            error::tx_too_big,
-                            tx,
-                            upper_transaction_weight_limit);
+
+  {
+    context.d_sender_account_keys = m_account.get_keys();
+    context.d_subaddresses        = m_subaddresses;
+    context.d_sources             = sources;
+    context.d_destinations        = splitted_dsts;
+    context.d_change_addr         = change_dts.addr;
+    context.d_extra               = extra;
+    context.d_unlock_time         = unlock_time;
+    context.d_tx_version          = use_fork_rules(HF_VERSION_TOKENS) ? TxVersion::tokens: TxVersion::ring_signatures;
+    context.d_range_proof_type    = range_proof_type;
+    context.d_msout               = m_multisig ? &msout : nullptr;
+
+    LOG_PRINT_L2("constructing tx");
+    bool r = construct_tx_and_get_tx_key(context, tx);
+    LOG_PRINT_L2("constructed tx, r=" << r);
+    THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, dsts, unlock_time, m_nettype);
+    THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx),
+                              error::tx_too_big,
+                              tx,
+                              upper_transaction_weight_limit);
+  }
 
   // work out the permutation done on sources
   std::vector<size_t> ins_order;
@@ -7871,8 +7881,20 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
         LOG_PRINT_L2("Creating supplementary multisig transaction");
         transaction ms_tx;
         auto sources_copy_copy = sources_copy;
-        bool r = construct_tx_with_tx_key(m_account.get_keys(), m_subaddresses, sources_copy_copy, splitted_dsts, change_dts.addr, extra, ms_tx, unlock_time,tx_key, additional_tx_keys, use_fork_rules(11), true, range_proof_type, &msout, false);
-        LOG_PRINT_L2("constructed tx, r="<<r);
+
+        context.d_sender_account_keys = m_account.get_keys();
+        context.d_subaddresses        = m_subaddresses;
+        context.d_sources             = sources_copy;
+        context.d_destinations        = splitted_dsts;
+        context.d_change_addr         = change_dts.addr;
+        context.d_extra               = extra;
+        context.d_unlock_time         = unlock_time;
+        context.d_tx_version          = use_fork_rules(HF_VERSION_TOKENS) ? TxVersion::tokens: TxVersion::ring_signatures;
+        context.d_range_proof_type    = range_proof_type;
+        context.d_msout               = m_multisig ? &msout: nullptr;
+
+        bool r = construct_tx_with_tx_key(context, ms_tx);
+        LOG_PRINT_L2("constructed tx, r=" << r);
         THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, splitted_dsts, unlock_time, m_nettype);
         THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx), error::tx_too_big, tx, upper_transaction_weight_limit);
         THROW_WALLET_EXCEPTION_IF(get_transaction_prefix_hash(ms_tx) != prefix_hash, error::wallet_internal_error, "Multisig txes do not share prefix");
@@ -7905,8 +7927,8 @@ void wallet2::transfer_selected_rct(std::vector<cryptonote::tx_destination_entry
   ptx.change_dts[CUTCOIN_ID] = change_dts;
   ptx.selected_transfers = selected_transfers;
   tools::apply_permutation(ins_order, ptx.selected_transfers);
-  ptx.tx_key = tx_key;
-  ptx.additional_tx_keys = additional_tx_keys;
+  ptx.tx_key = context.d_tx_key;
+  ptx.additional_tx_keys = context.d_additional_tx_keys;
   ptx.dests = dsts;
   ptx.multisig_sigs = multisig_sigs;
   ptx.construction_data.sources = sources_copy;
@@ -8119,31 +8141,31 @@ void wallet2::transfer_token_rct(TxCreationContext                        &tcc,
     change_dst[t.first] = t.second.d_change_dst;
   }
 
-  secret_key tx_key;
-  std::vector<secret_key> additional_tx_keys;
+  TxConstructionContext context;
   rct::multisig_out msout;
   LOG_PRINT_L2("constructing tx");
   auto sources_copy = sources;
-  bool r = construct_tx_and_get_tx_key(m_account.get_keys(),
-                                       m_subaddresses,
-                                       sources,
-                                       flat_dst,
-                                       change_dst[CUTCOIN_ID].addr,
-                                       extra,
-                                       tx,
-                                       unlock_time,
-                                       tx_key,
-                                       additional_tx_keys,
-                                       use_fork_rules(11),
-                                       true,
-                                       range_proof_type,
-                                       m_multisig ? &msout : nullptr);
-  LOG_PRINT_L2("constructed tx, r="<<r);
-  THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, flat_dst, unlock_time, m_nettype);
-  THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx),
-                            error::tx_too_big,
-                            tx,
-                            upper_transaction_weight_limit);
+
+  {
+    context.d_sender_account_keys = m_account.get_keys();
+    context.d_subaddresses        = m_subaddresses;
+    context.d_sources             = sources;
+    context.d_destinations        = flat_dst;
+    context.d_change_addr         = change_dst[CUTCOIN_ID].addr;
+    context.d_extra               = extra;
+    context.d_unlock_time         = unlock_time;
+    context.d_tx_version          = use_fork_rules(HF_VERSION_TOKENS) ? TxVersion::tokens: TxVersion::ring_signatures;
+    context.d_range_proof_type    = range_proof_type;
+    context.d_msout               = m_multisig ? &msout: nullptr;
+
+    bool r = construct_tx_and_get_tx_key(context, tx);
+    LOG_PRINT_L2("constructed tx, r="<<r);
+    THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, flat_dst, unlock_time, m_nettype);
+    THROW_WALLET_EXCEPTION_IF(upper_transaction_weight_limit <= get_transaction_weight(tx),
+                              error::tx_too_big,
+                              tx,
+                              upper_transaction_weight_limit);
+  }
 
   // work out the permutation done on sources
   std::vector<size_t> ins_order;
@@ -8180,8 +8202,8 @@ void wallet2::transfer_token_rct(TxCreationContext                        &tcc,
   ptx.change_dts = change_dst;
   ptx.selected_transfers = flat_transfers;
   tools::apply_permutation(ins_order, ptx.selected_transfers);
-  ptx.tx_key = tx_key;
-  ptx.additional_tx_keys = additional_tx_keys;
+  ptx.tx_key = context.d_tx_key;
+  ptx.additional_tx_keys = context.d_additional_tx_keys;
   ptx.dests = flat_dst;
   ptx.multisig_sigs = {};
   ptx.construction_data.sources = sources_copy;
@@ -10195,7 +10217,7 @@ pending_tx_v wallet2::create_transactions_all(uint64_t below, const cryptonote::
                                 subaddr_indices,
                                 CUTCOIN_ID,
                                 fractional_threshold,
-                                {0, below},
+                                {0, !below ? MONEY_SUPPLY : below},
                                 m_ignore_fractional_outputs,
                                 use_rct,
                                 get_blockchain_current_height());
@@ -13237,11 +13259,13 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
                                         pending_tx_v                   &ptx_vector,
                                         size_t                          custom_fake_outs_count)
 {
+  using namespace cryptonote;
+
   THROW_WALLET_EXCEPTION_IF(m_light_wallet,
                             error::wallet_internal_error,
                             "Token creation is not possible in light wallet!")
 
-  cryptonote::tx_destination_entry token_destination;
+  tx_destination_entry token_destination;
   token_destination.addr     = m_account.get_keys().m_account_address;
   token_destination.amount   = token_summary.d_token_supply * token_summary.d_unit;
   token_destination.token_id = token_summary.d_token_id;
@@ -13251,10 +13275,10 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
 
   uint64_t unlock_time = config::TOKEN_UNLOCK_TIME;
 
-  cryptonote::tx_extra_token_data token_data;
-  token_data.d_id = token_summary.d_token_id;
-  token_data.d_supply = token_summary.d_token_supply;
-  token_data.d_unit = token_summary.d_unit;
+  tx_extra_token_data token_data;
+  token_data.d_id     = token_summary.d_token_id;
+  token_data.d_supply = is_token_with_public_supply(token_summary.d_type) ? token_summary.d_token_supply: 0;
+  token_data.d_unit   = token_summary.d_unit;
   token_data.d_extra1 = 0;
   token_data.d_extra2 = 0;
   token_data.d_extra3 = 0;
@@ -13266,7 +13290,9 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
                             error::wallet_internal_error,
                             "Cannot write 'tx_extra_token_data' to tx extra field.");
 
- ptx_vector = token_genesis_basic(token_destination, fake_outs_count, unlock_time, extra);
+  TokenType token_type = token_summary.d_type;
+
+  ptx_vector = token_genesis_basic(token_destination, fake_outs_count, unlock_time, token_type, extra);
 
   THROW_WALLET_EXCEPTION_IF(ptx_vector.size() != 1,
                             error::wallet_internal_error,
@@ -13276,6 +13302,7 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
 pending_tx_v wallet2::token_genesis_basic(const cryptonote::tx_destination_entry &token_destination,
                                           const size_t                            fake_outs_count,
                                           const uint64_t                          unlock_time,
+                                          const cryptonote::TokenType            &token_type,
                                           std::vector<uint8_t>                   &extra)
 {
   //TODO: cleanup this function
@@ -13341,7 +13368,6 @@ pending_tx_v wallet2::token_genesis_basic(const cryptonote::tx_destination_entry
   const bool use_per_byte_fee = use_fork_rules(HF_VERSION_PER_BYTE_FEE, 0);
   const bool use_rct = true;
   const bool bulletproof = use_fork_rules(get_bulletproof_fork(), 0);
-  const rct::RangeProofType range_proof_type = bulletproof ? rct::RangeProofPaddedBulletproof : rct::RangeProofBorromean;
   uint32_t priority = 0;
   uint32_t subaddr_account = 0;
 
@@ -13673,6 +13699,7 @@ pending_tx_v wallet2::token_genesis_basic(const cryptonote::tx_destination_entry
       token_genesis_rct(tgtx.dsts[0],
                         token_destination,
                         tgtx.selected_transfers,
+                        token_type,
                         fake_outs_count,
                         outs,
                         unlock_time,
@@ -13700,6 +13727,7 @@ pending_tx_v wallet2::token_genesis_basic(const cryptonote::tx_destination_entry
           token_genesis_rct(tgtx.dsts[0],
                             token_destination,
                             tgtx.selected_transfers,
+                            token_type,
                             fake_outs_count,
                             outs,
                             unlock_time,
@@ -13773,6 +13801,7 @@ pending_tx_v wallet2::token_genesis_basic(const cryptonote::tx_destination_entry
     token_genesis_rct(tx.dsts[0],
                       token_destination,
                       tx.selected_transfers,
+                      token_type,
                       fake_outs_count,
                       tx.outs,
                       unlock_time,
@@ -13804,6 +13833,7 @@ pending_tx_v wallet2::token_genesis_basic(const cryptonote::tx_destination_entry
 void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                         &coin_burn_destination,
                                 const cryptonote::tx_destination_entry                   &token_destination,
                                 const std::vector<size_t>                                &selected_cut_transfers,
+                                const cryptonote::TokenType                              &token_type,
                                 size_t                                                    fake_outputs_count,
                                 std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
                                 uint64_t                                                  unlock_time,
@@ -13826,7 +13856,7 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
                << ", for a total of " << print_money (needed_money));
   THROW_WALLET_EXCEPTION_IF(needed_money < coin_burn_destination.amount,
                             error::tx_sum_overflow,
-                            std::vector<cryptonote::tx_destination_entry>{coin_burn_destination},
+                            std::vector<tx_destination_entry>{coin_burn_destination},
                             fee,
                             m_nettype);
 
@@ -13853,16 +13883,15 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
   }
 
   LOG_PRINT_L2("preparing unspent outputs");
-  std::vector<cryptonote::tx_source_entry> sources;
+  std::vector<tx_source_entry> sources;
   size_t out_index = 0;
 
   //prepare cutcoin inputs
   {
     std::unordered_set<rct::key> used_L;
-    for (size_t ind1 = 0; ind1 < selected_cut_transfers.size(); ind1++) {
-      size_t idx = selected_cut_transfers[ind1];
+    for (unsigned long idx : selected_cut_transfers) {
       const transfer_details &td = m_transfers[idx];
-      cryptonote::tx_source_entry cutcoin_source;
+      tx_source_entry cutcoin_source;
 
       cutcoin_source.token_id = td.m_token_id;
       cutcoin_source.amount   = td.amount();
@@ -13874,7 +13903,7 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
       THROW_WALLET_EXCEPTION_IF(outs[out_index].size() < fake_outputs_count, error::wallet_internal_error,
                                 "fake_outputs_count > random outputs found");
 
-      typedef cryptonote::tx_source_entry::output_entry tx_output_entry;
+      typedef tx_source_entry::output_entry tx_output_entry;
       for (size_t n = 0; n < fake_outputs_count + 1; ++n) {
         tx_output_entry oe;
         oe.first = std::get<0>(outs[out_index][n]);
@@ -13915,16 +13944,16 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
     crypto::key_derivation derivation = AUTO_VAL_INIT(derivation);
 
     if (!crypto::generate_key_derivation(address.m_view_public_key, pseudo_tx_key.sec, derivation)) {
-      THROW_WALLET_EXCEPTION_IF(true, error::fake_input_not_constructed);
+      THROW_WALLET_EXCEPTION_IF(true, error::pseudo_input_not_constructed);
     }
 
     const size_t output_index = 0;
     crypto::public_key pseudo_out_pub_key = AUTO_VAL_INIT(pseudo_out_pub_key);
     if (!crypto::derive_public_key(derivation, output_index, address.m_spend_public_key, pseudo_out_pub_key)) {
-      THROW_WALLET_EXCEPTION_IF(true, error::fake_input_not_constructed);
+      THROW_WALLET_EXCEPTION_IF(true, error::pseudo_input_not_constructed);
     }
 
-    cryptonote::tx_source_entry pseudo_source;
+    tx_source_entry pseudo_source;
     pseudo_source.token_id = token_destination.token_id;
     pseudo_source.amount   = token_destination.amount;
     pseudo_source.real_out_tx_key = pseudo_tx_key.pub;
@@ -13935,7 +13964,7 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
     pseudo_source.push_output(0, pseudo_out_pub_key, pseudo_source.amount, pseudo_source.token_id);
 
     for (size_t n = 0; n < fake_outputs_count; ++n) {
-      cryptonote::tx_source_entry::output_entry oe;
+      tx_source_entry::output_entry oe;
       oe.first = std::get<0>(outs[0][n]);
       oe.second.dest = rct::pk2rct(std::get<1>(outs[0][n]));
       oe.second.mask = std::get<2>(outs[0][n]);
@@ -13951,30 +13980,28 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
     td.amount   = token_destination.amount;
     std::vector<tx_destination_entry> pseudo_destinations{td};
 
-    crypto::secret_key tx_key;
-    std::vector<crypto::secret_key> additional_tx_keys;
-    std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
+    std::unordered_map<crypto::public_key, subaddress_index> subaddresses;
     subaddresses[address.m_spend_public_key] = {0,0};
     transaction tmp_tx;
-    bool r = construct_tx_and_get_tx_key(m_account.get_keys(),
-                                         subaddresses,
-                                         pseudo_sources,
-                                         pseudo_destinations,
-                                         cryptonote::account_public_address {},
-                                         std::vector<uint8_t>{},
-                                         tmp_tx,
-                                         0,
-                                         tx_key,
-                                         additional_tx_keys,
-                                         use_fork_rules(HF_VERSION_TOKENS),
-                                         true,
-                                         rct::RangeProofType::RangeProofPaddedBulletproof);
 
-    THROW_WALLET_EXCEPTION_IF(!r, error::fake_input_not_constructed);
-    THROW_WALLET_EXCEPTION_IF(tmp_tx.vout.size() != 1, error::fake_input_not_constructed);
+    {
+      TxConstructionContext context;
+      context.d_sender_account_keys = m_account.get_keys();
+      context.d_subaddresses        = m_subaddresses;
+      context.d_sources             = pseudo_sources;
+      context.d_destinations        = pseudo_destinations;
+      context.d_change_addr         = account_public_address{};
+      context.d_tx_version          = use_fork_rules(HF_VERSION_TOKENS) ? TxVersion::tokens: TxVersion::ring_signatures;
+      context.d_range_proof_type    = rct::RangeProofType::RangeProofPaddedBulletproof;
 
-    if (!crypto::generate_key_derivation(address.m_view_public_key, tx_key, derivation)) {
-      THROW_WALLET_EXCEPTION_IF(true, error::fake_input_not_constructed);
+      bool r = construct_tx_and_get_tx_key(context, tmp_tx);
+
+      THROW_WALLET_EXCEPTION_IF(!r, error::pseudo_input_not_constructed);
+      THROW_WALLET_EXCEPTION_IF(tmp_tx.vout.size() != 1, error::pseudo_input_not_constructed);
+
+      if (!crypto::generate_key_derivation(address.m_view_public_key, context.d_tx_key, derivation)) {
+        THROW_WALLET_EXCEPTION_IF(true, error::pseudo_input_not_constructed);
+      }
     }
 
     crypto::secret_key amount_key;
@@ -13986,9 +14013,9 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
                                                   0,
                                                   mask,
                                                   m_account.get_device());
-    THROW_WALLET_EXCEPTION_IF(amount != token_destination.amount, error::fake_input_not_constructed);
+    THROW_WALLET_EXCEPTION_IF(amount != token_destination.amount, error::pseudo_input_not_constructed);
 
-    cryptonote::tx_source_entry t_source;
+    tx_source_entry t_source;
     t_source.token_id = token_destination.token_id;
     t_source.amount   = token_destination.amount;
     t_source.real_output = 0;
@@ -13999,12 +14026,12 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
     t_source.multisig_kLRki = rct::multisig_kLRki({rct::zero(), rct::zero(), rct::zero(), rct::zero()});
 
     rct::ctkey ctkey{};
-    ctkey.dest = rct::pk2rct(boost::get<const cryptonote::txout_to_key>(tmp_tx.vout[0].target).key);
+    ctkey.dest = rct::pk2rct(boost::get<const txout_to_key>(tmp_tx.vout[0].target).key);
     ctkey.mask = tmp_tx.rct_signatures.outPk[0].mask;
     t_source.outputs.emplace_back(std::make_pair(0, ctkey));
 
     for (size_t n = 0; n < fake_outputs_count; ++n) {
-      cryptonote::tx_source_entry::output_entry oe;
+      tx_source_entry::output_entry oe;
       oe.first = std::get<0>(outs[0][n]);
       oe.second.dest = rct::pk2rct(std::get<1>(outs[0][n]));
       oe.second.mask = std::get<2>(outs[0][n]);
@@ -14016,7 +14043,7 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
       token_keys.emplace_back(rct::rct2pk(o.second.dest));
       token_keys.emplace_back(rct::rct2pk(o.second.mask));
     }
-    cryptonote::remove_field_from_tx_extra(extra, typeid(cryptonote::tx_extra_tgtx_pub_keys));
+    remove_field_from_tx_extra(extra, typeid(tx_extra_tgtx_pub_keys));
     add_tgtx_keys_to_tx_extra(extra, token_keys);
 
     detail::print_source_entry(t_source);
@@ -14027,8 +14054,8 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
   LOG_PRINT_L2("Unspent outputs prepared");
 
   // we still keep a copy, since we want to keep dsts free of change for user feedback purposes
-  std::vector<cryptonote::tx_destination_entry> splitted_dsts;
-  cryptonote::tx_destination_entry change_dts = AUTO_VAL_INIT(change_dts);
+  std::vector<tx_destination_entry> splitted_dsts;
+  tx_destination_entry change_dts = AUTO_VAL_INIT(change_dts);
   change_dts.token_id = CUTCOIN_ID;
   change_dts.amount = found_money - needed_money;
   if (change_dts.amount == 0) {
@@ -14037,7 +14064,7 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
     // letting the destination be able to work out which of the inputs is the
     // real one in our rings.
     LOG_PRINT_L2("generating dummy address for 0 change");
-    cryptonote::account_base dummy;
+    account_base dummy;
     dummy.generate();
     change_dts.addr = dummy.get_keys().m_account_address;
     LOG_PRINT_L2("generated dummy address for 0 change");
@@ -14051,21 +14078,20 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
     splitted_dsts = {coin_burn_destination, change_dts, token_destination};
   }
 
-  crypto::secret_key tx_key;
-  std::vector<crypto::secret_key> additional_tx_keys;
   LOG_PRINT_L2("constructing tx");
   auto sources_copy = sources;
 
-  bool r = cryptonote::construct_token_tx_and_get_tx_key(m_account.get_keys(),
-                                                         m_subaddresses,
-                                                         sources,
-                                                         splitted_dsts,
-                                                         change_dts.addr,
-                                                         extra,
-                                                         tx,
-                                                         unlock_time,
-                                                         tx_key,
-                                                         additional_tx_keys);
+  TxConstructionContext context;
+  context.d_sender_account_keys = m_account.get_keys();
+  context.d_subaddresses        = m_subaddresses;
+  context.d_sources             = sources;
+  context.d_destinations        = splitted_dsts;
+  context.d_change_addr         = change_dts.addr;
+  context.d_extra               = extra;
+  context.d_unlock_time         = unlock_time;
+  context.d_hidden_supply       = (token_type == TokenType::hidden_supply);
+
+  bool r = construct_token_tx_and_get_tx_key(context, tx);
 
   LOG_PRINT_L2("constructed tx, r=" << r);
   THROW_WALLET_EXCEPTION_IF(!r, error::tx_not_constructed, sources, splitted_dsts, unlock_time, m_nettype);
@@ -14117,8 +14143,8 @@ void wallet2::token_genesis_rct(cryptonote::tx_destination_entry                
   ptx.change_dts[CUTCOIN_ID] = change_dts;
   ptx.selected_transfers = selected_cut_transfers; ptx.selected_transfers.emplace_back(1);
   tools::apply_permutation(ins_order, ptx.selected_transfers);
-  ptx.tx_key = tx_key;
-  ptx.additional_tx_keys = additional_tx_keys;
+  ptx.tx_key = context.d_tx_key;
+  ptx.additional_tx_keys = context.d_additional_tx_keys;
   ptx.dests = {coin_burn_destination, token_destination};
   ptx.multisig_sigs = {};
   ptx.construction_data.sources = {sources_copy[0]};

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,14 +31,12 @@
 
 #pragma once
 
-#include <plant/posmetrics.h>
-
-#include <string>
-#include <vector>
-#include <list>
-#include <set>
 #include <ctime>
 #include <iostream>
+#include <list>
+#include <set>
+#include <string>
+#include <vector>
 
 //  Public interface for libwallet library
 namespace Monero {
@@ -101,6 +99,8 @@ struct PendingTransaction {
   virtual bool commit(const std::string &filename = "", bool overwrite = false) = 0;
 
   virtual uint64_t amount() const = 0;
+
+  virtual std::string tokenName() const = 0;
 
   virtual uint64_t dust() const = 0;
 
@@ -200,9 +200,10 @@ struct TransactionInfo {
   };
 
   struct Transfer {
-    Transfer(uint64_t _amount, const std::string &address);
+    Transfer(uint64_t _amount, uint64_t _token_id, const std::string &address);
 
     const uint64_t amount;
+    const uint64_t token_id;
     const std::string address;
   };
 
@@ -215,6 +216,8 @@ struct TransactionInfo {
   virtual bool isFailed() const = 0;
 
   virtual uint64_t amount() const = 0;
+
+  virtual std::string token() const = 0;
 
   virtual uint64_t fee() const = 0;
 
@@ -389,6 +392,41 @@ struct SubaddressAccount {
   virtual void setLabel(uint32_t accountIndex, const std::string &label) = 0;
 
   virtual void refresh() = 0;
+};
+
+struct TokenInfoRow {
+public:
+  TokenInfoRow(std::size_t _rowId, std::string _token_id, std::string _token_name, std::string _balance, std::string _unlocked_balance) :
+      m_rowId(_rowId),
+      m_token_id(_token_id),
+      m_token_name(_token_name),
+      m_balance(_balance),
+      m_unlockedBalance(_unlocked_balance) {}
+
+private:
+  std::size_t m_rowId;
+  std::string m_token_id;
+  std::string m_token_name;
+  std::string m_balance;
+  std::string m_unlockedBalance;
+public:
+  std::string getTokenId() const { return m_token_id; }
+
+  std::string getTokenName() const { return m_token_name; }
+
+  std::string getBalance() const { return m_balance; }
+
+  std::string getUnlockedBalance() const { return m_unlockedBalance; }
+
+  std::size_t getRowId() const { return m_rowId; }
+};
+
+struct TokenInfo {
+  virtual ~TokenInfo() = 0;
+
+  virtual std::vector<TokenInfoRow *> getAll() const = 0;
+
+  virtual void refresh(uint32_t accountIndex) = 0;
 };
 
 struct MultisigState {
@@ -775,6 +813,17 @@ struct Wallet {
   virtual void refreshAsync() = 0;
 
   /**
+     * @brief rescanBlockchain - rescans the wallet, updating transactions from daemon
+     * @return - true if refreshed successfully;
+     */
+  virtual bool rescanBlockchain() = 0;
+
+  /**
+   * @brief rescanBlockchainAsync - rescans wallet asynchronously, starting from genesys
+   */
+  virtual void rescanBlockchainAsync() = 0;
+
+  /**
    * @brief setAutoRefreshInterval - setup interval for automatic refresh.
    * @param seconds - interval in millis. if zero or less than zero - automatic refresh disabled;
    */
@@ -892,18 +941,56 @@ struct Wallet {
    * \param payment_id        optional payment_id, can be empty string
    * \param amount            amount
    * \param mixin_count       mixin count. if 0 passed, wallet will use default value
+   * \param priority          tx priority the fee depends on.
    * \param subaddr_account   subaddress account from which the input funds are taken
-   * \param subaddr_indices   set of subaddress indices to use for transfer or sweeping. if set empty, all are chosen when sweeping, and one or more are automatically chosen when transferring. after execution, returns the set of actually used indices
-   * \param priority
+   * \param subaddr_indices   set of subaddress indices to use for transfer or sweeping. if set empty,
+   *                          all are chosen when sweeping, and one or more are automatically chosen when transferring.
+   *                          After execution, returns the set of actually used indices.
    * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
    *                          after object returned
    */
+  virtual PendingTransaction *createTransaction(const std::string           &dst_addr,
+                                                const std::string           &payment_id,
+                                                optional<uint64_t>           amount,
+                                                uint32_t                     mixin_count,
+                                                PendingTransaction::Priority priority,
+                                                uint32_t                     subaddr_account = 0,
+                                                std::set<uint32_t>           subaddr_indices = {}) = 0;
 
-  virtual PendingTransaction *createTransaction(const std::string &dst_addr, const std::string &payment_id,
-                                                optional<uint64_t> amount, uint32_t mixin_count,
-                                                PendingTransaction::Priority = PendingTransaction::Priority_Low,
-                                                uint32_t subaddr_account = 0,
-                                                std::set<uint32_t> subaddr_indices = {}) = 0;
+  /*!
+   * \brief createTransaction creates transaction. if dst_addr is an integrated address, payment_id is ignored
+   * \param dst_addr          destination address as string
+   * \param payment_id        optional payment_id, can be empty string
+   * \param amount            amount
+   * \param token_name        token_name
+   * \param mixin_count       mixin count. if 0 passed, wallet will use default value
+   * \param priority          tx priority the fee depends on.
+   * \param subaddr_account   subaddress account from which the input funds are taken
+   * \param subaddr_indices   set of subaddress indices to use for transfer or sweeping. if set empty,
+   *                          all are chosen when sweeping, and one or more are automatically chosen when transferring.
+   *                          After execution, returns the set of actually used indices.
+   * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+   *                          after object returned
+   */
+  virtual PendingTransaction *createTokenTransaction(const std::string           &dst_addr,
+                                                     const std::string           &payment_id,
+                                                     const std::string           &token_name,
+                                                     optional<uint64_t>           amount,
+                                                     uint32_t                     mixin_count,
+                                                     PendingTransaction::Priority priority,
+                                                     uint32_t                     subaddr_account = 0,
+                                                     std::set<uint32_t>           subaddr_indices = {}) = 0;
+/*!
+   * \brief createTokenGenesisTransaction creates new token.
+   * \param token_name        token_name
+   * \param token_supply      token supply
+   * \param subaddr_account   subaddress account from which the input funds are taken
+   * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+   *                          after object returned
+   */
+  virtual PendingTransaction * createTokenGenesisTransaction(const std::string &token_name,
+                                                             std::uint64_t      token_supply,
+                                                             uint32_t           subaddr_account) = 0;
 
   /*!
    * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
@@ -955,6 +1042,8 @@ struct Wallet {
   virtual Subaddress *subaddress() = 0;
 
   virtual SubaddressAccount *subaddressAccount() = 0;
+
+  virtual TokenInfo *tokenInfo() = 0;
 
   virtual void setListener(WalletListener *) = 0;
 

@@ -1,4 +1,7 @@
 
+###Release v 3.0.5
+* Fix issue in 'sweep_all'
+* Implemented tokens with hidden supply. When create a new token it has public supply by default, but now you can add modifier 'hidden' to make it visible only for the owner.
 ###Release v 3.0.4
 * Add mainnet release name
 

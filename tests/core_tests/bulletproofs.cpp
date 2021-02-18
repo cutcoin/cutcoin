@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,11 +29,13 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include "ringct/rctSigs.h"
-#include "ringct/bulletproofs.h"
-#include "chaingen.h"
 #include "bulletproofs.h"
+
+#include "chaingen.h"
+#include "cryptonote_core/tx_source_entry.h"
 #include "device/device.hpp"
+#include "ringct/bulletproofs.h"
+#include "ringct/rctSigs.h"
 
 using namespace epee;
 using namespace crypto;
@@ -44,7 +46,7 @@ using namespace cryptonote;
 
 bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& events,
     size_t mixin, size_t n_txes, const uint64_t *amounts_paid, bool valid, const rct::RangeProofType *range_proof_type,
-    const std::function<bool(tx_sources &sources, std::vector<tx_destination_entry> &destinations, size_t tx_idx)> &pre_tx,
+    const std::function<bool(TxSources &sources, std::vector<tx_destination_entry> &destinations, size_t tx_idx)> &pre_tx,
     const std::function<bool(transaction &tx, size_t tx_idx)> &post_tx) const
 {
   uint64_t ts_start = 1338224400;
@@ -93,7 +95,7 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
   rct::keyV omega(n_txes, rct::H);
   for (size_t n = 0; n < n_txes; ++n)
   {
-    tx_sources sources;
+    TxSources sources;
 
     sources.resize(1);
     tx_source_entry& src = sources.back();
@@ -138,7 +140,17 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
     subaddresses[miner_accounts[n].get_keys().m_account_address.m_spend_public_key] = {0,0};
     rct_txes.resize(rct_txes.size() + 1);
-    bool r = construct_tx_and_get_tx_key(miner_accounts[n].get_keys(), subaddresses, sources, destinations, cryptonote::account_public_address{}, std::vector<uint8_t>(), rct_txes.back(), 0, tx_key, additional_tx_keys, true, range_proof_type[n]);
+
+    TxConstructionContext context;
+    context.d_sender_account_keys = miner_accounts[n].get_keys();
+    context.d_subaddresses        = subaddresses;
+    context.d_sources             = sources;
+    context.d_destinations        = destinations;
+    context.d_change_addr         = cryptonote::account_public_address{};
+    context.d_tx_key              = tx_key;
+    context.d_additional_tx_keys  = additional_tx_keys;
+    context.d_range_proof_type    = range_proof_type[n];
+    bool r = construct_tx_and_get_tx_key(context, rct_txes.back());
     CHECK_AND_ASSERT_MES(r, false, "failed to construct transaction");
 
     if (post_tx && !post_tx(rct_txes.back(), n))

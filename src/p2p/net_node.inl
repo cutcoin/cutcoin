@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -428,11 +428,13 @@ namespace nodetool
     {
       memcpy(&m_network_id, &::config::testnet::NETWORK_ID, 16);
       full_addrs = get_seed_nodes(cryptonote::TESTNET);
+      m_fallback_seed_nodes_added = true;
     }
     else if (m_nettype == cryptonote::STAGENET)
     {
       memcpy(&m_network_id, &::config::stagenet::NETWORK_ID, 16);
       full_addrs = get_seed_nodes(cryptonote::STAGENET);
+      m_fallback_seed_nodes_added = true;
     }
     else
     {

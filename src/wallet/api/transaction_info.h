@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -48,6 +48,7 @@ public:
     virtual bool isPending() const override;
     virtual bool isFailed() const override;
     virtual uint64_t amount() const override;
+    virtual std::string token() const override;
     //! always 0 for incoming txes
     virtual uint64_t fee() const override;
     virtual uint64_t blockHeight() const override;
@@ -67,6 +68,7 @@ private:
     bool        m_pending;
     bool        m_failed;
     uint64_t    m_amount;
+    std::string m_token;
     uint64_t    m_fee;
     uint64_t    m_blockheight;
     std::set<uint32_t> m_subaddrIndex;        // always unique index for incoming transfers; can be multiple indices for outgoing transfers

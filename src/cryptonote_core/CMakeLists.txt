@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2020, CUT coin
+# Copyright (c) 2018-2021, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -31,8 +31,9 @@ set(cryptonote_core_sources
   blockchain.cpp
   blockchainutil.cpp
   cryptonote_core.cpp
-  tx_pool.cpp
-  cryptonote_tx_utils.cpp)
+  cryptonote_tx_utils.cpp
+  tx_construction_context.cpp
+  tx_pool.cpp)
 
 set(cryptonote_core_headers)
 
@@ -41,8 +42,11 @@ set(cryptonote_core_private_headers
   blockchain.h
   blockchainutil.h
   cryptonote_core.h
+  cryptonote_tx_utils.h
+  tx_construction_context.h
+  tx_destination_entry.h
   tx_pool.h
-  cryptonote_tx_utils.h)
+  tx_source_entry.h)
 
 if(PER_BLOCK_CHECKPOINT)
   set(Blocks "blocks")

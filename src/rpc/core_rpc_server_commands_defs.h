@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -795,11 +795,13 @@ namespace cryptonote
       TokenId token_id;
       TokenUnit token_supply;
       std::uint64_t unit;
+      std::uint64_t type;
 
       BEGIN_KV_SERIALIZE_MAP()
       KV_SERIALIZE(token_id)
       KV_SERIALIZE(token_supply)
       KV_SERIALIZE(unit)
+      KV_SERIALIZE(type)
       END_KV_SERIALIZE_MAP()
     };
 

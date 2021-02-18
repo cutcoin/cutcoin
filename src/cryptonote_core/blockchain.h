@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -639,7 +639,7 @@ namespace cryptonote
      *
      * @return true if token_id is present in lmdb
      */
-    bool check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary* token_summary = nullptr) const;
+    bool check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary *token_summary = nullptr) const;
 
     /**
      * @brief gets the block weight limit based on recent blocks
@@ -1183,6 +1183,22 @@ namespace cryptonote
      * @return false if any validation step fails, otherwise true
      */
     bool check_tgtx_payment(const transaction &tx);
+
+    /**
+     * @brief validate correctness of the token supply. Return 'true' if the token type is 'hidden_supply',
+     * otherwise check that tokens output contain summary amount tat exactly equals to the declared amount.
+     * Return true if it is correct.
+     *
+     * This function validates correctness of the payment in token genesis transaction.
+     * Required amount in cutcoins must be burnt.
+     *
+     * The return value is 'true' if the coin burn payment is correct.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_tgtx_supply(const transaction &tx, const tx_extra_token_data &token_data);
 
     /**
      * @brief performs a blockchain reorganization according to the longest chain rule

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -559,7 +559,7 @@ bool parse_token_name(const std::string &arg, std::string &token_name) {
 bool parse_token_supply(const std::string &arg, cryptonote::TokenUnit &token_supply) {
   try {
     token_supply = std::stoul(arg);
-    if (cryptonote::MIN_TOKEN_SUPPLY <= token_supply && token_supply <= cryptonote::MAX_TOKEN_SUPPLY) {
+    if (is_valid_token_supply(token_supply)) {
       return true;
     }
   } catch (std::invalid_argument &e) {
@@ -2379,7 +2379,7 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("create_token",
                            std::bind(&simple_wallet::create_token, this, std::placeholders::_1),
                            tr("create_token <token_name> <token_supply> [token_type]"),
-                           tr("Create tokens with the specified 'token_name' and 'token_supply'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees."));
+                           tr("Create tokens with the specified 'token_name' and 'token_supply'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees. Supported token types are 'hidden' for tokens with the hidden supply and 'public' for tokens with publicly visible supply. The default type is 'explicit'."));
   m_cmd_binder.set_handler("get_tokens",
                            std::bind(&simple_wallet::get_tokens, this, std::placeholders::_1),
                            tr("get_tokens [<token_name_prefix>]"),
@@ -5421,7 +5421,7 @@ bool simple_wallet::transfer_token_main(const std::vector<std::string> &args)
   size_t num_subaddresses = 0;
   address_parse_info info;
 
-  // check for a URI
+  // check for an URI
   std::string address_uri, payment_id_uri, tx_description, recipient_name, error;
   std::vector<std::string> unknown_parameters;
   Amount                   amount = 0;
@@ -6304,6 +6304,8 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::create_token(const std::vector<std::string> &args)
 {
+  using namespace cryptonote;
+
   //  "create_token <token_name> <token_supply> [token_type] [magnitude]"
   if (!try_connect_to_daemon()) {
     message_writer() << "No connection to the daemon";
@@ -6320,7 +6322,7 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
   std::vector<std::string> local_args = args;
   TokenSummary token_summary;
 
-  if (local_args.size() == 0) {
+  if (local_args.empty()) {
     fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
     return true;
   }
@@ -6333,9 +6335,9 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
     return true;
   }
 
-  token_summary.d_token_id = cryptonote::token_name_to_id(token_name);
+  token_summary.d_token_id = token_name_to_id(token_name);
 
-  if (local_args.size() == 0) {
+  if (local_args.empty()) {
     fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_supply'"))).str();
     return true;
   }
@@ -6344,15 +6346,28 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
   } else {
     fail_msg_writer() << (boost::format(tr(
         "Could not parse 'token_supply' parameter. It should be a number in the range %u .. %u."))
-          % cryptonote::MIN_TOKEN_SUPPLY
-          % cryptonote::MAX_TOKEN_SUPPLY).str();
+          % MIN_TOKEN_SUPPLY
+          % MAX_TOKEN_SUPPLY).str();
     return true;
   }
 
-  if (local_args.size() != 0) {
-    token_summary.d_token_type = local_args[0];
+  TokenType token_type = TokenType::public_supply;
+  if (!local_args.empty()) {
+    if (local_args[0] == "hidden") {
+      if (m_wallet->get_blockchain_current_height() < 571000) {
+          fail_msg_writer() << tr("Tokens with private supply can be created after 571000 blocks");
+          return true;
+        }
+      token_type = TokenType::hidden_supply;
+    } else if (local_args[0] == "public") {
+    } else {
+      fail_msg_writer() << tr(
+        "Could not parse 'token_type' parameter. It should be 'public' (the default value) or 'hidden'");
+    }
     local_args.erase(local_args.begin());
   }
+
+  token_summary.d_type = token_type;
 
   token_summary.d_unit = COIN;
 
@@ -6382,7 +6397,7 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
   }
 
   for (const auto &ts : res.tokens) {
-    if (!token_name.compare(token_id_to_name(ts.token_id))) {
+    if (token_name == token_id_to_name(ts.token_id)) {
       fail_msg_writer() << tr("Aborted, token with the specified name already exists.");
       return true;
     }
@@ -6444,11 +6459,15 @@ bool simple_wallet::get_tokens(const std::vector<std::string> &args)
     return false;
   }
 
-  message_writer() << boost::format("%15s %21s %21s %21s") % tr("Name") % tr("Token ID") % tr("Supply") % tr("Unit");
+  message_writer() << boost::format("%15s %21s %21s %21s %13s")
+    % tr("Name") % tr("Token ID") % tr("Supply") % tr("Unit") % tr("Type");
 
   for (const auto &token_summary : res.tokens)
   {
-    message_writer() << boost::format("%15s %21u %21d %21d") % token_id_to_name(token_summary.token_id) % token_summary.token_id % token_summary.token_supply % token_summary.unit;
+    message_writer() << boost::format("%15s %21u %21d %21d %13s") % token_id_to_name(token_summary.token_id)
+      % token_summary.token_id % token_summary.token_supply % token_summary.unit
+      % (cryptonote::is_token_with_public_supply(static_cast<cryptonote::TokenType>(token_summary.type))
+      ? "public supply": "private supply");
   }
 
   return true;

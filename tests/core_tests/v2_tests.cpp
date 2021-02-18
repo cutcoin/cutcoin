@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -30,6 +30,7 @@
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #include "chaingen.h"
+#include "cryptonote_core/tx_source_entry.h"
 #include "v2_tests.h"
 
 using namespace epee;
@@ -80,7 +81,7 @@ bool gen_v2_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
   }
 
   // create a tx with the Nth outputs of miner's block reward
-  tx_sources sources;
+  TxSources sources;
   for (size_t out_idx_idx = 0; out_idx[out_idx_idx] >= 0; ++out_idx_idx) {
     sources.resize(sources.size()+1);
     tx_source_entry& src = sources.back();

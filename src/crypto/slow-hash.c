@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -29,6 +29,11 @@
 //
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
+#include "common/int-util.h"
+#include "hash-ops.h"
+#include "oaes_lib.h"
+#include "variant2_int_sqrt.h"
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -36,10 +41,9 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include "common/int-util.h"
-#include "hash-ops.h"
-#include "oaes_lib.h"
-#include "variant2_int_sqrt.h"
+#if defined(__APPLE__)
+#define FORCE_USE_HEAP
+#endif
 
 #define MEMORY         (1 << 21) // 2MB scratchpad
 #define ITER           (1 << 20)

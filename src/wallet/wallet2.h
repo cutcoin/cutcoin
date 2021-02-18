@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -103,7 +103,11 @@ namespace tools
                                    const cryptonote::subaddress_index &subaddr_index) {}
       // This callback is called when the wallet receives any new utxo.
 
-    virtual void on_unconfirmed_money_received(uint64_t height, const crypto::hash &txid, const cryptonote::transaction& tx, uint64_t amount, const cryptonote::subaddress_index& subaddr_index) {}
+    virtual void on_unconfirmed_money_received(uint64_t                            height,
+                                               const crypto::hash                 &txid,
+                                               const cryptonote::transaction      &tx,
+                                               uint64_t                            amount,
+                                               const cryptonote::subaddress_index &subaddr_index) {}
 
     virtual void on_money_spent(uint64_t                            height,
                                 const crypto::hash                 &txid,
@@ -621,11 +625,13 @@ namespace tools
     pending_tx_v token_genesis_basic(const cryptonote::tx_destination_entry &token_destination,
                                      const size_t                            fake_outs_count,
                                      const uint64_t                          unlock_time,
+                                     const cryptonote::TokenType            &token_type,
                                      std::vector<uint8_t>                   &extra);
 
     void token_genesis_rct(cryptonote::tx_destination_entry                         &coinburn_destination,
                            const cryptonote::tx_destination_entry                   &token_destination,
                            const std::vector<size_t>                                &selected_cut_transfers,
+                           const cryptonote::TokenType                              &token_type,
                            size_t                                                    fake_outputs_count,
                            std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
                            uint64_t                                                  unlock_time,

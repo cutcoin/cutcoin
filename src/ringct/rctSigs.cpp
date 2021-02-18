@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -951,19 +951,19 @@ namespace rct {
       CHECK_AND_ASSERT_THROW_MES(verBulletproof(rv.p.bulletproofs.back()), "verBulletproof failed on newly created proof");
 #endif
       vector<xmr_amount> flat_outamounts;
-      for (auto oa: amounts_v) {
+      for (const auto &oa: amounts_v) {
         for (auto a: oa) {
           flat_outamounts.push_back(a);
         }
       }
       rct::keyV flat_c;
-      for (auto pc: C) {
+      for (const auto &pc: C) {
         for (auto c: pc) {
           flat_c.push_back(c);
         }
       }
       rct::keyV flat_gamma;
-      for (auto ga: gamma) {
+      for (const auto &ga: gamma) {
         for (auto g: ga) {
           flat_gamma.push_back(g);
         }
@@ -1014,14 +1014,152 @@ namespace rct {
                                     inSk[i],
                                     a[i],
                                     pseudoOuts[i],
-                                    kLRki ? &(*kLRki)[i] : NULL,
-                                    msout ? &msout->c[i] : NULL,
+                                    kLRki ? &(*kLRki)[i] : nullptr,
+                                    msout ? &msout->c[i] : nullptr,
                                     index[i],
                                     hwdev);
         rv.p.MGs.emplace_back(mg);
       }
       return rv;
     }
+
+rctSig genRctTgtx(std::function<key(const key &)>                               calc_message,
+                  bool                                                          hidden_supply,
+                  const ctkeyV                                                 &inSk,
+                  const keyV                                                   &destinations,
+                  const rct::ctamountV                                         &inamounts,
+                  const std::map<cryptonote::TokenId, std::vector<xmr_amount>> &outamounts,
+                  xmr_amount                                                    txnFee,
+                  const ctkeyM                                                 &mixRing,
+                  const keyV                                                   &amount_keys,
+                  const std::vector<multisig_kLRki>                            *kLRki,
+                  multisig_out                                                 *msout,
+                  const std::vector<unsigned int>                              &index,
+                  ctkeyV                                                       &outSk,
+                  hw::device                                                   &hwdev)
+{
+  CHECK_AND_ASSERT_THROW_MES(inamounts.size() > 0, "Empty inamounts");
+  CHECK_AND_ASSERT_THROW_MES(inamounts.size() == inSk.size(), "Different number of inamounts/inSk");
+  CHECK_AND_ASSERT_THROW_MES(amount_keys.size() == destinations.size(), "Different number of amount_keys/destinations");
+  CHECK_AND_ASSERT_THROW_MES(index.size() == inSk.size(), "Different number of index/inSk");
+  CHECK_AND_ASSERT_THROW_MES(mixRing.size() == inSk.size(), "Different number of mixRing/inSk");
+  for (size_t n = 0; n < mixRing.size(); ++n) {
+    CHECK_AND_ASSERT_THROW_MES(index[n] < mixRing[n].size(), "Bad index into mixRing");
+  }
+  CHECK_AND_ASSERT_THROW_MES((kLRki && msout) || (!kLRki && !msout), "Only one of kLRki/msout is present");
+  if (kLRki && msout) {
+    CHECK_AND_ASSERT_THROW_MES(kLRki->size() == inamounts.size(), "Mismatched kLRki/inamounts sizes");
+  }
+
+  rctSig rv;
+  rv.type = (uint8_t)rct::RctType::RCTTypeBigBulletproof;
+  rv.outPk.resize(destinations.size());
+  rv.ecdhInfo.resize(destinations.size());
+
+  size_t i;
+  outSk.resize(destinations.size());
+  for (i = 0; i < destinations.size(); i++) {
+    //add destination to sig
+    rv.outPk[i].dest = copy(destinations[i]);
+  }
+
+  rv.p.bulletproofs.clear();
+  rv.p.bigBulletproofs.clear();
+
+  std::vector<uint64_t>              proof_amounts;
+  std::vector<rct::keyV>             C, gamma;
+  rct::keyV                          omega_v;
+  std::vector<std::vector<uint64_t>> amounts_v;
+
+  omega_v.reserve(outamounts.size());
+  amounts_v.reserve(outamounts.size());
+
+  for(auto &kv: outamounts) {
+    omega_v.emplace_back(tokenIdToPoint(kv.first));
+    amounts_v.emplace_back(kv.second);
+  }
+  rv.p.bigBulletproofs.push_back(proveRangeBulletproof(C, gamma, amounts_v, omega_v));
+#ifdef DBG
+  CHECK_AND_ASSERT_THROW_MES(verBulletproof(rv.p.bulletproofs.back()), "verBulletproof failed on newly created proof");
+#endif
+  vector<xmr_amount> flat_outamounts;
+  for (const auto& oa: amounts_v) {
+    for (auto a: oa) {
+      flat_outamounts.push_back(a);
+    }
+  }
+  rct::keyV flat_c;
+  for (const auto& pc: C) {
+    for (auto c: pc) {
+      flat_c.push_back(c);
+    }
+  }
+  rct::keyV flat_gamma;
+  for (const auto& ga: gamma) {
+    for (auto g: ga) {
+      flat_gamma.push_back(g);
+    }
+  }
+
+  for (i = 0; i < flat_outamounts.size(); ++i) {
+    rv.outPk[i].mask = rct::scalarmult8(flat_c[i]);
+    outSk[i].mask = flat_gamma[i];
+  }
+
+  key sumout = zero();
+  for (i = 0; i < outSk.size(); ++i) {
+    sc_add(sumout.bytes, outSk[i].mask.bytes, sumout.bytes);
+
+    //mask amount and mask
+    rv.ecdhInfo[i].mask = copy(outSk[i].mask);
+    rv.ecdhInfo[i].amount = d2h(flat_outamounts[i]);
+    hwdev.ecdhEncode(rv.ecdhInfo[i], amount_keys[i]);
+  }
+
+  //set txn fee
+  key cutcoin_omega = tokenIdToPoint(cryptonote::CUTCOIN_ID);
+
+
+  rv.txnFee = txnFee;
+  rv.mixRing = mixRing;
+  keyV &pseudoOuts = rv.p.pseudoOuts;
+  pseudoOuts.resize(inamounts.size());
+  key sumpouts = zero(); //sum pseudoOut masks
+  keyV a(inamounts.size());
+  for (i = 1; i < inamounts.size(); ++i) {
+    if (inamounts[i].omega == cutcoin_omega || hidden_supply) {
+      skGen(a[i]);
+    } else {
+      a[i] = identity();
+    }
+
+    sc_add(sumpouts.bytes, a[i].bytes, sumpouts.bytes);
+    gp_genC(pseudoOuts[i], a[i], inamounts[i].omega, inamounts[i].amount);
+  }
+  sc_sub(a[0].bytes, sumout.bytes, sumpouts.bytes);
+  gp_genC(pseudoOuts[0], a[0], inamounts[0].omega, inamounts[0].amount);
+  DP(pseudoOuts[i]);
+
+  const key aG = scalarmultBase(a[0]);
+  rv.message = calc_message(aG);
+
+  key full_message = get_pre_mlsag_hash(rv,hwdev);
+  if (msout)
+    msout->c.resize(inamounts.size());
+  for (i = 0 ; i < inamounts.size(); i++) {
+    mgSig mg = proveRctMGSimple(full_message,
+                                rv.mixRing[i],
+                                inSk[i],
+                                a[i],
+                                pseudoOuts[i],
+                                kLRki ? &(*kLRki)[i] : nullptr,
+                                msout ? &msout->c[i] : nullptr,
+                                index[i],
+                                hwdev);
+    rv.p.MGs.emplace_back(mg);
+  }
+  return rv;
+}
 
     rctSig genRctSimple(const key &message, const ctkeyV &inSk, const ctkeyV &inPk, const keyV &destinations, const rct::ctamountV &inamounts, const vector<xmr_amount> &outamounts, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, xmr_amount txnFee, unsigned int mixin, hw::device &hwdev) {
         std::vector<unsigned int> index;

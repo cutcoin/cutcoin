@@ -1,16 +1,18 @@
 
-#include <boost/optional/optional.hpp>
-#include <boost/range/adaptor/indexed.hpp>
-#include <gtest/gtest.h>
-#include <rapidjson/document.h>
-#include <vector>
-
 #include "crypto/hash.h"
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_core/tx_source_entry.h"
 #include "serialization/json_object.h"
+
+#include <boost/optional/optional.hpp>
+#include <boost/range/adaptor/indexed.hpp>
+#include <gtest/gtest.h>
+#include <rapidjson/document.h>
+
+#include <vector>
 
 
 namespace
@@ -38,7 +40,7 @@ namespace
         bool bulletproof)
     {
         std::uint64_t source_amount = 0;
-        cryptonote::tx_sources actual_sources;
+        cryptonote::TxSources actual_sources;
         for (auto const& source : sources)
         {
             std::vector<cryptonote::tx_extra_field> extra_fields;
@@ -75,7 +77,16 @@ namespace
         std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
         subaddresses[from.m_account_address.m_spend_public_key] = {0,0};
 
-        if (!cryptonote::construct_tx_and_get_tx_key(from, subaddresses, actual_sources, to, boost::none, {}, tx, 0, tx_key, extra_keys, rct, bulletproof ? rct::RangeProofBulletproof : rct::RangeProofBorromean))
+        cryptonote::TxConstructionContext context;
+        context.d_sender_account_keys = from;
+        context.d_subaddresses        = subaddresses;
+        context.d_sources             = actual_sources;
+        context.d_destinations        = to;
+        context.d_change_addr         = boost::none;
+        context.d_tx_key              = tx_key;
+        context.d_additional_tx_keys  = extra_keys;
+        context.d_range_proof_type    = rct::RangeProofBulletproof;
+        if (!cryptonote::construct_tx_and_get_tx_key(context, tx))
             throw std::runtime_error{"transaction construction error"};
 
         return tx;

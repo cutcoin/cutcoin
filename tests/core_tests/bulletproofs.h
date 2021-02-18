@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,8 +29,11 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#pragma once 
+#pragma once
+
 #include "chaingen.h"
+
+#include "cryptonote_core/tx_source_entry.h"
 
 struct gen_bp_tx_validation_base : public test_chain_unit_base
 {
@@ -84,7 +87,7 @@ struct gen_bp_tx_validation_base : public test_chain_unit_base
 
   bool generate_with(std::vector<test_event_entry>& events, size_t mixin,
       size_t n_txes, const uint64_t *amounts_paid, bool valid, const rct::RangeProofType *range_proof_type,
-      const std::function<bool(cryptonote::tx_sources &sources, std::vector<cryptonote::tx_destination_entry> &destinations, size_t)> &pre_tx,
+      const std::function<bool(cryptonote::TxSources &sources, std::vector<cryptonote::tx_destination_entry> &destinations, size_t)> &pre_tx,
       const std::function<bool(cryptonote::transaction &tx, size_t)> &post_tx) const;
 
   bool check_bp(const cryptonote::transaction &tx, size_t tx_idx, const size_t *sizes, const char *context) const;

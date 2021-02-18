@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,22 +29,21 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include <vector>
-#include <iostream>
-#include <sstream>
 
-#include "include_base_utils.h"
-
+#include "chaingen.h"
 #include "console_handler.h"
-
-#include "p2p/net_node.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_basic/miner.h"
-
-#include "chaingen.h"
 #include "device/device.hpp"
+#include "include_base_utils.h"
+#include "p2p/net_node.h"
+
+#include <iostream>
+#include <sstream>
+#include <vector>
+
 using namespace std;
 
 using namespace epee;
@@ -305,7 +304,7 @@ typedef pair<uint64_t, size_t>  outloc_t;
 
 namespace
 {
-  uint64_t get_inputs_amount(const cryptonote::tx_sources &s)
+  uint64_t get_inputs_amount(const cryptonote::TxSources &s)
   {
     uint64_t r = 0;
     BOOST_FOREACH(const tx_source_entry &e, s)
@@ -425,7 +424,7 @@ bool fill_output_entries(std::vector<output_index>& out_indices, size_t sender_o
   return 0 == rest && sender_out_found;
 }
 
-bool fill_tx_sources(cryptonote::tx_sources &sources, const std::vector<test_event_entry>& events,
+bool fill_tx_sources(cryptonote::TxSources &sources, const std::vector<test_event_entry>& events,
                      const block& blk_head, const cryptonote::account_base& from, uint64_t amount, size_t nmix)
 {
     map_output_idx_t outs;
@@ -486,7 +485,7 @@ bool fill_tx_destination(tx_destination_entry &de, const cryptonote::account_bas
 
 void fill_tx_sources_and_destinations(const std::vector<test_event_entry>& events, const block& blk_head,
                                       const cryptonote::account_base& from, const cryptonote::account_base& to,
-                                      uint64_t amount, uint64_t fee, size_t nmix, cryptonote::tx_sources &sources,
+                                      uint64_t amount, uint64_t fee, size_t nmix, cryptonote::TxSources &sources,
                                       std::vector<tx_destination_entry>& destinations)
 {
   sources.clear();
@@ -561,7 +560,7 @@ bool construct_tx_to_key(const std::vector<test_event_entry>& events, cryptonote
                          const cryptonote::account_base& from, const cryptonote::account_base& to, uint64_t amount,
                          uint64_t fee, size_t nmix)
 {
-  cryptonote::tx_sources sources;
+  cryptonote::TxSources sources;
   vector<tx_destination_entry> destinations;
   fill_tx_sources_and_destinations(events, blk_head, from, to, amount, fee, nmix, sources, destinations);
 

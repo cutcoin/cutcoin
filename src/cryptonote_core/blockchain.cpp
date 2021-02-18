@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -2019,7 +2019,10 @@ bool Blockchain::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_
         transaction tx = m_db->get_tx(toi.first);
         tx_extra_token_data td;
         get_token_data(tx, td);
-        res.tokens.push_back({id, td.d_supply, td.d_unit});
+        res.tokens.push_back({id,
+                              td.d_supply,
+                              td.d_unit,
+                              td.d_supply == 0 ? static_cast<std::uint64_t>(2): static_cast<std::uint64_t>(1)});
       }
     }
   }
@@ -2642,6 +2645,7 @@ bool Blockchain::check_existing_token_id(cryptonote::TokenId token_id, cryptonot
     get_token_data(tx, td);
     token_summary->d_token_supply = td.d_supply;
     token_summary->d_unit = td.d_unit;
+    token_summary->d_type = td.d_supply == 0 ? TokenType::hidden_supply: TokenType::public_supply;
     return true;
   }
 
@@ -2874,8 +2878,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
   const auto waiter_guard = epee::misc_utils::create_scope_leave_handler([&]() { waiter.wait(&tpool); });
   int threads = tpool.get_max_concurrency();
 
-  for (const auto& txin : tx.vin)
-  {
+  for (const auto &txin : tx.vin) {
     // make sure output being spent is of type txin_to_key, rather than
     // e.g. txin_gen, which is only used for miner transactions
     CHECK_AND_ASSERT_MES(txin.type() == typeid(txin_to_key), false, "wrong type id in tx input at Blockchain::check_tx_inputs");
@@ -3218,27 +3221,14 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_con
     return false;
   }
 
+  if (!check_tgtx_supply(tx, token_data)) {
+    MERROR_VER("Token supply is not correct");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
 //  if (!check_outs_overflow(tx, token_id)) {
 //    MERROR_VER("Tx has money overflow, rejected for tx id= " << get_transaction_hash(tx));
-//    tvc.m_verifivation_failed = true;
-//    return false;
-//  }
-
-//  if (!check_outs_nonzero(tx, token_id)) {
-//    MERROR_VER("Tx has token outs with zero amount, rejected for tx id= " << get_transaction_hash(tx));
-//    tvc.m_verifivation_failed = true;
-//    return false;
-//  }
-
-//  rct::xmr_amount token_supply  = 0;
-//  for (const auto &o: tx.vout) {
-//    if (o.token_id == token_id) {
-//      token_supply += o.amount;
-//    }
-//  }
-//  if (token_supply != token_data.d_supply) {
-//    MERROR_VER("Sum of token utxo must be equal to the token supply specified in the extra field, rejected for tx id= "
-//               << get_transaction_hash(tx));
 //    tvc.m_verifivation_failed = true;
 //    return false;
 //  }
@@ -3293,7 +3283,47 @@ bool Blockchain::check_tgtx_payment(const transaction &tx)
   }
 
   return (sum_cut >= config::TOKEN_GENESIS_AMOUNT);
+}
 
+bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_data &token_data)
+{
+  if (m_db->height() < 571000) {
+    return true;
+  }
+
+  const rct::rctSig rct_sig = tx.rct_signatures;
+  rct::keyV masks(rct_sig.outPk.size());
+
+  for (size_t i = 0; i < rct_sig.outPk.size(); ++i) {
+    masks[i] = rct_sig.outPk[i].mask;
+  }
+
+  rct::key sumOutpks = addKeys(masks);
+
+  const rct::key txnFeeKey = scalarmultH(rct::d2h(rct_sig.txnFee));
+  addKeys(sumOutpks, txnFeeKey, sumOutpks);
+
+  const auto &ins = tx.vin;
+  rct::keyV pseudoOuts;
+  CHECK_AND_ASSERT_MES(ins.size() == rct_sig.p.pseudoOuts.size(), false, "inputs size != pseudoOuts size");
+  for (size_t i = 0; i < rct_sig.p.pseudoOuts.size(); ++i) {
+    const auto &txin = ins[i];
+    CHECK_AND_ASSERT_MES(txin.type() == typeid(txin_to_key),
+                         false,
+                         "wrong type id in tx input at Blockchain::check_tx_inputs");
+    const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+    if (in_to_key.token_id == cryptonote::CUTCOIN_ID) {
+      pseudoOuts.push_back(rct_sig.p.pseudoOuts[i]);
+    }
+  }
+
+  rct::key po{};
+  gp_genC(po, rct::identity(), rct::tokenIdToPoint(token_data.d_id), token_data.d_supply * token_data.d_unit);
+  pseudoOuts.emplace_back(po);
+
+  rct::key sumPseudoOuts = addKeys(pseudoOuts);
+  const bool sumsEqual = equalKeys(sumPseudoOuts, sumOutpks);
+  return token_data.d_supply == 0 ? !sumsEqual: sumsEqual;
 }
 
 //------------------------------------------------------------------

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -105,7 +105,7 @@ namespace rct {
     //   the last row is the sum of input commitments from that column - sum output commitments
     //   this shows that sum inputs = sum outputs
     //Ver:
-    //   verifies the above sig is created corretly
+    //   verifies the above sig is created correсtly
     mgSig proveRctMG(const ctkeyM & pubs, const ctkeyV & inSk, const keyV &outMasks, const ctkeyV & outPk, const multisig_kLRki *kLRki, key *mscout, unsigned int index, key txnFee, const key &message, hw::device &hwdev);
     mgSig proveRctMGSimple(const key            &message,
                            const ctkeyV         &pubs,
@@ -142,7 +142,7 @@ namespace rct {
     rctSig genRctSimple(const key & message, const ctkeyV & inSk, const ctkeyV & inPk, const keyV & destinations, const rct::ctamountV & inamounts, const std::vector<xmr_amount> & outamounts, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, xmr_amount txnFee, unsigned int mixin, hw::device &hwdev);
     rctSig genRctSimple(std::function<key(const key &)> calc_message, const ctkeyV & inSk, const keyV & destinations, const rct::ctamountV &inamounts, const std::vector<xmr_amount> & outamounts, xmr_amount txnFee,
         const ctkeyM & mixRing, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, const std::vector<unsigned int> & index, ctkeyV &outSk, RangeProofType range_proof_type, hw::device &hwdev);
-    rctSig genRctSimpleBig(std::function<key(const key &)> calc_message,
+    rctSig genRctSimpleBig(std::function<key(const key &)>                               calc_message,
                            const ctkeyV                                                 &inSk,
                            const keyV                                                   &destinations,
                            const rct::ctamountV                                         &inamounts,
@@ -155,6 +155,20 @@ namespace rct {
                            const std::vector<unsigned int>                              &index,
                            ctkeyV                                                       &outSk,
                            hw::device                                                   &hwdev);
+    rctSig genRctTgtx(std::function<key(const key &)>                               calc_message,
+                      bool                                                          hidden_supply,
+                      const ctkeyV                                                 &inSk,
+                      const keyV                                                   &destinations,
+                      const rct::ctamountV                                         &inamounts,
+                      const std::map<cryptonote::TokenId, std::vector<xmr_amount>> &outamounts,
+                      xmr_amount                                                    txnFee,
+                      const ctkeyM                                                 &mixRing,
+                      const keyV                                                   &amount_keys,
+                      const std::vector<multisig_kLRki>                            *kLRki,
+                      multisig_out                                                 *msout,
+                      const std::vector<unsigned int>                              &index,
+                      ctkeyV                                                       &outSk,
+                      hw::device                                                   &hwdev);
     bool verRct(const rctSig & rv, bool semantics);
     static inline bool verRct(const rctSig & rv) { return verRct(rv, true) && verRct(rv, false); }
     bool verRctSemanticsSimple(const rctSig & rv);

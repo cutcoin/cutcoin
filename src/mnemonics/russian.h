@@ -1,6 +1,6 @@
 // Word list created by Monero contributor sammy007
 // 
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.

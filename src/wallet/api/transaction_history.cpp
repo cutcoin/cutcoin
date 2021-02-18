@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -122,13 +122,13 @@ void TransactionHistoryImpl::refresh()
     m_wallet->m_wallet->get_payments(in_payments, min_height, max_height);
     for (std::list<std::pair<crypto::hash, tools::payment_details>>::const_iterator i = in_payments.begin(); i != in_payments.end(); ++i) {
         const tools::payment_details &pd = i->second;
-        if (pd.m_token_id != cryptonote::CUTCOIN_ID) continue;
         std::string payment_id = string_tools::pod_to_hex(i->first);
         if (payment_id.substr(16).find_first_not_of('0') == std::string::npos)
             payment_id = payment_id.substr(0,16);
         TransactionInfoImpl * ti = new TransactionInfoImpl();
         ti->m_paymentid = payment_id;
         ti->m_amount    = pd.m_amount;
+        ti->m_token  = cryptonote::token_id_to_name(pd.m_token_id);
         ti->m_direction = TransactionInfo::Direction_In;
         ti->m_hash      = string_tools::pod_to_hex(pd.m_tx_hash);
         ti->m_blockheight = pd.m_block_height;
@@ -158,10 +158,16 @@ void TransactionHistoryImpl::refresh()
         
         const crypto::hash &hash = i->first;
         tools::confirmed_transfer_details pd = i->second;
-        if (pd.m_amounts_in.find(cryptonote::CUTCOIN_ID) == pd.m_amounts_in.end()) continue;
-        
-        uint64_t change = pd.m_change[cryptonote::CUTCOIN_ID] == (uint64_t)-1 ? 0 : pd.m_change[cryptonote::CUTCOIN_ID]; // change may not be known
-        uint64_t fee = pd.m_fee;
+
+        cryptonote::Amount change = 0;
+        cryptonote::Amount transferred_amount = 0;
+        cryptonote::TokenId token_id = 0;
+        for (const auto &tp : pd.m_amounts_in)
+        {
+            change = pd.m_change[tp.first] == (uint64_t)-1 ? 0 : pd.m_change[tp.first]; // change may not be known
+            transferred_amount = tp.first == cryptonote::CUTCOIN_ID ? tp.second - change - pd.m_fee : tp.second - change;
+            token_id = tp.first;
+        }
         
 
         std::string payment_id = string_tools::pod_to_hex(i->second.m_payment_id);
@@ -171,8 +177,9 @@ void TransactionHistoryImpl::refresh()
 
         TransactionInfoImpl * ti = new TransactionInfoImpl();
         ti->m_paymentid = payment_id;
-        ti->m_amount = pd.m_amounts_in[cryptonote::CUTCOIN_ID] - change - fee;
-        ti->m_fee    = fee;
+        ti->m_amount = transferred_amount;
+        ti->m_token  = cryptonote::token_id_to_name(token_id);
+        ti->m_fee    = pd.m_fee;
         ti->m_direction = TransactionInfo::Direction_Out;
         ti->m_hash = string_tools::pod_to_hex(hash);
         ti->m_blockheight = pd.m_block_height;
@@ -184,7 +191,7 @@ void TransactionHistoryImpl::refresh()
 
         // single output transaction might contain multiple transfers
         for (const auto &d: pd.m_dests) {
-            ti->m_transfers.push_back({d.amount, get_account_address_as_str(m_wallet->m_wallet->nettype(), d.is_subaddress, d.addr)});
+            ti->m_transfers.push_back({d.amount, d.token_id, get_account_address_as_str(m_wallet->m_wallet->nettype(), d.is_subaddress, d.addr)});
         }
         m_history.push_back(ti);
     }
@@ -194,9 +201,16 @@ void TransactionHistoryImpl::refresh()
     m_wallet->m_wallet->get_unconfirmed_payments_out(upayments_out);
     for (std::list<std::pair<crypto::hash, tools::unconfirmed_transfer_details>>::const_iterator i = upayments_out.begin(); i != upayments_out.end(); ++i) {
         tools::unconfirmed_transfer_details pd = i->second;
-        if (pd.m_amounts_in.find(cryptonote::CUTCOIN_ID) == pd.m_amounts_in.end()) continue;
+        
+        cryptonote::Amount change = 0;
+        cryptonote::Amount transferred_amount = 0;
+        cryptonote::TokenId token_id = 0;
+        for (const auto &tp : pd.m_amounts_in)
+        {
+            transferred_amount = tp.first == cryptonote::CUTCOIN_ID ? tp.second - pd.m_change[tp.first] - pd.m_fee : tp.second - pd.m_change[tp.first];
+            token_id = tp.first;
+        }
         const crypto::hash &hash = i->first;
-        uint64_t fee = pd.m_fee;
         std::string payment_id = string_tools::pod_to_hex(i->second.m_payment_id);
         if (payment_id.substr(16).find_first_not_of('0') == std::string::npos)
             payment_id = payment_id.substr(0,16);
@@ -204,8 +218,9 @@ void TransactionHistoryImpl::refresh()
 
         TransactionInfoImpl * ti = new TransactionInfoImpl();
         ti->m_paymentid = payment_id;
-        ti->m_amount = pd.m_amounts_in[cryptonote::CUTCOIN_ID] - pd.m_change[cryptonote::CUTCOIN_ID] - fee;
-        ti->m_fee    = fee;
+        ti->m_amount = transferred_amount;
+        ti->m_token  = cryptonote::token_id_to_name(token_id);
+        ti->m_fee    = pd.m_fee;
         ti->m_direction = TransactionInfo::Direction_Out;
         ti->m_failed = is_failed;
         ti->m_pending = true;
@@ -224,13 +239,13 @@ void TransactionHistoryImpl::refresh()
     m_wallet->m_wallet->get_unconfirmed_payments(upayments);
     for (std::list<std::pair<crypto::hash, tools::pool_payment_details>>::const_iterator i = upayments.begin(); i != upayments.end(); ++i) {
         const tools::payment_details &pd = i->second.m_pd;
-        if (pd.m_token_id != cryptonote::CUTCOIN_ID) continue;
         std::string payment_id = string_tools::pod_to_hex(i->first);
         if (payment_id.substr(16).find_first_not_of('0') == std::string::npos)
             payment_id = payment_id.substr(0,16);
         TransactionInfoImpl * ti = new TransactionInfoImpl();
         ti->m_paymentid = payment_id;
         ti->m_amount    = pd.m_amount;
+        ti->m_token     = cryptonote::token_id_to_name(pd.m_token_id);
         ti->m_direction = TransactionInfo::Direction_In;
         ti->m_hash      = string_tools::pod_to_hex(pd.m_tx_hash);
         ti->m_blockheight = pd.m_block_height;

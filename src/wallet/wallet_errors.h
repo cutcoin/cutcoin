@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -38,6 +38,7 @@
 
 #include "cryptonote_basic/cryptonote_format_utils.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
+#include "cryptonote_core/tx_source_entry.h"
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "include_base_utils.h"
 
@@ -604,7 +605,7 @@ namespace tools
 
       explicit tx_not_constructed(
           std::string && loc
-        , cryptonote::tx_sources const &sources
+        , cryptonote::TxSources const &sources
         , destinations_t const &destinations
         , uint64_t unlock_time
         , cryptonote::network_type nettype
@@ -617,7 +618,7 @@ namespace tools
       {
       }
 
-      const cryptonote::tx_sources &sources() const { return m_sources; }
+      const cryptonote::TxSources &sources() const { return m_sources; }
       const destinations_t& destinations() const { return m_destinations; }
       uint64_t unlock_time() const { return m_unlock_time; }
 
@@ -657,7 +658,7 @@ namespace tools
       }
 
     private:
-      cryptonote::tx_sources m_sources;
+      cryptonote::TxSources m_sources;
       destinations_t m_destinations;
       uint64_t m_unlock_time;
       cryptonote::network_type m_nettype;
@@ -788,8 +789,8 @@ namespace tools
     }
   };
   //----------------------------------------------------------------------------------------------------
-  struct fake_input_not_constructed: public transfer_error{
-    explicit fake_input_not_constructed(std::string &&loc)
+  struct pseudo_input_not_constructed: public transfer_error{
+    explicit pseudo_input_not_constructed(std::string &&loc)
     : transfer_error(std::move(loc), "fake input not constructed")
     {
     }

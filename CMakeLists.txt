@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2020, CUT coin
+# Copyright (c) 2018-2021, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -28,6 +28,8 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 # Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 list(INSERT CMAKE_MODULE_PATH 0
   "${CMAKE_SOURCE_DIR}/cmake")
 include(CheckCCompilerFlag)
@@ -219,6 +221,7 @@ endif()
 message(STATUS "BOOST_IGNORE_SYSTEM_PATHS defaults to ${BOOST_IGNORE_SYSTEM_PATHS_DEFAULT}")
 option(BOOST_IGNORE_SYSTEM_PATHS "Ignore boost system paths for local boost installation" ${BOOST_IGNORE_SYSTEM_PATHS_DEFAULT})
 
+option(BUILD_MOBILE "Build with native libs for mobile platform" OFF)
 
 if (NOT DEFINED ENV{DEVELOPER_LIBUNBOUND_OLD})
   message(STATUS "Could not find DEVELOPER_LIBUNBOUND_OLD in env (not required)")
@@ -867,7 +870,13 @@ if(STATIC)
   set(Boost_USE_STATIC_RUNTIME ON)
   set(Boost_NO_BOOST_CMAKE ON)
 endif()
-find_package(Boost 1.58 QUIET REQUIRED COMPONENTS system filesystem thread date_time chrono regex serialization program_options locale)
+
+if (BUILD_MOBILE)
+  list(APPEND BOOST_MODULES system filesystem thread date_time chrono regex serialization program_options)
+else()
+  list(APPEND BOOST_MODULES system filesystem thread date_time chrono regex serialization program_options locale)
+endif()
+find_package(Boost 1.58 QUIET REQUIRED COMPONENTS ${BOOST_MODULES})
 
 set(CMAKE_FIND_LIBRARY_SUFFIXES ${OLD_LIB_SUFFIXES})
 if(NOT Boost_FOUND)
@@ -950,21 +959,31 @@ if(ANDROID)
 endif()
 if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND ARCH_WIDTH EQUAL "32" AND NOT IOS AND NOT FREEBSD)
   find_library(ATOMIC atomic)
-  list(APPEND EXTRA_LIBRARIES ${ATOMIC})
+  if (ATOMIC_FOUND)
+    list(APPEND EXTRA_LIBRARIES ${ATOMIC})
+  endif()
 endif()
 
-find_path(ZMQ_INCLUDE_PATH zmq.hpp)
-find_library(ZMQ_LIB zmq)
+if (NOT BUILD_MOBILE)
+  find_path(ZMQ_INCLUDE_PATH zmq.hpp)
+  find_library(ZMQ_LIB zmq)
+
+  if(NOT ZMQ_INCLUDE_PATH)
+    message(FATAL_ERROR "Could not find required header zmq.hpp")
+  endif()
+  if(NOT ZMQ_LIB)
+    message(FATAL_ERROR "Could not find required libzmq")
+  endif()
+endif()
+
 find_library(PGM_LIBRARY pgm)
 find_library(NORM_LIBRARY norm)
 find_library(SODIUM_LIBRARY sodium)
 
-if(NOT ZMQ_INCLUDE_PATH)
-  message(FATAL_ERROR "Could not find required header zmq.hpp")
+if (BUILD_MOBILE)
+  include_directories(${LIBSODIUM_INCLUDE_DIR})
 endif()
-if(NOT ZMQ_LIB)
-  message(FATAL_ERROR "Could not find required libzmq")
-endif()
+
 if(PGM_LIBRARY)
   set(ZMQ_LIB "${ZMQ_LIB};${PGM_LIBRARY}")
 endif()

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -74,7 +74,16 @@ public:
     std::vector<crypto::secret_key> additional_tx_keys;
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
     subaddresses[this->m_miners[this->real_source_idx].get_keys().m_account_address.m_spend_public_key] = {0,0};
-    return cryptonote::construct_tx_and_get_tx_key(this->m_miners[this->real_source_idx].get_keys(), subaddresses, this->m_sources, m_destinations, cryptonote::account_public_address{}, std::vector<uint8_t>(), m_tx, 0, tx_key, additional_tx_keys, rct, range_proof_type);
+    cryptonote::TxConstructionContext context;
+    context.d_sender_account_keys = this->m_miners[this->real_source_idx].get_keys();
+    context.d_subaddresses        = subaddresses;
+    context.d_sources             = this->m_sources;
+    context.d_destinations        = m_destinations;
+    context.d_change_addr         = cryptonote::account_public_address{};
+    context.d_tx_key              = tx_key;
+    context.d_additional_tx_keys  = additional_tx_keys;
+    context.d_range_proof_type    = range_proof_type;
+    return cryptonote::construct_tx_and_get_tx_key(context, m_tx);
   }
 
 private:

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -1477,7 +1477,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    if (MIN_TOKEN_SUPPLY <= req.token_supply && req.token_supply <= MAX_TOKEN_SUPPLY) {
+    if (is_valid_token_supply(req.token_supply)) {
       token_summary.d_token_supply = req.token_supply;
     } else {
       er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
@@ -1485,7 +1485,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    token_summary.d_token_type = req.token_type;
+    token_summary.d_type = static_cast<TokenType>(req.token_type);
     token_summary.d_unit = COIN;
 
     COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
@@ -1701,7 +1701,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       info.id     = token_summary.token_id;
       info.supply = token_summary.token_supply;
       info.unit   = token_summary.unit;
-      info.type   = "";
+      info.type   = token_summary.type;
       res.tokens.emplace_back(info);
     }
 

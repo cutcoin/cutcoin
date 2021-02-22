@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -938,7 +938,7 @@ TEST(Serialization, DISABLED_portability_unsigned_tx)
     std::vector<transfer_details> m_transfers
 
   fields of toolw::wallet2::tx_construction_data to be checked:
-    tx_sources                                    sources
+    TxSources                                     sources
     cryptonote::tx_destination_entry              change_dts
     std::vector<cryptonote::tx_destination_entry> splitted_dsts
     std::list<size_t>                             selected_transfers

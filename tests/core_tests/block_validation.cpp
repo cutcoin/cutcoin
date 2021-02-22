@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,8 +29,10 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include "chaingen.h"
 #include "block_validation.h"
+
+#include "chaingen.h"
+#include "cryptonote_core/tx_source_entry.h"
 
 using namespace epee;
 using namespace cryptonote;
@@ -341,7 +343,7 @@ bool gen_block_miner_tx_has_2_in::generate(std::vector<test_event_entry>& events
   se.rct = false;
   se.real_out_tx_key = get_tx_pub_key_from_extra(blk_0.miner_tx);
   se.real_output_in_tx_index = 0;
-  tx_sources sources;
+  TxSources sources;
   sources.push_back(se);
 
   tx_destination_entry de;
@@ -384,7 +386,7 @@ bool gen_block_miner_tx_with_txin_to_key::generate(std::vector<test_event_entry>
   se.rct = false;
   se.real_out_tx_key = get_tx_pub_key_from_extra(blk_1.miner_tx);
   se.real_output_in_tx_index = 0;
-  tx_sources sources;
+  TxSources sources;
   sources.push_back(se);
 
   tx_destination_entry de;

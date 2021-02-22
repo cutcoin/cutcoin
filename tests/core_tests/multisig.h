@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,7 +29,8 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#pragma once 
+#pragma once
+
 #include "chaingen.h"
 
 struct gen_multisig_tx_validation_base : public test_chain_unit_base
@@ -73,7 +74,7 @@ struct gen_multisig_tx_validation_base : public test_chain_unit_base
   bool generate_with(std::vector<test_event_entry>& events, size_t inputs, size_t mixin,
       uint64_t amount_paid, bool valid,
       size_t threshold, size_t total, size_t creator, std::vector<size_t> signers,
-      const std::function<void(cryptonote::tx_sources &sources, std::vector<cryptonote::tx_destination_entry> &destinations)> &pre_tx,
+      const std::function<void(cryptonote::TxSources &sources, std::vector<cryptonote::tx_destination_entry> &destinations)> &pre_tx,
       const std::function<void(cryptonote::transaction &tx)> &post_tx) const;
 
 private:

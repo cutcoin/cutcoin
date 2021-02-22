@@ -1,4 +1,4 @@
-// Copyright (c) 2020, CUT coin
+// Copyright (c) 2020-2021, CUT coin
 //
 // All rights reserved.
 //

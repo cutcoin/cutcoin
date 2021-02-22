@@ -1,4 +1,4 @@
-// Copyright (c) 2020, CUT coin
+// Copyright (c) 2020-2021, CUT coin
 //
 // All rights reserved.
 //
@@ -36,7 +36,7 @@
 
 namespace cryptonote {
 
-using Amount = uint64_t;
+using Amount = std::uint64_t;
   // Unified type for coin or token amount representation.
 
 using TokenAmount = std::pair<TokenId, Amount>;

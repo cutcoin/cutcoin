@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -1803,6 +1803,43 @@ bool t_rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
     tools::msg_writer() << "Voting for: " << s;
   }
   return true;
+}
+
+bool t_rpc_command_executor::print_tokens(const std::string &token_prefix)
+{
+    cryptonote::COMMAND_RPC_GET_TOKENS::request req;
+    cryptonote::COMMAND_RPC_GET_TOKENS::response res;
+    std::string fail_message = "Problem fetching info";
+
+    req.prefix = token_prefix;
+
+    if (m_is_rpc)
+    {
+        if (!m_rpc_client->rpc_request(req, res, "/get_tokens.bin", fail_message.c_str()))
+        {
+            return true;
+        }
+    }
+    else
+    {
+        if (!m_rpc_server->on_get_tokens(req, res) || res.status != CORE_RPC_STATUS_OK)
+        {
+            tools::fail_msg_writer() << make_error(fail_message, res.status);
+            return true;
+        }
+    }
+
+    tools::success_msg_writer() << boost::format("%15s %21s %21s %21s %13s") % "Name" % "Token ID" % "Supply" % "Unit";
+
+    for (const auto &token_summary : res.tokens)
+    {
+      tools::success_msg_writer() << boost::format("%15s %21u %21d %21d %13s")
+                                     % cryptonote::token_id_to_name(token_summary.token_id) % token_summary.token_id
+                                     % token_summary.token_supply % token_summary.unit
+                                     % (cryptonote::is_token_with_public_supply(
+        static_cast<cryptonote::TokenType>(token_summary.type)) ? "public supply": "private supply");
+    }
+    return true;
 }
 
 bool t_rpc_command_executor::update(const std::string &command)

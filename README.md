@@ -10,7 +10,7 @@ privacy, PoS consensus and tokens support.
 
 Cutcoin is an open source software, see the full license text [here](LICENSE).
 
-Copyright (c) 2018-2020 CUT coin.
+Copyright (c) 2018-2021 CUT coin.
 
 Copyright (c) 2014-2017 The Monero Project.
 

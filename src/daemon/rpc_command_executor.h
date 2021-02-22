@@ -6,7 +6,7 @@
 
 */
 
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -145,6 +145,8 @@ public:
   bool alt_chain_info(const std::string &tip);
 
   bool print_blockchain_dynamic_stats(uint64_t nblocks);
+
+  bool print_tokens(const std::string &token_prefix);
 
   bool update(const std::string &command);
 

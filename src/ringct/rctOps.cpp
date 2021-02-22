@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -531,14 +531,14 @@ namespace rct {
     key smearBits(uint64_t value)
     {
         const uint8_t mask{0xff};
-        return key {static_cast<unsigned char>( value         & mask),
-                    static_cast<unsigned char>((value >> 8U ) & mask),
-                    static_cast<unsigned char>((value >> 16U) & mask),
-                    static_cast<unsigned char>((value >> 24U) & mask),
-                    static_cast<unsigned char>((value >> 32U) & mask),
-                    static_cast<unsigned char>((value >> 40U) & mask),
-                    static_cast<unsigned char>((value >> 48U) & mask),
-                    static_cast<unsigned char>((value >> 56U) & mask)};
+        return key {{static_cast<unsigned char>( value         & mask),
+                     static_cast<unsigned char>((value >> 8U ) & mask),
+                     static_cast<unsigned char>((value >> 16U) & mask),
+                     static_cast<unsigned char>((value >> 24U) & mask),
+                     static_cast<unsigned char>((value >> 32U) & mask),
+                     static_cast<unsigned char>((value >> 40U) & mask),
+                     static_cast<unsigned char>((value >> 48U) & mask),
+                     static_cast<unsigned char>((value >> 56U) & mask)}};
     }
 
     key tokenIdToPoint(cryptonote::TokenId token_id)

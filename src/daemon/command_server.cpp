@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -121,16 +121,16 @@ t_command_server::t_command_server(
     , std::bind(&t_command_parser_executor::print_transaction_pool_stats, &m_parser, p::_1)
     , "Print the transaction pool's statistics."
     );
-  m_command_lookup.set_handler(
-      "show_hr"
-    , std::bind(&t_command_parser_executor::show_hash_rate, &m_parser, p::_1)
-    , "Start showing the current hash rate."
-    );
-  m_command_lookup.set_handler(
-      "hide_hr"
-    , std::bind(&t_command_parser_executor::hide_hash_rate, &m_parser, p::_1)
-    , "Stop showing the hash rate."
-    );
+  // m_command_lookup.set_handler(
+  //     "show_hr"
+  //   , std::bind(&t_command_parser_executor::show_hash_rate, &m_parser, p::_1)
+  //   , "Start showing the current hash rate."
+  //   );
+  // m_command_lookup.set_handler(
+  //     "hide_hr"
+  //   , std::bind(&t_command_parser_executor::hide_hash_rate, &m_parser, p::_1)
+  //   , "Stop showing the hash rate."
+  //   );
   m_command_lookup.set_handler(
       "save"
     , std::bind(&t_command_parser_executor::save_blockchain, &m_parser, p::_1)
@@ -258,6 +258,12 @@ t_command_server::t_command_server(
     , std::bind(&t_command_parser_executor::print_blockchain_dynamic_stats, &m_parser, p::_1)
     , "bc_dyn_stats <last_block_count>"
     , "Print the information about current blockchain dynamic state."
+    );
+    m_command_lookup.set_handler(
+      "print_tokens"
+    , std::bind(&t_command_parser_executor::print_tokens, &m_parser, p::_1)
+    , "print_tokens [token_prefix]"
+    , "Print the information about existing tokens on the blockchain."
     );
     m_command_lookup.set_handler(
       "update"

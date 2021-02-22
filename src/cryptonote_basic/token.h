@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2019, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 //
 // All rights reserved.
 //
@@ -30,7 +30,10 @@
 #ifndef CUTCOIN_TOKEN_H
 #define CUTCOIN_TOKEN_H
 
+#include <cryptonote_config.h>
+
 #include <cstdint>
+#include <limits>
 #include <string>
 
 namespace cryptonote {
@@ -48,7 +51,7 @@ using TokenUnit = std::uint64_t;
 const TokenUnit MIN_TOKEN_SUPPLY = 1;
   // The minimal token supply.
 
-const TokenUnit MAX_TOKEN_SUPPLY = 200000000;
+const TokenUnit MAX_TOKEN_SUPPLY = std::numeric_limits<uint64_t>::max() / COIN;
   // The maximal token supply.
 
 const std::size_t TOKEN_GENESIS_OUTPUTS = 11;
@@ -59,14 +62,26 @@ const std::string PROHIBITED_TOKEN_NAMES[] = {};
 const std::string PROHIBITED_TOKEN_NAMES_PREFIXES[] = {"CUT"};
 const char TOKEN_ALLOWED_CHARACTERS[] = {"ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"};
 
+enum TokenType: std::uint64_t {
+  // Token type.
+
+  public_supply = 1,
+    // Represents a token with publicly visible supply
+
+  hidden_supply = 2
+    // Represents a token with hidden supply.
+};
+
 struct TokenSummary {
-  TokenId       d_token_id;
+  // Represent summary token characteristics.
 
-  std::string   d_token_type;
+  TokenId       d_token_id;      // unique token id
 
-  TokenUnit     d_token_supply;
+  TokenType     d_type;          // token type
 
-  std::uint64_t d_unit;
+  TokenUnit     d_token_supply;  // total token supply
+
+  std::uint64_t d_unit;          // token unit. Currently not used, all tokens have Cutcoin unit 1.0e10.
 };
 
 TokenId token_name_to_id(const std::string &token_name);
@@ -81,6 +96,27 @@ bool is_cutcoin(const TokenId &token_id)
   // Return true if the specified 'token_is' is 'CUTCOIN_ID'.
 {
   return token_id == CUTCOIN_ID;
+}
+
+constexpr
+bool is_valid_token_supply(TokenUnit supply)
+  // Return 'true' if the specified 'supply' lays in the allowed range.
+{
+  return MIN_TOKEN_SUPPLY <= supply && supply <= MAX_TOKEN_SUPPLY;
+}
+
+constexpr
+bool is_token_with_public_supply(const TokenType &token_type)
+  // Return 'true' if the specified 'token_summary' represents a token with publicly visible supply.
+{
+  return token_type == TokenType::public_supply;
+}
+
+constexpr
+bool is_token_with_hidden_supply(const TokenType &token_type)
+  // Return 'true' if the specified 'token_summary' represents a token with hidden supply.
+{
+  return token_type == TokenType::hidden_supply;
 }
 
 }  // namespace cryptonote

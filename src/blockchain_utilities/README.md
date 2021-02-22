@@ -1,6 +1,6 @@
 # CUT Coin Blockchain Utilities
 
-Copyright (c) 2018-2019, CUT coin
+Copyright (c) 2018-2021, CUT coin
 Copyright (c) 2014-2018, The Monero Project
 
 ## Introduction

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,10 +29,12 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include "ringct/rctSigs.h"
+
 #include "chaingen.h"
-#include "rct.h"
+#include "cryptonote_core/tx_source_entry.h"
 #include "device/device.hpp"
+#include "ringct/rctSigs.h"
+#include "rct.h"
 
 using namespace epee;
 using namespace crypto;
@@ -43,7 +45,7 @@ using namespace cryptonote;
 
 bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& events,
     const int *out_idx, int mixin, uint64_t amount_paid, bool valid,
-    const std::function<void(tx_sources &sources, std::vector<tx_destination_entry> &destinations)> &pre_tx,
+    const std::function<void(TxSources &sources, std::vector<tx_destination_entry> &destinations)> &pre_tx,
     const std::function<void(transaction &tx)> &post_tx) const
 {
   uint64_t ts_start = 1338224400;
@@ -93,7 +95,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
   for (size_t n = 0; n < 4; ++n)
   {
     std::vector<crypto::hash> starting_rct_tx_hashes;
-    tx_sources sources;
+    TxSources sources;
 
     sources.resize(1);
     tx_source_entry& src = sources.back();
@@ -123,7 +125,16 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
     std::vector<crypto::secret_key> additional_tx_keys;
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
     subaddresses[miner_accounts[n].get_keys().m_account_address.m_spend_public_key] = {0,0};
-    bool r = construct_tx_and_get_tx_key(miner_accounts[n].get_keys(), subaddresses, sources, destinations, cryptonote::account_public_address{}, std::vector<uint8_t>(), rct_txes[n], 0, tx_key, additional_tx_keys, true);
+
+    TxConstructionContext context;
+    context.d_sender_account_keys = miner_accounts[n].get_keys();
+    context.d_subaddresses        = subaddresses;
+    context.d_sources             = sources;
+    context.d_destinations        = destinations;
+    context.d_change_addr         = cryptonote::account_public_address{};
+    context.d_tx_key              = tx_key;
+    context.d_additional_tx_keys  = additional_tx_keys;
+    bool r = construct_tx_and_get_tx_key(context, rct_txes[n]);
     CHECK_AND_ASSERT_MES(r, false, "failed to construct transaction");
     events.push_back(rct_txes[n]);
     starting_rct_tx_hashes.push_back(get_transaction_hash(rct_txes[n]));
@@ -167,7 +178,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
   }
 
   // create a tx from the requested ouputs
-  tx_sources sources;
+  TxSources sources;
   size_t global_rct_idx = 6; // skip first coinbase (6 outputs)
   size_t rct_idx = 0;
   size_t pre_rct_idx = 0;
@@ -224,7 +235,15 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
   std::vector<crypto::secret_key> additional_tx_keys;
   std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
   subaddresses[miner_accounts[0].get_keys().m_account_address.m_spend_public_key] = {0,0};
-  bool r = construct_tx_and_get_tx_key(miner_accounts[0].get_keys(), subaddresses, sources, destinations, cryptonote::account_public_address{}, std::vector<uint8_t>(), tx, 0, tx_key, additional_tx_keys, true);
+  TxConstructionContext context;
+  context.d_sender_account_keys = miner_accounts[0].get_keys();
+  context.d_subaddresses        = subaddresses;
+  context.d_sources             = sources;
+  context.d_destinations        = destinations;
+  context.d_change_addr         = cryptonote::account_public_address{};
+  context.d_tx_key              = tx_key;
+  context.d_additional_tx_keys  = additional_tx_keys;
+  bool r = construct_tx_and_get_tx_key(context, tx);
   CHECK_AND_ASSERT_MES(r, false, "failed to construct transaction");
 
   if (post_tx)
@@ -270,7 +289,7 @@ bool gen_rct_tx_pre_rct_bad_real_dest::generate(std::vector<test_event_entry>& e
   bool tx_creation_succeeded = false;
   // in the case, the tx will fail to create, due to mismatched sk/pk
   bool ret = generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[0].second.dest);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[0].second.dest);},
     [&tx_creation_succeeded](const transaction &tx){tx_creation_succeeded=true;});
   return !ret && !tx_creation_succeeded;
 }
@@ -281,7 +300,7 @@ bool gen_rct_tx_pre_rct_bad_real_mask::generate(std::vector<test_event_entry>& e
   const int out_idx[] = {0, -1};
   const uint64_t amount_paid = 10000;
   return generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {sources[0].outputs[0].second.mask = rct::zeroCommit(99999);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {sources[0].outputs[0].second.mask = rct::zeroCommit(99999);},
     NULL);
 }
 
@@ -291,7 +310,7 @@ bool gen_rct_tx_pre_rct_bad_fake_dest::generate(std::vector<test_event_entry>& e
   const int out_idx[] = {0, -1};
   const uint64_t amount_paid = 10000;
   return generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[1].second.dest);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[1].second.dest);},
     NULL);
 }
 
@@ -301,7 +320,7 @@ bool gen_rct_tx_pre_rct_bad_fake_mask::generate(std::vector<test_event_entry>& e
   const int out_idx[] = {0, -1};
   const uint64_t amount_paid = 10000;
   return generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {sources[0].outputs[1].second.mask = rct::zeroCommit(99999);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {sources[0].outputs[1].second.mask = rct::zeroCommit(99999);},
     NULL);
 }
 
@@ -313,7 +332,7 @@ bool gen_rct_tx_rct_bad_real_dest::generate(std::vector<test_event_entry>& event
   bool tx_creation_succeeded = false;
   // in the case, the tx will fail to create, due to mismatched sk/pk
   bool ret = generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[0].second.dest);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[0].second.dest);},
     [&tx_creation_succeeded](const transaction &tx){tx_creation_succeeded=true;});
   return !ret && !tx_creation_succeeded;
 }
@@ -324,7 +343,7 @@ bool gen_rct_tx_rct_bad_real_mask::generate(std::vector<test_event_entry>& event
   const int out_idx[] = {1, -1};
   const uint64_t amount_paid = 10000;
   return generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {sources[0].outputs[0].second.mask = rct::zeroCommit(99999);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {sources[0].outputs[0].second.mask = rct::zeroCommit(99999);},
     NULL);
 }
 
@@ -334,7 +353,7 @@ bool gen_rct_tx_rct_bad_fake_dest::generate(std::vector<test_event_entry>& event
   const int out_idx[] = {1, -1};
   const uint64_t amount_paid = 10000;
   return generate_with(events, out_idx, mixin, amount_paid, false,
-    [](tx_sources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[1].second.dest);},
+    [](TxSources &sources, std::vector<tx_destination_entry> &destinations) {rct::key sk; rct::skpkGen(sk, sources[0].outputs[1].second.dest);},
     NULL);
 }
 

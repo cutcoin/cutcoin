@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -847,7 +847,7 @@ namespace wallet_rpc
     {
       std::string           token_name;
       cryptonote::TokenUnit token_supply;
-      std::string           token_type;
+      std::uint64_t         token_type;
       std::uint64_t         token_unit;
 
     BEGIN_KV_SERIALIZE_MAP()

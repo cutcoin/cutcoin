@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 //
 // All rights reserved.
@@ -63,7 +63,7 @@ void SubaddressAccountImpl::refresh()
   {
     m_rows.push_back(new SubaddressAccountRow(
       i,
-      m_wallet->m_wallet->get_subaddress_as_str({i,0}).substr(0,6),
+      m_wallet->m_wallet->get_subaddress_as_str({i,0}),
       m_wallet->m_wallet->get_subaddress_label({i,0}),
       cryptonote::print_money(m_wallet->m_wallet->balance(i)),
       cryptonote::print_money(m_wallet->m_wallet->unlocked_balance(i))

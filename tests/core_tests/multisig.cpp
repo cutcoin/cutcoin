@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,13 +29,15 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include "ringct/rctSigs.h"
-#include "cryptonote_basic/cryptonote_basic.h"
-#include "multisig/multisig.h"
-#include "common/apply_permutation.h"
 #include "chaingen.h"
-#include "multisig.h"
+#include "common/apply_permutation.h"
+#include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_core/tx_source_entry.h"
 #include "device/device.hpp"
+#include "multisig.h"
+#include "multisig/multisig.h"
+#include "ringct/rctSigs.h"
+
 using namespace epee;
 using namespace crypto;
 using namespace cryptonote;
@@ -129,7 +131,7 @@ void make_multisig_accounts(std::vector<cryptonote::account_base>& account, uint
 bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry>& events,
     size_t inputs, size_t mixin, uint64_t amount_paid, bool valid,
     size_t threshold, size_t total, size_t creator, std::vector<size_t> signers,
-    const std::function<void(tx_sources &sources, std::vector<tx_destination_entry> &destinations)> &pre_tx,
+    const std::function<void(TxSources &sources, std::vector<tx_destination_entry> &destinations)> &pre_tx,
     const std::function<void(transaction &tx)> &post_tx) const
 {
   uint64_t ts_start = 1338224400;
@@ -322,7 +324,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
 #endif
 
   // create a tx: we have 8 outputs, all from coinbase, so "fake" rct - use 2
-  tx_sources sources;
+  TxSources sources;
   for (size_t n = 0; n < inputs; ++n)
   {
     sources.resize(sources.size() + 1);
@@ -366,7 +368,20 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
 #endif
   std::vector<crypto::secret_key> additional_tx_secret_keys;
   auto sources_copy = sources;
-  r = construct_tx_and_get_tx_key(miner_account[creator].get_keys(), subaddresses, sources, destinations, boost::none, std::vector<uint8_t>(), tx, 0, tx_key, additional_tx_secret_keys, false, true, rct::RangeProofBorromean, msoutp);
+
+  TxConstructionContext context;
+  context.d_sender_account_keys = miner_account[creator].get_keys();
+  context.d_subaddresses        = subaddresses;
+  context.d_sources             = sources;
+  context.d_destinations        = destinations;
+  context.d_change_addr         = boost::none;
+  context.d_tx_key              = tx_key;
+  context.d_additional_tx_keys  = additional_tx_secret_keys;
+  context.d_tx_version          = TxVersion::plain;
+  context.d_range_proof_type    = rct::RangeProofBorromean;
+  context.d_msout               = msoutp;
+
+  r = construct_tx_and_get_tx_key(context, tx);
   CHECK_AND_ASSERT_MES(r, false, "failed to construct transaction");
 
 #ifndef NO_MULTISIG

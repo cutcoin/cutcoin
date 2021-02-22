@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -38,8 +38,8 @@ namespace Monero {
 
 TransactionInfo::~TransactionInfo() {}
 
-TransactionInfo::Transfer::Transfer(uint64_t _amount, const string &_address)
-    : amount(_amount), address(_address) {}
+TransactionInfo::Transfer::Transfer(uint64_t _amount, uint64_t _token_id, const string &_address)
+    : amount(_amount), token_id(_token_id), address(_address) {}
 
 
 TransactionInfoImpl::TransactionInfoImpl()
@@ -81,6 +81,11 @@ bool TransactionInfoImpl::isFailed() const
 uint64_t TransactionInfoImpl::amount() const
 {
     return m_amount;
+}
+
+string TransactionInfoImpl::token() const
+{
+    return m_token;
 }
 
 uint64_t TransactionInfoImpl::fee() const

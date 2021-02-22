@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -534,6 +534,17 @@ bool t_command_parser_executor::print_blockchain_dynamic_stats(const std::vector
   }
 
   return m_executor.print_blockchain_dynamic_stats(nblocks);
+}
+
+bool t_command_parser_executor::print_tokens(const std::vector<std::string>& args)
+{
+  if(args.size() > 1)
+  {
+    std::cout << "usage: print_tokens [token_prefix]" << std::endl;
+    return false;
+  }
+
+  return m_executor.print_tokens(args.size() == 1 ? args[0] : "");
 }
 
 bool t_command_parser_executor::update(const std::vector<std::string>& args)

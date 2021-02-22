@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -145,12 +145,30 @@ bool PendingTransactionImpl::commit(const std::string &filename, bool overwrite)
     return m_status == Status_Ok;
 }
 
+std::string PendingTransactionImpl::tokenName() const
+{
+    std::string result = "";
+    for (const auto &ptx : m_pending_tx)   {
+        for (const auto i: ptx.selected_transfers) {
+            const cryptonote::TokenId &tid = m_wallet.m_wallet->get_transfer_details(i).m_token_id;
+            if (!cryptonote::is_cutcoin(tid)) {
+              result = cryptonote::token_id_to_name(tid);
+              break;
+            }
+        }
+    }
+    return result;
+}
+
 uint64_t PendingTransactionImpl::amount() const
 {
+    uint64_t token_id = cryptonote::token_name_to_id(this->tokenName());
     uint64_t result = 0;
     for (const auto &ptx : m_pending_tx)   {
         for (const auto &dest : ptx.dests) {
-            result += dest.amount;
+            if (dest.token_id == token_id) {
+                result += dest.amount;
+            }
         }
     }
     return result;

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -47,6 +47,7 @@ public:
     int status() const override;
     std::string errorString() const override;
     bool commit(const std::string &filename = "", bool overwrite = false) override;
+    std::string tokenName() const override;
     uint64_t amount() const override;
     uint64_t dust() const override;
     uint64_t fee() const override;

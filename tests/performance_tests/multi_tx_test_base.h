@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2020, CUT coin
+// Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -86,7 +86,7 @@ protected:
   cryptonote::transaction m_miner_txs[ring_size];
   uint64_t m_source_amount;
 
-  cryptonote::tx_sources m_sources;
+  cryptonote::TxSources m_sources;
   crypto::public_key m_public_keys[ring_size];
   const crypto::public_key* m_public_key_ptrs[ring_size];
 };

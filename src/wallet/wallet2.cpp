@@ -13290,7 +13290,7 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
                             error::wallet_internal_error,
                             "Cannot write 'tx_extra_token_data' to tx extra field.");
 
-  TokenType token_type = token_summary.d_type;
+  cryptonote::TokenType token_type = token_summary.d_type;
 
   ptx_vector = token_genesis_basic(token_destination, fake_outs_count, unlock_time, token_type, extra);
 

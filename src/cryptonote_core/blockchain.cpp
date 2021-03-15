@@ -3172,23 +3172,36 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_con
     return false;
   }
 
+  if(!check_tgtx(tvc, tx, token_data)) {
+    MERROR_VER("Incorrect token genesis transaction");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  bvc.m_token_genesis_block = true;
+  tvc.m_verifivation_failed = false;
+  return true;
+}
+
+bool Blockchain::check_tgtx(tx_verification_context &tvc, const transaction &tx, const tx_extra_token_data &token_data)
+{
   TokenId token_id = token_data.d_id;
   std::string token_name = token_id_to_name(token_id);
 
   if(!validate_token_name(token_name)) {
-    MERROR_VER("Invalid token name in token genesis transaction: " << token_name);
+    LOG_PRINT_L2("Invalid token name in token genesis transaction: " << token_name);
     tvc.m_verifivation_failed = true;
     return false;
   }
 
   if (check_existing_token_id(token_id)){
-    MERROR_VER("Token already exists in blockchain");
+    LOG_PRINT_L2("Token already exists in blockchain");
     tvc.m_verifivation_failed = true;
     return false;
   }
 
   if (!check_tgtx_payment(tx)){
-    MERROR_VER("Token genesis payment is not correct");
+    LOG_PRINT_L2("Token genesis payment is not correct");
     tvc.m_verifivation_failed = true;
     return false;
   }
@@ -3200,7 +3213,7 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_con
     }
   }
   if (token_outs_count < TOKEN_GENESIS_OUTPUTS){
-    MERROR_VER("Number of token outputs in token genesis transaction must be at least " << TOKEN_GENESIS_OUTPUTS);
+    LOG_PRINT_L2("Number of token outputs in token genesis transaction must be at least " << TOKEN_GENESIS_OUTPUTS);
     tvc.m_verifivation_failed = true;
     return false;
   }
@@ -3210,30 +3223,29 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_con
     ids.insert(o.token_id);
   }
   if (ids.size() != 2){
-    MERROR_VER("In token genesis transaction all token outputs must have same 'token_id'");
+    LOG_PRINT_L2("In token genesis transaction all token outputs must have same 'token_id'");
     tvc.m_verifivation_failed = true;
     return false;
   }
 
   if (ids.find(token_id) == ids.end()) {
-    MERROR_VER("In token genesis tx extra field and token outputs must have same 'token_id'");
+    LOG_PRINT_L2("In token genesis tx extra field and token outputs must have same 'token_id'");
     tvc.m_verifivation_failed = true;
     return false;
   }
 
   if (!check_tgtx_supply(tx, token_data)) {
-    MERROR_VER("Token supply is not correct");
+    LOG_PRINT_L2("Token supply is not correct");
     tvc.m_verifivation_failed = true;
     return false;
   }
 
 //  if (!check_outs_overflow(tx, token_id)) {
-//    MERROR_VER("Tx has money overflow, rejected for tx id= " << get_transaction_hash(tx));
+//    LOG_PRINT_L2("Tx has money overflow, rejected for tx id= " << get_transaction_hash(tx));
 //    tvc.m_verifivation_failed = true;
 //    return false;
 //  }
 
-  bvc.m_token_genesis_block = true;
   tvc.m_verifivation_failed = false;
   return true;
 }
@@ -3287,10 +3299,6 @@ bool Blockchain::check_tgtx_payment(const transaction &tx)
 
 bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_data &token_data)
 {
-  if (m_db->height() < 571000) {
-    return true;
-  }
-
   const rct::rctSig rct_sig = tx.rct_signatures;
   rct::keyV masks(rct_sig.outPk.size());
 

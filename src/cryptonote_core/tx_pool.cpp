@@ -218,6 +218,12 @@ namespace cryptonote
     }
 
     if (tx.is_token_genesis()) {
+      if (tx.version < TxVersion::tokens)
+      {
+        LOG_PRINT_L1("Token genesis transaction has transaction version < 3");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
       tx_extra_token_data token_data;
       if (!get_token_data(tx, token_data)) {
         LOG_PRINT_L1("Could not extract token data from token genesis transaction");
@@ -230,9 +236,9 @@ namespace cryptonote
         tvc.m_verifivation_failed = true;
         return false;
       }
-      if (m_blockchain.check_existing_token_id(token_data.d_id))
+      if (!m_blockchain.check_tgtx(tvc, tx, token_data))
       {
-        LOG_PRINT_L1("Token already exists in blockchain");
+        LOG_PRINT_L1("Token genesis transaction is incorrect");
         tvc.m_verifivation_failed = true;
         return false;
       }
@@ -1035,6 +1041,22 @@ namespace cryptonote
         txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
         return false;
       }
+      if (tx.is_token_genesis())
+      {
+        if (tx.version < TxVersion::tokens)
+        {
+          LOG_PRINT_L2("Token genesis transaction has transaction version < 3");
+          return false;
+        }
+
+        tx_extra_token_data token_data;
+        get_token_data(tx, token_data);
+        if (!m_blockchain.check_tgtx(tvc, tx, token_data))
+        {
+          LOG_PRINT_L2("  tgtx is incorect");
+          return false;
+        }
+      }
     }else
     {
       if(txd.max_used_block_height >= m_blockchain.get_current_blockchain_height())
@@ -1051,6 +1073,22 @@ namespace cryptonote
           txd.last_failed_height = m_blockchain.get_current_blockchain_height()-1;
           txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
           return false;
+        }
+        if (tx.is_token_genesis())
+        {
+          if (tx.version < TxVersion::tokens)
+          {
+            LOG_PRINT_L2("Token genesis transaction has transaction version < 3");
+            return false;
+          }
+
+          tx_extra_token_data token_data;
+          get_token_data(tx, token_data);
+          if (!m_blockchain.check_tgtx(tvc, tx, token_data))
+          {
+            LOG_PRINT_L2("  tgtx is incorect");
+            return false;
+          }
         }
       }
     }
@@ -1243,6 +1281,16 @@ namespace cryptonote
       cryptonote::blobdata txblob = m_blockchain.get_txpool_tx_blob(sorted_it->second);
       cryptonote::transaction tx;
 
+      if (tx.is_token_genesis())
+      {
+        if (token_genesis_block)
+        {
+          LOG_PRINT_L2("  second token genesis not allowed");
+          continue;
+        }
+        else token_genesis_block = true;
+      }
+
       // Skip transactions that are not ready to be
       // included into the blockchain or that are
       // missing key images
@@ -1276,25 +1324,6 @@ namespace cryptonote
       {
         LOG_PRINT_L2("  key images already seen");
         continue;
-      }
-      if (tx.is_token_genesis())
-      {
-        if (token_genesis_block)
-        {
-          LOG_PRINT_L2("  second token genesis not allowed");
-          continue;
-        }
-        else token_genesis_block = true;
-        
-        std::vector<tx_extra_field> tx_extra_fields;
-        parse_tx_extra(tx.extra, tx_extra_fields);
-        tx_extra_token_data token_data;
-        get_token_data(tx, token_data);
-        if (m_blockchain.check_existing_token_id(token_data.d_id))
-        {
-          LOG_PRINT_L2("  token already exists in blockchain");
-          continue;
-        }
       }
 
       bl.tx_hashes.push_back(sorted_it->second);

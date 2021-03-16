@@ -1,5 +1,7 @@
 ### Release v 3.0.6
-* Fixed bug related to creation of the tokens with hidden supply.
+* Fix bug related to creation of the tokens with hidden supply.
+* Add support for tokens with hidden supply in GUI wallet.
+* Add extra checks for token genesis transaction.
 
 ### Release v 3.0.5
 * Fix issue in 'sweep_all'

@@ -1707,6 +1707,7 @@ PendingTransaction *WalletImpl::createTokenTransaction(const std::string        
 
 PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string &token_name,
                                                               std::uint64_t      token_supply,
+                                                              std::uint64_t      token_type,
                                                               uint32_t           subaddress_account)
 {
   auto *transaction = new PendingTransactionImpl(*this);
@@ -1744,6 +1745,7 @@ PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string 
     return transaction;
   }
 
+  token_summary.d_type = static_cast<cryptonote::TokenType>(token_type);
   token_summary.d_unit = COIN;
 
   COMMAND_RPC_GET_TOKENS::request req = AUTO_VAL_INIT(req);

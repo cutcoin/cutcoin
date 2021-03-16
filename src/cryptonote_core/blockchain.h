@@ -645,6 +645,20 @@ namespace cryptonote
     bool check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary *token_summary = nullptr) const;
 
     /**
+     * @brief validate token genesis transaction
+     *
+     * This function validates different aspects of a token genesis transaction (tgtx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tvc returned information about tx verification
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_tgtx(tx_verification_context &tvc, const transaction &tx);
+
+    /**
      * @brief gets the block weight limit based on recent blocks
      *
      * @return the limit

@@ -1485,7 +1485,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    token_summary.d_type = static_cast<TokenType>(req.token_type);
+    token_summary.d_type = static_cast<cryptonote::TokenType>(req.token_type);
     token_summary.d_unit = COIN;
 
     COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);

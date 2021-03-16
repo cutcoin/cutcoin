@@ -175,6 +175,7 @@ public:
 
   PendingTransaction * createTokenGenesisTransaction(const std::string &token_name,
                                                      std::uint64_t      token_supply,
+                                                     std::uint64_t      token_type,
                                                      uint32_t           subaddr_account) override;
   virtual PendingTransaction * createSweepUnmixableTransaction() override;
   bool submitTransaction(const std::string &fileName) override;

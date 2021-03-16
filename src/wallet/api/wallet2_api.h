@@ -984,12 +984,14 @@ struct Wallet {
    * \brief createTokenGenesisTransaction creates new token.
    * \param token_name        token_name
    * \param token_supply      token supply
+   * \param token_type        token type (hidden or public supply)
    * \param subaddr_account   subaddress account from which the input funds are taken
    * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
    *                          after object returned
    */
   virtual PendingTransaction * createTokenGenesisTransaction(const std::string &token_name,
                                                              std::uint64_t      token_supply,
+                                                             std::uint64_t      token_type,
                                                              uint32_t           subaddr_account) = 0;
 
   /*!

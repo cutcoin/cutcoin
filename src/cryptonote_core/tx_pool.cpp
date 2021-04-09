@@ -218,8 +218,7 @@ namespace cryptonote
     }
 
     if (tx.is_token_genesis()) {
-      if (!m_blockchain.check_tgtx(tvc, tx))
-      {
+      if (!m_blockchain.check_tgtx(tvc, tx)) {
         LOG_PRINT_L1("Token genesis transaction is incorrect");
         tvc.m_verifivation_failed = true;
         return false;
@@ -231,9 +230,16 @@ namespace cryptonote
         tvc.m_verifivation_failed = true;
         return false;
       }
-      if (token_genesis_in_mempool(token_data.d_id))
-      {
+      if (token_genesis_in_mempool(token_data.d_id)) {
         LOG_PRINT_L1("Token genesis transaction with same token_id already exists in mempool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.is_minting()) {
+      if (!m_blockchain.check_mntx(tvc, tx)) {
+        LOG_PRINT_L1("Token minting transaction is incorrect");
         tvc.m_verifivation_failed = true;
         return false;
       }
@@ -1040,6 +1046,10 @@ namespace cryptonote
         LOG_PRINT_L2("tgtx is incorrect");
         return false;
       }
+      if (tx.is_minting() && !m_blockchain.check_mntx(tvc, tx)) {
+        LOG_PRINT_L1("mntx is incorrect");
+        return false;
+      }
     }else
     {
       if(txd.max_used_block_height >= m_blockchain.get_current_blockchain_height())
@@ -1059,6 +1069,10 @@ namespace cryptonote
         }
         if (tx.is_token_genesis() && !m_blockchain.check_tgtx(tvc, tx)) {
           LOG_PRINT_L2("tgtx is incorrect");
+          return false;
+        }
+        if (tx.is_minting() && !m_blockchain.check_mntx(tvc, tx)) {
+          LOG_PRINT_L1("mntx is incorrect");
           return false;
         }
       }

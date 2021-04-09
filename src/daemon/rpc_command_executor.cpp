@@ -1807,6 +1807,8 @@ bool t_rpc_command_executor::print_blockchain_dynamic_stats(uint64_t nblocks)
 
 bool t_rpc_command_executor::print_tokens(const std::string &token_prefix)
 {
+  using namespace cryptonote;
+
     cryptonote::COMMAND_RPC_GET_TOKENS::request req;
     cryptonote::COMMAND_RPC_GET_TOKENS::response res;
     std::string fail_message = "Problem fetching info";
@@ -1833,11 +1835,18 @@ bool t_rpc_command_executor::print_tokens(const std::string &token_prefix)
 
     for (const auto &token_summary : res.tokens)
     {
+      std::string supply_type;
+      if (is_token_with_public_supply(static_cast<TokenType>(token_summary.type))) {
+        supply_type = "public supply";
+      } else if (is_token_with_mintable_supply(static_cast<TokenType>(token_summary.type))) {
+        supply_type = "mintable";
+      } else {
+        supply_type = "private supply";
+      }
       tools::success_msg_writer() << boost::format("%15s %21u %21d %21d %13s")
-                                     % cryptonote::token_id_to_name(token_summary.token_id) % token_summary.token_id
+                                     % token_id_to_name(token_summary.token_id) % token_summary.token_id
                                      % token_summary.token_supply % token_summary.unit
-                                     % (cryptonote::is_token_with_public_supply(
-        static_cast<cryptonote::TokenType>(token_summary.type)) ? "public supply": "private supply");
+                                     % supply_type;
     }
     return true;
 }

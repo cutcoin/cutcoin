@@ -796,12 +796,17 @@ namespace cryptonote
       TokenUnit token_supply;
       std::uint64_t unit;
       std::uint64_t type;
+      crypto::public_key key;
+      crypto::signature signature;
+      crypto::ec_scalar r;
 
       BEGIN_KV_SERIALIZE_MAP()
-      KV_SERIALIZE(token_id)
-      KV_SERIALIZE(token_supply)
-      KV_SERIALIZE(unit)
-      KV_SERIALIZE(type)
+        KV_SERIALIZE(token_id)
+        KV_SERIALIZE(token_supply)
+        KV_SERIALIZE(unit)
+        KV_SERIALIZE(type)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(key)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(signature)
       END_KV_SERIALIZE_MAP()
     };
 

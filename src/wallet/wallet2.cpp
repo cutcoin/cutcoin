@@ -3736,6 +3736,15 @@ void wallet2::get_pos_transfers(transfer_details_v &pos_transfers, uint64_t star
   pos_transfers = transfers;
 }
 
+crypto::secret_key wallet2::get_token_secret_key(cryptonote::TokenId token_id)
+{
+  crypto::secret_key s;
+  crypto::public_key p;
+  std::tie(s, p) = rct::get_token_keys(token_id,
+                                       m_account.get_keys().m_view_secret_key,
+                                       m_account.get_keys().m_spend_secret_key);
+  return s;
+}
 
 /*!
  * \brief determine the key storage for the specified wallet file
@@ -13257,6 +13266,7 @@ std::shared_ptr<epee::net_utils::http::http_simple_client> wallet2::get_http_cli
 void wallet2::token_genesis_transaction(const uint32_t                  subaddress_account,
                                         const cryptonote::TokenSummary &token_summary,
                                         pending_tx_v                   &ptx_vector,
+                                        cryptonote::TokenUnit           created_token_supply,
                                         size_t                          custom_fake_outs_count)
 {
   using namespace cryptonote;
@@ -13267,7 +13277,7 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
 
   tx_destination_entry token_destination;
   token_destination.addr     = m_account.get_keys().m_account_address;
-  token_destination.amount   = token_summary.d_token_supply * token_summary.d_unit;
+  token_destination.amount   = created_token_supply * token_summary.d_unit;
   token_destination.token_id = token_summary.d_token_id;
 
   uint64_t fake_outs_count = custom_fake_outs_count == 0 ? default_mixin(): custom_fake_outs_count;
@@ -13277,18 +13287,28 @@ void wallet2::token_genesis_transaction(const uint32_t                  subaddre
 
   tx_extra_token_data token_data;
   token_data.d_id     = token_summary.d_token_id;
-  token_data.d_supply = is_token_with_public_supply(token_summary.d_type) ? token_summary.d_token_supply: 0;
   token_data.d_unit   = token_summary.d_unit;
-  token_data.d_extra1 = 0;
-  token_data.d_extra2 = 0;
-  token_data.d_extra3 = 0;
-  token_data.d_extra4 = 0;
+  token_data.d_supply = is_token_with_hidden_supply(token_summary.d_type) ? 0: token_summary.d_token_supply;
 
   std::vector<uint8_t> extra;
 
   THROW_WALLET_EXCEPTION_IF(!add_token_data_to_tx_extra(extra, token_data),
                             error::wallet_internal_error,
                             "Cannot write 'tx_extra_token_data' to tx extra field.");
+
+  if (token_summary.d_type == TokenType::mintable_supply) {
+    crypto::signature  s;
+    crypto::public_key T;
+    std::tie(T, s) = rct::gen_token_ownership(token_summary.d_token_id,
+                                              token_summary.d_token_supply,
+                                              m_account.get_keys().m_view_secret_key,
+                                              m_account.get_keys().m_spend_secret_key);
+    tx_extra_token_genesis_ownership tgo{T, s};
+
+    THROW_WALLET_EXCEPTION_IF(!add_token_genesis_ownership_to_tx_extra(extra, tgo),
+                              error::wallet_internal_error,
+                              "Cannot write 'tx_extra_token_genesis_ownership' to tx extra field.");
+  }
 
   cryptonote::TokenType token_type = token_summary.d_type;
 

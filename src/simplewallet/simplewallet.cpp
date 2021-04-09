@@ -2379,11 +2379,19 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("create_token",
                            std::bind(&simple_wallet::create_token, this, std::placeholders::_1),
                            tr("create_token <token_name> <token_supply> [token_type]"),
-                           tr("Create tokens with the specified 'token_name' and 'token_supply'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees. Supported token types are 'hidden' for tokens with the hidden supply and 'public' for tokens with publicly visible supply. The default type is 'explicit'."));
+                           tr("Create tokens with the specified 'token_name' and 'token_supply'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees. Supported token types are 'hidden' for tokens with the hidden supply, 'public' for tokens with publicly visible supply and 'mintable' for tokens with unlimited supply. The default type is 'public'."));
+  m_cmd_binder.set_handler("mint_token_supply",
+                           std::bind(&simple_wallet::mint_token_supply, this, std::placeholders::_1),
+                           tr("mint_token_supply <token_name> <new_token_supply> [token_secret_key]"),
+                           tr("Mint additional token supply for the token with the specified 'token_name'. This token must be mintable and created in the current wallet (or 'token_secret_key' must be specified). 'new_token_supply' must be greater or equal to the current token supply and not exceed the maximal token supply."));
   m_cmd_binder.set_handler("get_tokens",
                            std::bind(&simple_wallet::get_tokens, this, std::placeholders::_1),
                            tr("get_tokens [<token_name_prefix>]"),
                            tr("List already created tokens. Can be filtered by starting part."));
+  m_cmd_binder.set_handler("get_mintable_token_key",
+                           std::bind(&simple_wallet::get_mintable_token_key, this, std::placeholders::_1),
+                           tr("get_mintable_token_key <token_name>"),
+                           tr("Print secret key for the token with 'token_name'."));
   m_cmd_binder.set_handler("donate",
                            std::bind(&simple_wallet::donate, this, std::placeholders::_1),
                            tr("donate [index=<N1>[,<N2>,...]] [<priority>] [<ring_size>] <amount> [<payment_id>]"),
@@ -6301,7 +6309,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::create_token(const std::vector<std::string> &args)
 {
   using namespace cryptonote;
@@ -6354,11 +6362,9 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
   TokenType token_type = TokenType::public_supply;
   if (!local_args.empty()) {
     if (local_args[0] == "hidden") {
-      if (m_wallet->get_blockchain_current_height() < 571000) {
-          fail_msg_writer() << tr("Tokens with private supply can be created after 571000 blocks");
-          return true;
-        }
       token_type = TokenType::hidden_supply;
+    } else if (local_args[0] == "mintable") {
+      token_type = TokenType::mintable_supply;
     } else if (local_args[0] == "public") {
     } else {
       fail_msg_writer() << tr(
@@ -6403,12 +6409,158 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
     }
   }
 
+  if (token_summary.d_type == TokenType::mintable_supply) {
+    token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
+  }
+
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->token_genesis_transaction(m_current_subaddress_account, token_summary, ptx_vector);
+    m_wallet->token_genesis_transaction(m_current_subaddress_account,
+                                        token_summary,
+                                        ptx_vector,
+                                        token_summary.d_token_supply);
 
     if (ptx_vector.empty()) {
       fail_msg_writer() << tr("Could not create token genesis transaction");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    if (token_summary.d_type == TokenType::mintable_supply) {
+      crypto::secret_key sk = m_wallet->get_token_secret_key(token_summary.d_token_id);
+      success_msg_writer(true) << tr("Mintable token successfully created. "
+                                     "Please save this secret key if you need to mint additional supply "
+                                     "for this token in a different wallet: ") << sk;
+    }
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::mint_token_supply(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "mint_token_supply <token_name> <new_token_supply> [token_secret_key]"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    message_writer() << "This command is available after " << HF_VERSION_TOKENS << " fork";
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  std::vector<std::string> local_args = args;
+  TokenSummary token_summary{};
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
+    return true;
+  }
+  std::string token_name;
+  if(parse_token_name(local_args[0], token_name)) {
+    local_args.erase(local_args.begin());
+  } else {
+    fail_msg_writer() << (boost::format(tr(
+      "Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits"))).str();
+    return true;
+  }
+  token_summary.d_token_id = token_name_to_id(token_name);
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'new_token_supply'"))).str();
+    return true;
+  }
+  if(parse_token_supply(local_args[0], token_summary.d_token_supply)) {
+    local_args.erase(local_args.begin());
+  } else {
+    fail_msg_writer() << (boost::format(tr(
+      "Could not parse 'new_token_supply' parameter. It should be a number in the range %u .. %u."))
+                          % MIN_TOKEN_SUPPLY
+                          % MAX_TOKEN_SUPPLY).str();
+    return true;
+  }
+
+  COMMAND_RPC_GET_TOKENS::request req = AUTO_VAL_INIT(req);
+  req.prefix = token_name;
+  COMMAND_RPC_GET_TOKENS::response res = AUTO_VAL_INIT(res);
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    fail_msg_writer() << tr("failed to get tokens: ") << err;
+    return false;
+  }
+
+  TokenUnit new_token_supply = 0;
+  bool found = false;
+  for (const auto &ts: res.tokens) {
+    if (token_summary.d_token_id == ts.token_id) {
+      if (!is_token_with_mintable_supply(static_cast<TokenType>(ts.type))) {
+        fail_msg_writer() << (boost::format(tr("Token must have 'mintable' token type"))).str();
+        return true;
+      }
+      if (token_summary.d_token_supply <= ts.token_supply) {
+        fail_msg_writer() << (boost::format(tr("New token supply must be greater than the current one"))).str();
+        return true;
+      }
+
+      new_token_supply = token_summary.d_token_supply - ts.token_supply;
+      token_summary.d_type = static_cast<TokenType>(ts.type);
+      token_summary.d_unit = ts.unit;
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    fail_msg_writer() << (boost::format(tr("Could not find a token with the specified name. "
+                                           "If you want to create a token use 'create_token' command"))).str();
+    return true;
+  }
+
+  if (!local_args.empty()) {
+    epee::wipeable_string token_key_string = local_args[0];
+    if (!token_key_string.hex_to_pod(unwrap(unwrap(token_summary.d_skey)))) {
+      fail_msg_writer() << tr("Failed to parse token secret key");
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  } else {
+    token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
+  }
+
+  std::string accepted = input_line((boost::format(tr(
+    "You request the minting of additional token supply for '%s' with %d units of new total supply. "
+    "If you proceed, %d cutcoins will be written off permanently from the current account. "
+    "Is this okay?  (Y/Yes/N/No): "))
+                                     % token_name
+                                     % token_summary.d_token_supply
+                                     % (config::TOKEN_GENESIS_AMOUNT / COIN)).str());
+  if (std::cin.eof()) {
+    return true;
+  }
+  if (!command_line::is_yes(accepted)) {
+    fail_msg_writer() << tr("Transaction cancelled.");
+    return true;
+  }
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->token_genesis_transaction(m_current_subaddress_account, token_summary, ptx_vector, new_token_supply);
+
+    if (ptx_vector.empty()) {
+      fail_msg_writer() << tr("Could not create token minting transaction");
       return true;
     }
 
@@ -6423,9 +6575,11 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::get_tokens(const std::vector<std::string> &args)
 {
+  using namespace cryptonote;
+
   //  "get_tokens [<token_name_prefix>]"
   if (!try_connect_to_daemon()) {
     message_writer() << "No connection to the daemon";
@@ -6459,20 +6613,63 @@ bool simple_wallet::get_tokens(const std::vector<std::string> &args)
     return false;
   }
 
-  message_writer() << boost::format("%15s %21s %21s %21s %13s")
-    % tr("Name") % tr("Token ID") % tr("Supply") % tr("Unit") % tr("Type");
+  ostringstream oss;
+  oss << std::setw(15) << tr("Name")
+      << std::setw(21) << tr("Token ID")
+      << std::setw(21) << tr("Supply")
+      << std::setw(21) << tr("Unit")
+      << std::setw(16) << tr("Type") << std::endl;
+  oss << tr("----------------------------------------------------------------------------------") << std::endl;
 
-  for (const auto &token_summary : res.tokens)
-  {
-    message_writer() << boost::format("%15s %21u %21d %21d %13s") % token_id_to_name(token_summary.token_id)
-      % token_summary.token_id % token_summary.token_supply % token_summary.unit
-      % (cryptonote::is_token_with_public_supply(static_cast<cryptonote::TokenType>(token_summary.type))
-      ? "public supply": "private supply");
+  for (const auto &token_summary: res.tokens) {
+    std::string token_type;
+    if (is_token_with_public_supply(static_cast<TokenType>(token_summary.type))) {
+      token_type = "public supply";
+    } else if (is_token_with_mintable_supply(static_cast<TokenType>(token_summary.type))) {
+      token_type = "mintable";
+    } else {
+      token_type = "private supply";
+    }
+    oss << std::setw(15) << token_id_to_name(token_summary.token_id)
+        << std::setw(21) << token_summary.token_id
+        << std::setw(21) << token_summary.token_supply
+        << std::setw(21) << token_summary.unit
+        << std::setw(16) << token_type << std::endl;
   }
+
+  success_msg_writer() << oss.str();
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
+bool simple_wallet::get_mintable_token_key(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
+    return true;
+  }
+  std::string token_name;
+  if(parse_token_name(local_args[0], token_name)) {
+    local_args.erase(local_args.begin());
+  } else {
+    fail_msg_writer() << (boost::format(tr(
+      "Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits"))).str();
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  crypto::secret_key sk = m_wallet->get_token_secret_key(token_name_to_id(token_name));
+
+  success_msg_writer(true) << tr("Token private key:  ") << sk;
+
+  return true;
+}
+
 bool simple_wallet::sweep_all(const std::vector<std::string> &args_)
 {
   return sweep_main(0, false, args_);

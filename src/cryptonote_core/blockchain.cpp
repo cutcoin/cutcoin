@@ -114,7 +114,8 @@ static const struct {
   { 1, 0, 0, 1341378000 },       // use version 1 in the first block of the blockchain
   { 9, 1, 0, 1533297600 },       // and version 9 for the rest of blocks
   { 10, 10000, 0, 1566213210 },  // enabled POS
-  { 11, 373000, 0, 1592911000 }  // enabled tokens
+  { 11, 373000, 0, 1592911000 }, // enabled tokens
+  { 12, 543130, 0, 1615312415 }  // enabled DEX
 };
 static const uint64_t testnet_hard_fork_version_1_till = 1;
 
@@ -130,7 +131,7 @@ static const struct {
 
 //------------------------------------------------------------------
 Blockchain::Blockchain(tx_memory_pool& tx_pool) :
-  m_db(), m_tx_pool(tx_pool), m_hardfork(NULL), m_timestamps_and_difficulties_height(0), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
+  m_db(), m_tx_pool(tx_pool), m_hardfork(nullptr), m_timestamps_and_difficulties_height(0), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
   m_enforce_dns_checkpoints(false), m_max_prepare_blocks_threads(4), m_db_sync_on_blocks(true), m_db_sync_threshold(1), m_db_sync_mode(db_async), m_db_default_sync(false), m_fast_sync(true), m_show_time_stats(false), m_sync_counter(0), m_bytes_to_sync(0), m_cancel(false),
   m_difficulty_for_next_block_top_hash(crypto::null_hash),
   m_difficulty_for_next_block(1),
@@ -326,7 +327,7 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
 
   m_db = db;
 
-  m_nettype = test_options != NULL ? FAKECHAIN : nettype;
+  m_nettype = test_options != nullptr ? FAKECHAIN : nettype;
   m_offline = offline;
   m_fixed_difficulty = fixed_difficulty;
   if (m_hardfork == nullptr)
@@ -390,11 +391,11 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
   m_db->block_txn_start(true);
   // check how far behind we are
   uint64_t top_block_timestamp = m_db->get_top_block_timestamp();
-  uint64_t timestamp_diff = time(NULL) - top_block_timestamp;
+  uint64_t timestamp_diff = time(nullptr) - top_block_timestamp;
 
   // genesis block has no timestamp, could probably change it to have timestamp of 1341378000...
   if(!top_block_timestamp)
-    timestamp_diff = time(NULL) - 1341378000;
+    timestamp_diff = time(nullptr) - 1341378000;
 
   // create general purpose async service queue
 
@@ -465,7 +466,7 @@ bool Blockchain::init(BlockchainDB* db, HardFork*& hf, const network_type nettyp
 {
   if (hf != nullptr)
     m_hardfork = hf;
-  bool res = init(db, nettype, offline, NULL);
+  bool res = init(db, nettype, offline, nullptr);
   if (hf == nullptr)
     hf = m_hardfork;
   return res;
@@ -515,7 +516,7 @@ bool Blockchain::deinit()
   // as this should be called if handling a SIGSEGV, need to check
   // if m_db is a NULL pointer (and thus may have caused the illegal
   // memory operation), otherwise we may cause a loop.
-  if (m_db == NULL)
+  if (m_db == nullptr)
   {
     throw DB_ERROR("The db pointer is null in Blockchain, the blockchain may be corrupt!");
   }
@@ -535,9 +536,9 @@ bool Blockchain::deinit()
   }
 
   delete m_hardfork;
-  m_hardfork = NULL;
+  m_hardfork = nullptr;
   delete m_db;
-  m_db = NULL;
+  m_db = nullptr;
   return true;
 }
 //------------------------------------------------------------------
@@ -748,7 +749,7 @@ bool Blockchain::get_prev_hash(const block &blk, crypto::hash &h)  const
     h = blk.prev_id;
     return true;
   }
-  if (!blk.tx_hashes.size())
+  if (blk.tx_hashes.empty())
   {
     LOG_ERROR("PoS block with no coinstake transaction");
     return false;
@@ -823,6 +824,13 @@ difficulty_type Blockchain::get_difficulty_for_next_block()
   if (m_fixed_difficulty)
   {
     return m_db->height() ? m_fixed_difficulty : 1;
+  }
+
+  if (m_hardfork->get_current_version() >= HF_VERSION_DEX) {
+    uint64_t fork_height = m_hardfork->get_earliest_ideal_height_for_version(HF_VERSION_DEX);
+    if (m_db->height() - fork_height < 100) {
+      return 300000;
+    }
   }
 
   LOG_PRINT_L3("Blockchain::" << __func__);
@@ -2009,20 +2017,15 @@ bool Blockchain::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_
 
   res.tokens.clear();
   std::vector<TokenId> tokens;
-  try
-  {
+  try {
     m_db->get_all_tokens(tokens);
-    for (const TokenId &id: tokens)
-    {
+    for (const TokenId &id: tokens) {
       if (boost::algorithm::starts_with(token_id_to_name(id), req.prefix) && id != 0) {
-        tx_out_index toi = m_db->get_output_tx_and_index(id, 0);
-        transaction tx = m_db->get_tx(toi.first);
-        tx_extra_token_data td;
-        get_token_data(tx, td);
-        res.tokens.push_back({id,
-                              td.d_supply,
-                              td.d_unit,
-                              td.d_supply == 0 ? static_cast<std::uint64_t>(2): static_cast<std::uint64_t>(1)});
+        TokenSummary ts;
+        if (get_token_info(ts, id)) {
+          res.tokens.push_back(
+            {id, ts.d_token_supply, ts.d_unit, static_cast<std::uint64_t>(ts.d_type), ts.d_pkey, ts.d_signature});
+        }
       }
     }
   }
@@ -2632,24 +2635,9 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
 }
 
 //------------------------------------------------------------------
-bool Blockchain::check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary *token_summary) const
+bool Blockchain::check_existing_token_id(cryptonote::TokenId token_id) const
 {
-  if (!m_db->has_outputs_with_token_id(token_id)) {
-    return false;
-  }
-  else if (token_summary != nullptr) {
-    token_summary->d_token_id = token_id;
-    tx_out_index toi = m_db->get_output_tx_and_index(token_id, 0);
-    cryptonote::transaction tx = m_db->get_tx(toi.first);
-    cryptonote::tx_extra_token_data td;
-    get_token_data(tx, td);
-    token_summary->d_token_supply = td.d_supply;
-    token_summary->d_unit = td.d_unit;
-    token_summary->d_type = td.d_supply == 0 ? TokenType::hidden_supply: TokenType::public_supply;
-    return true;
-  }
-
-  return true;
+  return m_db->has_outputs_with_token_id(token_id);
 }
 
 //------------------------------------------------------------------
@@ -2923,11 +2911,16 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         return false;
       }
     }
+    else if (tx.is_minting() && in_to_key.token_id != CUTCOIN_ID) {
+      if(!check_mntx_input(tx, in_to_key, pubkeys[sig_index])) {
+        return false;
+      }
+    }
     else if (!check_tx_input(tx.version, in_to_key, tx_prefix_hash, tx.version == TxVersion::plain ? tx.signatures[sig_index] : std::vector<crypto::signature>(), tx.rct_signatures, pubkeys[sig_index], pmax_used_block_height))
     {
       it->second[in_to_key.k_image] = false;
       MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
-      if (pmax_used_block_height) // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
+      if (pmax_used_block_height) // a default value of nullptr is used when called from Blockchain::handle_block_to_main_chain()
       {
         MERROR_VER("  *pmax_used_block_height: " << *pmax_used_block_height);
       }
@@ -2951,7 +2944,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           it->second[in_to_key.k_image] = false;
           MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
 
-          if (pmax_used_block_height)  // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
+          if (pmax_used_block_height)  // a default value of nullptr is used when called from Blockchain::handle_block_to_main_chain()
           {
             MERROR_VER("*pmax_used_block_height: " << *pmax_used_block_height);
           }
@@ -3153,7 +3146,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 //------------------------------------------------------------------
 bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_context &bvc, const transaction &tx)
 {
-  if (bvc.m_token_genesis_block) {
+  if (bvc.m_supply_manipulations_block) {
     MERROR_VER("Second token genesis transaction in same block");
     tvc.m_verifivation_failed = true;
     return false;
@@ -3165,7 +3158,7 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_con
     return false;
   }
 
-  bvc.m_token_genesis_block = true;
+  bvc.m_supply_manipulations_block = true;
   return true;
 }
 
@@ -3193,7 +3186,7 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, const transaction &tx)
     return false;
   }
 
-  if (check_existing_token_id(token_id)){
+  if (check_existing_token_id(token_id) && !tx.is_minting()){
     LOG_PRINT_L2("Token already exists in blockchain");
     tvc.m_verifivation_failed = true;
     return false;
@@ -3241,9 +3234,90 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, const transaction &tx)
 
 //  if (!check_outs_overflow(tx, token_id)) {
 //    LOG_PRINT_L2("Tx has money overflow, rejected for tx id= " << get_transaction_hash(tx));
-//    tvc.m_verifivation_failed = true;
+//    tvc.m_verification_failed = true;
 //    return false;
 //  }
+
+  if (!check_token_ownership(tx, token_data)) {
+    LOG_PRINT_L2("Mintable token data are not correct");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  tvc.m_verifivation_failed = false;
+  return true;
+}
+
+bool Blockchain::check_mntx(tx_verification_context &tvc, const transaction &tx)
+{
+  using namespace cryptonote;
+
+  if (!tx.is_token_genesis()) {
+    MERROR_VER("Token minting transaction must be token genesis");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  tx_extra_token_data token_data;
+  if (!get_token_data(tx, token_data)) {
+    LOG_PRINT_L2("Could not extract token data from token minting transaction");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  if (token_data.d_supply == 0) {
+    LOG_PRINT_L2("Mintable tokens are tokens with public supply");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  if (!check_token_ownership(tx, token_data)) {
+    LOG_PRINT_L2("Could not verify_token genesis ownership");
+    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  TokenId token_id = token_data.d_id;
+
+  if (m_db->has_outputs_with_token_id(token_id)) {
+    TokenSummary token_summary;
+    if (!get_token_info(token_summary, token_id)) {
+      LOG_PRINT_L2("Error retrieving data from the blockchain");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+
+    if (token_summary.d_token_supply == 0) {
+      LOG_PRINT_L2("For token minting tx current token supply cannot be equal to 0");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+
+    if (token_data.d_supply < token_summary.d_token_supply) {
+      LOG_PRINT_L2("New token supply must be greater than the current one.");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+
+    if (token_summary.d_pkey == crypto::NullKey::p()) {
+      LOG_PRINT_L2("Mintable token has no signature and public token key saved in the past");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+
+    tx_extra_token_genesis_ownership tgo{};
+    if (!get_token_genesis_ownership(tx, tgo)) {
+      LOG_PRINT_L2("Could not extract token ownership data from token genesis transaction");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+
+    if (token_summary.d_pkey != tgo.pk) {
+      LOG_PRINT_L2("New token minting tx has incorrect public key");
+      tvc.m_verifivation_failed = true;
+      return false;
+    }
+  }
 
   tvc.m_verifivation_failed = false;
   return true;
@@ -3328,8 +3402,16 @@ bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_d
     }
   }
 
+  TokenUnit minted_amount = token_data.d_supply;
+  if (tx.is_minting()) {
+    TokenSummary token_summary;
+    if (get_token_info(token_summary, token_data.d_id)) {
+      minted_amount -= token_summary.d_token_supply;
+    }
+  }
+
   rct::key po{};
-  gp_genC(po, rct::identity(), rct::tokenIdToPoint(token_data.d_id), token_data.d_supply * token_data.d_unit);
+  gp_genC(po, rct::identity(), rct::tokenIdToPoint(token_data.d_id), minted_amount * token_data.d_unit);
   pseudoOuts.emplace_back(po);
 
   rct::key sumPseudoOuts = addKeys(pseudoOuts);
@@ -3337,8 +3419,68 @@ bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_d
   return token_data.d_supply == 0 ? !sumsEqual: sumsEqual;
 }
 
+bool Blockchain::check_token_ownership(const transaction &tx, const tx_extra_token_data &token_data)
+{
+  tx_extra_token_genesis_ownership tgo;
+  if (!get_token_genesis_ownership(tx, tgo)) {
+    LOG_PRINT_L2("Could not extract token ownership data from token genesis transaction");
+    return false;
+  }
+
+  if (!rct::ver_token_ownership(token_data.d_supply, tgo.pk, tgo.s)) {
+    LOG_PRINT_L2("Token ownership verification failed");
+    return false;
+  }
+  return true;
+}
+
+bool Blockchain::get_token_info(TokenSummary &token_summary, TokenId token_id) const
+{
+  bool res = false;
+  m_db->for_all_token_outputs(
+    token_id,
+    [&](const cryptonote::transaction &tx)->bool {
+      if (tx.is_token_genesis()) {
+        tx_extra_token_data td;
+        if (!get_token_data(tx, td)) {
+          LOG_PRINT_L2("Could not parse tx from blockchain" << tx.hash);
+          res = false;
+          return true;
+        }
+        token_summary.d_token_id = td.d_id;
+        token_summary.d_token_supply = td.d_supply;
+        token_summary.d_unit = td.d_unit;
+
+        if (tx.is_minting()) {
+          tx_extra_token_genesis_ownership tgo{};
+          if (!get_token_genesis_ownership(tx, tgo)) {
+            LOG_PRINT_L2("Could not parse tx from blockchain" << tx.hash);
+            res = false;
+            return true;
+          }
+          token_summary.d_pkey      = tgo.pk;
+          token_summary.d_signature = tgo.s;
+        }
+        if (tx.is_minting()) {
+          token_summary.d_type = TokenType::mintable_supply;
+        } else if (token_summary.d_token_supply == 0) {
+          token_summary.d_type = TokenType::hidden_supply;
+        } else {
+          token_summary.d_type = TokenType::public_supply;
+        }
+        res = true;
+      }
+      return false;
+    });
+  return res;
+}
+
 //------------------------------------------------------------------
-void Blockchain::check_ring_signature(const crypto::hash &tx_prefix_hash, const crypto::key_image &key_image, const std::vector<rct::ctkey> &pubkeys, const std::vector<crypto::signature>& sig, uint64_t &result)
+void Blockchain::check_ring_signature(const crypto::hash                   &tx_prefix_hash,
+                                      const crypto::key_image              &key_image,
+                                      const std::vector<rct::ctkey>        &pubkeys,
+                                      const std::vector<crypto::signature> &sig,
+                                      uint64_t                             &result)
 {
   std::vector<const crypto::public_key *> p_output_keys;
   p_output_keys.reserve(pubkeys.size());
@@ -3508,7 +3650,7 @@ bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) const
   else
   {
     //interpret as time
-    uint64_t current_time = static_cast<uint64_t>(time(NULL));
+    uint64_t current_time = static_cast<uint64_t>(time(nullptr));
     if(current_time + (get_current_hard_fork_version() < 2 ? CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V1 : CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2) >= unlock_time)
       return true;
     else
@@ -3516,7 +3658,7 @@ bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) const
   }
   return false;
 }
-//------------------------------------------------------------------
+
 bool Blockchain::check_tgtx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys)
 {
   tx_extra_token_data td;
@@ -3538,7 +3680,29 @@ bool Blockchain::check_tgtx_input(const transaction &tx, const txin_to_key &txin
 
   return true;
 }
-//------------------------------------------------------------------
+
+bool Blockchain::check_mntx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys)
+{
+  tx_extra_token_data td;
+  get_token_data(tx, td);
+  if (td.d_id != txin.token_id) {
+    return false;
+  }
+
+  output_keys.clear();
+
+  std::vector<crypto::public_key> token_pub_keys = get_tgtx_keys_from_tx_extra(tx);
+  if (token_pub_keys.size() >> 1 << 1 != token_pub_keys.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < token_pub_keys.size(); i += 2) {
+    output_keys.emplace_back(rct::ctkey({rct::pk2rct(token_pub_keys[i]), rct::pk2rct(token_pub_keys[i + 1])}));
+  }
+
+  return true;
+}
+
 // This function locates all outputs associated with a given input (mixins)
 // and validates that they exist and are usable.  It also checks the ring
 // signature for each input.
@@ -3604,7 +3768,7 @@ uint64_t Blockchain::get_adjusted_time() const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   //TODO: add collecting median time
-  return time(NULL);
+  return time(nullptr);
 }
 //------------------------------------------------------------------
 //TODO: revisit, has changed a bit on upstream
@@ -4093,6 +4257,16 @@ leave:
       tx_verification_context tvc;
       if (!check_tgtx(tvc, bvc, tx)) {
         MERROR_VER("Block with id: " << id  << " has invalid token genesis transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+    }
+
+    if (tx.is_minting()) {
+      tx_verification_context tvc;
+      if (!check_mntx(tvc, tx)) {
+        MERROR_VER("Block with id: " << id  << " has invalid token minting transaction (id: " << tx_id << ").");
         bvc.m_verifivation_failed = true;
         return_tx_to_pool(txs);
         goto leave;

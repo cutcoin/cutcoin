@@ -34,22 +34,23 @@
 
 #include <ringct/rctTypes.h>
 
-#define TX_EXTRA_PADDING_MAX_COUNT          255
-#define TX_EXTRA_NONCE_MAX_COUNT            255
+#define TX_EXTRA_PADDING_MAX_COUNT            255
+#define TX_EXTRA_NONCE_MAX_COUNT              255
 
-#define TX_EXTRA_TAG_PADDING                0x00
-#define TX_EXTRA_TAG_PUBKEY                 0x01
-#define TX_EXTRA_NONCE                      0x02
-#define TX_EXTRA_MERGE_MINING_TAG           0x03
-#define TX_EXTRA_TAG_ADDITIONAL_PUBKEYS     0x04
-#define TX_EXTRA_POS_STAMP_TAG              0x05
-#define TX_EXTRA_TOKEN_DATA_TAG             0x06
-#define TX_EXTRA_TAG_TGTX_PUBKEYS           0x07
+#define TX_EXTRA_TAG_PADDING                  0x00
+#define TX_EXTRA_TAG_PUBKEY                   0x01
+#define TX_EXTRA_NONCE                        0x02
+#define TX_EXTRA_MERGE_MINING_TAG             0x03
+#define TX_EXTRA_TAG_ADDITIONAL_PUBKEYS       0x04
+#define TX_EXTRA_POS_STAMP_TAG                0x05
+#define TX_EXTRA_TOKEN_DATA_TAG               0x06
+#define TX_EXTRA_TAG_TGTX_PUBKEYS             0x07
+#define TX_EXTRA_TOKEN_GENESIS_OWNERSHIP_TAG  0x08
 
-#define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG   0xDE
+#define TX_EXTRA_MYSTERIOUS_MINERGATE_TAG     0xDE
 
-#define TX_EXTRA_NONCE_PAYMENT_ID           0x00
-#define TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID 0x01
+#define TX_EXTRA_NONCE_PAYMENT_ID             0x00
+#define TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID   0x01
 
 namespace cryptonote
 {
@@ -233,13 +234,13 @@ namespace cryptonote
     END_SERIALIZE()
   };
 
-  struct tx_extra_token_genesis_input
+  struct tx_extra_token_genesis_ownership
   {
-    size_t index;
-    rct::key key;
+    crypto::public_key pk;
+    crypto::signature  s;
     BEGIN_SERIALIZE()
-      FIELD(index)
-      FIELD(key)
+      FIELD(pk)
+      FIELD(s)
     END_SERIALIZE()
   };
 
@@ -255,7 +256,8 @@ namespace cryptonote
                          tx_extra_tgtx_pub_keys,
                          tx_extra_mysterious_minergate,
                          tx_extra_pos_stamp,
-                         tx_extra_token_data> tx_extra_field;
+                         tx_extra_token_data,
+                         tx_extra_token_genesis_ownership> tx_extra_field;
 }
 
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_padding, TX_EXTRA_TAG_PADDING);
@@ -266,5 +268,6 @@ VARIANT_TAG(binary_archive, cryptonote::tx_extra_additional_pub_keys, TX_EXTRA_T
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_pos_stamp, TX_EXTRA_POS_STAMP_TAG);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_token_data, TX_EXTRA_TOKEN_DATA_TAG);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_tgtx_pub_keys, TX_EXTRA_TAG_TGTX_PUBKEYS);
+VARIANT_TAG(binary_archive, cryptonote::tx_extra_token_genesis_ownership, TX_EXTRA_TOKEN_GENESIS_OWNERSHIP_TAG);
 
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_mysterious_minergate, TX_EXTRA_MYSTERIOUS_MINERGATE_TAG);

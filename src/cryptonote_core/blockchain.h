@@ -635,14 +635,13 @@ namespace cryptonote
     bool check_tx_outputs(const transaction& tx, tx_verification_context &tvc);
 
     /**
-     * @brief check if given token_id exists and return token data if requested
+     * @brief check if given token_id exists
      *
      * @param token_id token id to check
-     * @param token_summary token data, will be filled on non-null pointer arg
      *
      * @return true if token_id is present in lmdb
      */
-    bool check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary *token_summary = nullptr) const;
+    bool check_existing_token_id(cryptonote::TokenId token_id) const;
 
     /**
      * @brief validate token genesis transaction
@@ -657,6 +656,20 @@ namespace cryptonote
      * @return false if any validation step fails, otherwise true
      */
     bool check_tgtx(tx_verification_context &tvc, const transaction &tx);
+
+    /**
+     * @brief validate token minting transaction
+     *
+     * This function validates different aspects of a token minting transaction (mntx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tvc returned information about tx verification
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_mntx(tx_verification_context &tvc, const transaction &tx);
 
     /**
      * @brief gets the block weight limit based on recent blocks
@@ -1124,7 +1137,37 @@ namespace cryptonote
     template<class visitor_t>
     inline bool scan_outputkeys_for_indexes(size_t tx_version, const txin_to_key& tx_in_to_key, visitor_t &vis, const crypto::hash &tx_prefix_hash, uint64_t* pmax_related_block_height = NULL) const;
 
+    /**
+     * @brief check correctness of a token genesis transaction input set
+     *
+     * This function operates with the dummy inputs
+     * and validates that they exist and are usable
+     * (unlocked, unspent is checked elsewhere).
+     *
+     * @param tx the transaction
+     * @param txin the transaction input
+     * @param output_keys return-by-reference the public keys of the outputs in the input set
+     *
+     * @return false if the dummy input is corrupted
+     */
     bool check_tgtx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys);
+
+    /**
+     * @brief check correctness of a token minting transaction input set
+     *
+     * This function operates with the dummy inputs
+     * and validates that they exist and are usable
+     * (unlocked, unspent is checked elsewhere).
+     *
+     * @param tx the transaction
+     * @param txin the transaction input
+     * @param output_keys return-by-reference the public keys of the outputs in the input set
+     *
+     * @return false if the dummy input is corrupted
+     *
+     * @return false if any output is not yet unlocked, or is missing, otherwise true
+     */
+    bool check_mntx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys);
 
     /**
      * @brief collect output public keys of a transaction input set
@@ -1168,7 +1211,7 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_tx_inputs(transaction& tx, tx_verification_context &tvc, uint64_t* pmax_used_block_height = NULL);
+    bool check_tx_inputs(transaction& tx, tx_verification_context &tvc, uint64_t* pmax_used_block_height = nullptr);
 
     /**
      * @brief validate token genesis transaction
@@ -1206,16 +1249,34 @@ namespace cryptonote
      * otherwise check that tokens output contain summary amount tat exactly equals to the declared amount.
      * Return true if it is correct.
      *
-     * This function validates correctness of the payment in token genesis transaction.
-     * Required amount in cutcoins must be burnt.
-     *
-     * The return value is 'true' if the coin burn payment is correct.
-     *
      * @param tx the transaction to validate
+     * @param token_data the transaction extra token data
      *
      * @return false if any validation step fails, otherwise true
      */
     bool check_tgtx_supply(const transaction &tx, const tx_extra_token_data &token_data);
+
+    /**
+     * @brief validate correctness of the commitment that proves token ownership.
+     * Return 'true' if the commitment is correct.
+     *
+     * @param tx the transaction to validate
+     * @param token_data the transaction extra token data
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_token_ownership(const transaction &tx, const tx_extra_token_data &token_data);
+
+    /**
+     * @brief try to find a token using the specified 'token_id'.
+     * Return 'true' if the token is found.
+     *
+     * @param token_summary the structure with the token data
+     * @param token_id the id of the token
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool get_token_info(TokenSummary &token_summary, TokenId token_id) const;
 
     /**
      * @brief performs a blockchain reorganization according to the longest chain rule

@@ -164,7 +164,9 @@ namespace cryptonote
     bool sweep_below(const std::vector<std::string> &args);
     bool sweep_single(const std::vector<std::string> &args);
     bool create_token(const std::vector<std::string> &args);
+    bool mint_token_supply(const std::vector<std::string> &args);
     bool get_tokens(const std::vector<std::string> &args);
+    bool get_mintable_token_key(const std::vector<std::string> &args);
     bool sweep_unmixable(const std::vector<std::string> &args);
     bool donate(const std::vector<std::string> &args);
     bool sign_transfer(const std::vector<std::string> &args);

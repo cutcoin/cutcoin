@@ -30,11 +30,14 @@
 #ifndef CUTCOIN_TOKEN_H
 #define CUTCOIN_TOKEN_H
 
+#include <crypto/crypto.h>
+#include <cryptonote_basic/amount.h>
 #include <cryptonote_config.h>
 
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <unordered_map>
 
 namespace cryptonote {
 
@@ -45,8 +48,14 @@ using TokenId = std::uint64_t;
 const TokenId CUTCOIN_ID = 0;
   // Cutcoin identifier.
 
-using TokenUnit = std::uint64_t;
+using TokenUnit = Amount;
   // Token amount type.
+
+using TokenAmount = std::pair<TokenId, TokenUnit>;
+  // Token amount with the specified id.
+
+using TokenAmounts = std::unordered_map<TokenId, TokenUnit>;
+  // Basic container for different token amounts.
 
 const TokenUnit MIN_TOKEN_SUPPLY = 1;
   // The minimal token supply.
@@ -66,22 +75,29 @@ enum TokenType: std::uint64_t {
   // Token type.
 
   public_supply = 1,
-    // Represents a token with publicly visible supply
+    // Represents a token with publicly visible supply.
 
-  hidden_supply = 2
+  hidden_supply = 2,
     // Represents a token with hidden supply.
+
+  mintable_supply = 3
+    // Represents a token with mintable (unlimited) supply.
 };
 
 struct TokenSummary {
   // Represent summary token characteristics.
 
-  TokenId       d_token_id;      // unique token id
+  TokenId            d_token_id;      // unique token id
 
-  TokenType     d_type;          // token type
+  TokenType          d_type;          // token type
 
-  TokenUnit     d_token_supply;  // total token supply
+  TokenUnit          d_token_supply;  // total token supply
 
-  std::uint64_t d_unit;          // token unit. Currently not used, all tokens have Cutcoin unit 1.0e10.
+  std::uint64_t      d_unit;          // token unit. Currently not used, all tokens have Cutcoin unit 1.0e10
+
+  crypto::public_key d_pkey{crypto::NullKey::p()};  // token public key
+  crypto::secret_key d_skey{crypto::NullKey::s()};  // token secret key
+  crypto::signature  d_signature;     // creator's signature
 };
 
 TokenId token_name_to_id(const std::string &token_name);
@@ -110,6 +126,13 @@ bool is_token_with_public_supply(const TokenType &token_type)
   // Return 'true' if the specified 'token_summary' represents a token with publicly visible supply.
 {
   return token_type == TokenType::public_supply;
+}
+
+constexpr
+bool is_token_with_mintable_supply(const TokenType &token_type)
+// Return 'true' if the specified 'token_summary' represents a token with mintable supply.
+{
+  return token_type == TokenType::mintable_supply;
 }
 
 constexpr

@@ -2811,6 +2811,39 @@ bool BlockchainLMDB::for_all_outputs(TokenId token_id, const std::function<bool(
   return fret;
 }
 
+bool BlockchainLMDB::for_all_token_outputs(TokenId token_id,
+                                           const std::function<bool (const cryptonote::transaction &tx)> &f) const
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+  check_open();
+
+  TXN_PREFIX_RDONLY();
+  RCURSOR(output_amounts);
+
+  MDB_val_set(k, token_id);
+  MDB_val v;
+  MDB_cursor_op op = MDB_SET;
+  while (1) {
+    int ret = mdb_cursor_get(m_cur_output_amounts, &k, &v, op);
+    op = MDB_NEXT_DUP;
+    if (ret == MDB_NOTFOUND) {
+      break;
+    }
+    if (ret) {
+      throw0(DB_ERROR("Failed to enumerate outputs"));
+    }
+    const outkey       *ok  = (const outkey *)v.mv_data;
+    const tx_out_index  toi = get_output_tx_and_index_from_global(ok->output_id);
+    const transaction   tx  = get_tx(toi.first);
+    if(f(tx)) {
+      break;
+    }
+  }
+
+  TXN_POSTFIX_RDONLY();
+  return true;
+}
+
 // batch_num_blocks: (optional) Used to check if resize needed before batch transaction starts.
 bool BlockchainLMDB::batch_start(uint64_t batch_num_blocks, uint64_t batch_bytes)
 {

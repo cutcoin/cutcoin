@@ -617,10 +617,15 @@ namespace tools
 
     uint64_t get_last_block_reward() const { return m_last_block_reward; }
 
-    void token_genesis_transaction(const uint32_t                 subaddress_account,
+    void token_genesis_transaction(const uint32_t                  subaddress_account,
                                    const cryptonote::TokenSummary &token_summary,
                                    pending_tx_v                   &ptx_vector,
+                                   cryptonote::TokenUnit           created_token_supply,
                                    size_t                          custom_fake_outs_count = 0);
+      // Create a new token with the specified 'token_summary' using the specified 'subaddress_account' and
+      // 'created_token_supply' or mint an additional token supply.
+      // Return the resulting transaction in the specified 'ptx_vector'.
+      // Optional parameter 'custom_fake_outs_count' specifies the number of fake outputs.
 
     pending_tx_v token_genesis_basic(const cryptonote::tx_destination_entry &token_destination,
                                      const size_t                            fake_outs_count,
@@ -1045,6 +1050,8 @@ namespace tools
     void unlockTransport();
 
     void get_pos_transfers(transfer_details_v &pos_transfers, uint64_t start_height);
+
+    crypto::secret_key get_token_secret_key(cryptonote::TokenId token_id);
 
   private:
     /*!

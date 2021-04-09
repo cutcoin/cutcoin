@@ -178,6 +178,7 @@ public:
   // tx information
   size_t   version;
   bool     token_genesis{false};
+  bool     minting{false};
   uint64_t unlock_time;  //number of block (or time), used as a limitation like: spend this tx not early then block/time
 
   std::vector<txin_v>  vin;
@@ -201,6 +202,8 @@ public:
   transaction_prefix(){}
   bool is_token_genesis() const { return token_genesis; }
   void set_token_genesis(bool v) { token_genesis = v; }
+  bool is_minting() const { return minting; }
+  void set_minting(bool v) { minting = v; }
 };
 
 class transaction: public transaction_prefix
@@ -377,6 +380,7 @@ void transaction::set_null()
   set_hash_valid(false);
   set_blob_size_valid(false);
   set_token_genesis(false);
+  set_minting(false);
 }
 
 inline

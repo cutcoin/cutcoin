@@ -85,7 +85,7 @@ TEST(token, id_to_name_0xff_end)
 
 TEST(token, cutcoin_name)
 {
-    EXPECT_TRUE("SHITCOIN");
+    EXPECT_TRUE(validate_token_name("SHITCOIN"));
     EXPECT_FALSE(validate_token_name(""));
     EXPECT_FALSE(validate_token_name("CUTCOINLONG"));
     EXPECT_FALSE(validate_token_name("cut_coin"));

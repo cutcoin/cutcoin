@@ -1776,7 +1776,10 @@ PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string 
 
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->token_genesis_transaction(subaddress_account, token_summary, transaction->m_pending_tx);
+    m_wallet->token_genesis_transaction(subaddress_account,
+                                        token_summary,
+                                        transaction->m_pending_tx,
+                                        token_summary.d_token_supply);
 
     if (transaction->m_pending_tx.empty()) {
       setStatusError(tr("Could not create token genesis transaction"));

@@ -1508,7 +1508,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
 
     pending_tx_v ptx_vector{};
     try {
-      m_wallet->token_genesis_transaction(0, token_summary, ptx_vector);
+      m_wallet->token_genesis_transaction(0, token_summary, ptx_vector, token_summary.d_token_supply);
 
       if (ptx_vector.empty()) {
         er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;

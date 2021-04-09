@@ -475,12 +475,13 @@ struct WalletListener {
 
 
   /**
-   * @brief refreshed - called when wallet refreshed by background thread or explicitly refreshed by calling "refresh" synchronously
+   * @brief refreshed - called when wallet refreshed by background thread
+   * or explicitly refreshed by calling "refresh" synchronously
    */
   virtual void refreshed() = 0;
 
   /**
-   * @brief refreshed - called when wallet refreshed by background thread or explicitly refreshed by calling "refresh" synchronously
+   * @brief posMetricsUpdated - called when POS metrics are updated
    */
   virtual void posMetricsUpdated() = 0;
 };

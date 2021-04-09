@@ -874,6 +874,10 @@ struct MyWalletListener : public Monero::WalletListener
         cv_refresh.notify_one();
     }
 
+    virtual void posMetricsUpdated()
+    {
+      std::cout << __FUNCTION__ <<  "POS metrics refreshed";
+    }
 };
 
 

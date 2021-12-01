@@ -146,7 +146,7 @@ public:
 
   bool print_blockchain_dynamic_stats(uint64_t nblocks);
 
-  bool print_tokens(const std::string &token_prefix);
+  bool print_tokens(const std::string &token_prefix, const bool exact_match);
 
   bool update(const std::string &command);
 

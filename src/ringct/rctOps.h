@@ -196,6 +196,11 @@ namespace rct {
       // Return the ECDH point corresponding to the specified 'token_id'.
 
     rct::keyV tokenIdToPoint(const std::vector<cryptonote::TokenId> &token_ids);
-    // Return the vector of ECDH points, each of them corresponds to the element of vector 'token_ids'.
+      // Return the vector of ECDH points, each of them corresponds to the element of vector 'token_ids'.
+
+    std::tuple<crypto::secret_key, crypto::public_key> get_token_keys(cryptonote::TokenId       token_id,
+                                                                      const crypto::secret_key &svk,
+                                                                      const crypto::secret_key &ssk);
+      // Return token keys for the corresponding 'token_id', 'svk' and 'ssk'.
 }
 #endif  /* RCTOPS_H */

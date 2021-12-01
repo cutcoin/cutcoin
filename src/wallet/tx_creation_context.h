@@ -29,38 +29,56 @@
 #ifndef CUTCOIN_TX_CREATION_CONTEXT_H
 #define CUTCOIN_TX_CREATION_CONTEXT_H
 
+#include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_basic/dex.h"
+#include "cryptonote_basic/token.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 
-#include <map>
+#include <unordered_map>
+#include <vector>
 
 namespace tools {
 
-struct TxTokenData {
+struct BasicTransfer {
   std::vector<cryptonote::tx_destination_entry> d_dsts;
   std::vector<cryptonote::tx_destination_entry> d_dsts_with_change;
-  std::vector<size_t> d_selected_transfers;
-  cryptonote::tx_destination_entry d_change_dst;
+  cryptonote::tx_destination_entry              d_change_dst{};
+  std::vector<size_t>                           d_selected_transfers;
+};
+
+struct LpTransfer {
+  std::vector<cryptonote::tx_destination_entry> d_dsts;
+  std::vector<cryptonote::tx_destination_entry> d_dsts_with_change;
+  cryptonote::tx_destination_entry              d_change_dst{};
+  std::vector<size_t>                           d_selected_transfers;
+  std::vector<lp_out_entry>                     d_selected_lp_transfers;
+  std::vector<lp_out_entry>                     d_fake_lp_transfers;
 };
 
 
 struct TxCreationContext {
-  using transfer_data = std::unordered_map<cryptonote::TokenId, TxTokenData>;
+  // Provide creation context for a transaction.
+
+  // Types
+  using TokenTransfers = std::unordered_map<cryptonote::TokenId, BasicTransfer>;
 
   explicit TxCreationContext(bool is_rct = true)
-    : is_rct{is_rct} {
+  : is_rct{is_rct}
+  {
   }
 
-  bool empty() {
-    return tokens.empty();
+  bool empty()
+  {
+    return transfers.empty();
   }
 
   // Data
-  bool is_rct;
-  std::map<cryptonote::TokenId, TxTokenData> tokens;
+  bool                                      is_rct;
+  cryptonote::TxType                        tx_type;
+  TokenTransfers                            transfers;
+  std::map<cryptonote::TokenId, LpTransfer> lp_transfers;
 };
 
 }  // namespace tools
-
-
 
 #endif //CUTCOIN_TX_CREATION_CONTEXT_H

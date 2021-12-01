@@ -374,7 +374,7 @@ bool gen_multisig_tx_validation_base::generate_with(std::vector<test_event_entry
   context.d_subaddresses        = subaddresses;
   context.d_sources             = sources;
   context.d_destinations        = destinations;
-  context.d_change_addr         = boost::none;
+//  context.d_change_addr         = boost::none;
   context.d_tx_key              = tx_key;
   context.d_additional_tx_keys  = additional_tx_secret_keys;
   context.d_tx_version          = TxVersion::plain;

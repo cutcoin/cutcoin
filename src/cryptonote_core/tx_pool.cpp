@@ -217,9 +217,8 @@ namespace cryptonote
       return false;
     }
 
-    if (tx.is_token_genesis()) {
-      if (!m_blockchain.check_tgtx(tvc, tx))
-      {
+    if (tx.type.is_tgtx()) {
+      if (!m_blockchain.check_tgtx(tx)) {
         LOG_PRINT_L1("Token genesis transaction is incorrect");
         tvc.m_verifivation_failed = true;
         return false;
@@ -231,9 +230,78 @@ namespace cryptonote
         tvc.m_verifivation_failed = true;
         return false;
       }
-      if (token_genesis_in_mempool(token_data.d_id))
-      {
+
+      if (token_genesis_in_mempool(token_data.d_id)) {
         LOG_PRINT_L1("Token genesis transaction with same token_id already exists in mempool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (tx.type.has_flag_minting()) {
+        if (!m_blockchain.check_mntx(tx)) {
+          LOG_PRINT_L1("Token minting transaction is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+      else if (tx.type.has_flag_lp_token()) {
+        if (!m_blockchain.check_lp_tgtx(tx)) {
+          LOG_PRINT_L1("Genesis transaction for LP token is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+      else if (tx.type.has_flag_hidden_supply()) {
+        if (!m_blockchain.check_hs_tgtx(tx)) {
+          LOG_PRINT_L1("Genesis transaction for token with hidden supply is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+      else {
+        if (!m_blockchain.check_ps_tgtx(tx)) {
+          LOG_PRINT_L1("Genesis transaction for token with public supply is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+    }
+
+    if (tx.type.is_create_lp()) {
+      if (!m_blockchain.check_lp_gtx(tx, nullptr)) {
+        LOG_PRINT_L1("Liquidity pool genesis transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_add_liquidity()) {
+      if (!m_blockchain.check_lp_addtx(tx, nullptr)) {
+        LOG_PRINT_L1("Add liquidity to pool transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_take_liquidity()) {
+      if (!m_blockchain.check_lp_taketx(tx, nullptr)) {
+        LOG_PRINT_L1("Take liquidity to pool transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_dex_buy()) {
+      if (!m_blockchain.check_lp_buy_tx(tx, nullptr)) {
+        LOG_PRINT_L1("Dex buy transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_dex_sell()) {
+      if (!m_blockchain.check_lp_sell_tx(tx, nullptr)) {
+        LOG_PRINT_L1("Dex sell transaction is incorrect");
         tvc.m_verifivation_failed = true;
         return false;
       }
@@ -263,7 +331,7 @@ namespace cryptonote
         meta.last_failed_id = null_hash;
         meta.kept_by_block = kept_by_block;
         meta.receive_time = receive_time;
-        meta.last_relayed_time = time(NULL);
+        meta.last_relayed_time = time(nullptr);
         meta.relayed = relayed;
         meta.do_not_relay = do_not_relay;
         meta.double_spend_seen = have_tx_keyimges_as_spent(tx);
@@ -1036,8 +1104,12 @@ namespace cryptonote
         txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
         return false;
       }
-      if (tx.is_token_genesis() && !m_blockchain.check_tgtx(tvc, tx)) {
+      if (tx.type.is_tgtx() && !m_blockchain.check_tgtx(tx)) {
         LOG_PRINT_L2("tgtx is incorrect");
+        return false;
+      }
+      if (tx.type.has_flag_minting() && !m_blockchain.check_mntx(tx)) {
+        LOG_PRINT_L1("mntx is incorrect");
         return false;
       }
     }else
@@ -1057,8 +1129,12 @@ namespace cryptonote
           txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
           return false;
         }
-        if (tx.is_token_genesis() && !m_blockchain.check_tgtx(tvc, tx)) {
+        if (tx.type.is_tgtx() && !m_blockchain.check_tgtx(tx)) {
           LOG_PRINT_L2("tgtx is incorrect");
+          return false;
+        }
+        if (tx.type.has_flag_minting() && !m_blockchain.check_mntx(tx)) {
+          LOG_PRINT_L1("mntx is incorrect");
           return false;
         }
       }
@@ -1286,9 +1362,9 @@ namespace cryptonote
         LOG_PRINT_L2("  key images already seen");
         continue;
       }
-      if (tx.is_token_genesis()) {
-        if (token_genesis_block)
-        {
+      if (tx.type.is_tgtx() || tx.type.is_create_lp() || tx.type.is_add_liquidity()
+          || tx.type.is_take_liquidity() || tx.type.is_dex_buy() || tx.type.is_dex_sell()) {
+        if (token_genesis_block) {
           LOG_PRINT_L2("  second token genesis not allowed");
           continue;
         }

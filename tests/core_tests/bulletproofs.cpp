@@ -135,7 +135,6 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
       return false;
     }
 
-    crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
     subaddresses[miner_accounts[n].get_keys().m_account_address.m_spend_public_key] = {0,0};
@@ -146,8 +145,7 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
     context.d_subaddresses        = subaddresses;
     context.d_sources             = sources;
     context.d_destinations        = destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
-    context.d_tx_key              = tx_key;
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_additional_tx_keys  = additional_tx_keys;
     context.d_range_proof_type    = range_proof_type[n];
     bool r = construct_tx_and_get_tx_key(context, rct_txes.back());
@@ -166,7 +164,7 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
     for (int o = 0; amounts_paid[o] != (uint64_t)-1; ++o)
     {
       crypto::key_derivation derivation;
-      bool r = crypto::generate_key_derivation(destinations[o].addr.m_view_public_key, tx_key, derivation);
+      bool r = crypto::generate_key_derivation(destinations[o].addr.m_view_public_key, context.d_tx_key, derivation);
       CHECK_AND_ASSERT_MES(r, false, "Failed to generate key derivation");
       crypto::secret_key amount_key;
       crypto::derivation_to_scalar(derivation, o, amount_key);

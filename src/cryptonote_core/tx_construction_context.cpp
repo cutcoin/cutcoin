@@ -35,12 +35,11 @@ namespace cryptonote {
 TxConstructionContext::TxConstructionContext()
 : d_unlock_time{0}
 , d_tx_key{}
-, d_tx_version{TxVersion::tokens}
+, d_tx_version{TxVersion::plain}
 , d_range_proof_type(rct::RangeProofBorromean)
 , d_msout(nullptr)
+, d_tx_type(TxType::potx)
 , d_shuffle_outs(true)
-, d_tgtx(false)
-, d_hidden_supply(false)
 {
 
 }

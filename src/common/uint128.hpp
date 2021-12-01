@@ -101,6 +101,8 @@ struct u128_t {
   u128_t& operator--();
 };
 
+u128_t operator |(const u128_t &a, const u128_t &b);
+
 u128_t operator +(const u128_t &a, const u128_t &b);
 u128_t operator -(const u128_t &a, const u128_t &b);
 u128_t operator *(const u128_t &a, const u128_t &b);
@@ -130,6 +132,9 @@ void div128by64(const u128_t &num, uint64_t den, u128_t &quotient, uint64_t &rem
 
 void div128by128(const u128_t &num, const u128_t &den, u128_t &quotient, u128_t &remainder);
 
+u128_t sqrt(const u128_t &num);
+  // From https://github.com/hcs0/Hackers-Delight/blob/master/isqrt.c.txt
+
 template <uint32_t div>
 void div128byconst(const u128_t &num, u128_t &quotient, uint32_t &remainder) {
   uint64_t qh, ql, d;
@@ -142,6 +147,7 @@ void div128byconst(const u128_t &num, u128_t &quotient, uint32_t &remainder) {
   quotient.val[0]=ql;
   quotient.val[1]=qh;
 }
-}
+
+}  // namespace num
 
 #endif

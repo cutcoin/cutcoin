@@ -32,7 +32,7 @@
 #include "cryptonote_basic/token.h"
 #include "misc_log_ex.h"
 
-using namespace tools;
+#include <random>
 
 namespace tools {
 
@@ -367,17 +367,17 @@ float AccountView::get_output_relatedness(const Transfer &t1, const Transfer &t2
 
 
 void AccountView::separate_dust_indices(
-    std::unordered_map<uint32_t, std::vector<size_t> > &unused_transfers_indices_per_subaddress,
+    std::unordered_map<uint32_t, std::vector<size_t> > &unused_transfer_indices_per_subaddress,
     std::unordered_map<uint32_t, std::vector<size_t> > &unused_dust_indices_per_subaddress,
     const Subaddresses                                 &user_indices,
     const cryptonote::TokenId                           token_id,
-    const uint64_t                                      fractional_threshold,
+    const cryptonote::Amount                            fractional_threshold,
     std::pair<uint64_t, uint64_t>                       range,
     bool                                                ignore_fractional_outputs,
     bool                                                use_rct,
     const uint64_t                                     &blockchain_height) const
 {
-  unused_transfers_indices_per_subaddress.clear();
+  unused_transfer_indices_per_subaddress.clear();
   unused_dust_indices_per_subaddress.clear();
 
   const std::set<Index> &token_indices = d_token_indices.at(token_id);
@@ -401,13 +401,80 @@ void AccountView::separate_dust_indices(
       const uint32_t index_minor = t.m_subaddr_index.minor;
       if (range.first < amount && amount <= range.second) {
         if (is_rct || cryptonote::is_valid_decomposed_amount(amount)) {
-          unused_transfers_indices_per_subaddress[index_minor].push_back(index);
+          unused_transfer_indices_per_subaddress[index_minor].push_back(index);
         } else {
           unused_dust_indices_per_subaddress[index_minor].push_back(index);
         }
       }
     }
   }
+}
+
+void AccountView::separate_and_shuffle(
+  std::vector<std::pair<uint32_t, std::vector<size_t> > > &unused_transfer_indices_per_subaddress,
+  std::vector<std::pair<uint32_t, std::vector<size_t> > > &unused_dust_indices_per_subaddress,
+  const Subaddresses                                      &user_indices,
+  const cryptonote::TokenId                                token_id,
+  const cryptonote::Amount                                 fractional_threshold,
+  std::pair<uint64_t, uint64_t>                            range,
+  bool                                                     ignore_fractional_outputs,
+  bool                                                     use_rct,
+  const uint64_t                                          &blockchain_height) const
+{
+  unused_transfer_indices_per_subaddress.clear();
+  unused_dust_indices_per_subaddress.clear();
+
+  std::unordered_map<uint32_t, std::vector<size_t> > transfer_indices;
+  std::unordered_map<uint32_t, std::vector<size_t> > dust_indices;
+
+  const std::set<Index> &token_indices = d_token_indices.at(token_id);
+
+  for (const Index &index: token_indices) {
+    const Transfer &t = d_transfers[index];
+    const uint64_t &amount = d_transfers[index].amount();
+    const bool &is_rct     = d_transfers[index].is_rct();
+    if (ignore_fractional_outputs && amount < fractional_threshold) {
+      MDEBUG("Ignoring output " << index
+                                << " of amount " << cryptonote::print_money(amount)
+                                << " which is below threshold " << cryptonote::print_money(fractional_threshold));
+      continue;
+    }
+
+    if (!t.m_key_image_partial
+        && (use_rct ? true : !is_rct)
+        && is_transfer_unlocked(t, blockchain_height)
+        && (user_indices.empty() || user_indices.find(t.m_subaddr_index.minor) != user_indices.end())) {
+
+      const uint32_t index_minor = t.m_subaddr_index.minor;
+      if (range.first < amount && amount <= range.second) {
+        if (is_rct || cryptonote::is_valid_decomposed_amount(amount)) {
+          transfer_indices[index_minor].push_back(index);
+        } else {
+          dust_indices[index_minor].push_back(index);
+        }
+      }
+    }
+  }
+
+  for (const auto &i: transfer_indices) {
+    unused_transfer_indices_per_subaddress.emplace_back(std::pair<uint32_t, std::vector<size_t>>(i.first, i.second));
+  }
+  for (const auto &i: dust_indices) {
+    unused_dust_indices_per_subaddress.emplace_back(std::pair<uint32_t, std::vector<size_t>>(i.first, i.second));
+  }
+
+  std::random_device rd;
+  std::mt19937 g(rd());
+  std::shuffle(unused_transfer_indices_per_subaddress.begin(), unused_transfer_indices_per_subaddress.end(), g);
+  std::shuffle(unused_dust_indices_per_subaddress.begin(), unused_dust_indices_per_subaddress.end(), g);
+
+  auto sort_predicate = [&] (const std::pair<uint32_t, std::vector<size_t>>& x,
+                             const std::pair<uint32_t, std::vector<size_t>>& y) {
+    return d_unlocked_balance[token_id][x.first] > d_unlocked_balance[token_id][y.first];
+  };
+
+  std::sort(unused_transfer_indices_per_subaddress.begin(), unused_transfer_indices_per_subaddress.end(), sort_predicate);
+  std::sort(unused_dust_indices_per_subaddress.begin(), unused_dust_indices_per_subaddress.end(), sort_predicate);
 }
 
 }  // namespace tools

@@ -266,7 +266,7 @@ void Plant::handle_block_mining(const std::string &block_hash)
     crypto::hash prev_hash;
     crypto::hash prev_crypto_hash;
     crypto::hash merkle_root;
-    std::vector<std::vector<tools::wallet2::get_outs_entry>> outs;
+    std::vector<std::vector<tools::get_outs_entry>> outs;
 
     bool res = get_pos_block_template(block_template,
                                       extra,
@@ -478,14 +478,14 @@ bool Plant::get_mining_output(const MiningInfo                &mining_info,
   return true;
 }
 
-bool Plant::get_pos_block_template(cryptonote::block                                        &block_template,
-                                   std::vector<uint8_t>                                     &extra,
-                                   crypto::hash                                             &prev_hash,
-                                   crypto::hash                                             &prev_crypto_hash,
-                                   crypto::hash                                             &merkle_root,
-                                   std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-                                   const mining::StakeDetails                               &stake_details,
-                                   const tools::transfer_details                            &pos_output) const
+bool Plant::get_pos_block_template(cryptonote::block                               &block_template,
+                                   std::vector<uint8_t>                            &extra,
+                                   crypto::hash                                    &prev_hash,
+                                   crypto::hash                                    &prev_crypto_hash,
+                                   crypto::hash                                    &merkle_root,
+                                   std::vector<std::vector<tools::get_outs_entry>> &outs,
+                                   const mining::StakeDetails                      &stake_details,
+                                   const tools::transfer_details                   &pos_output) const
 {
   cryptonote::COMMAND_RPC_GETPOSBLOCKTEMPLATE::request request = AUTO_VAL_INIT(request);
   cryptonote::COMMAND_RPC_GETPOSBLOCKTEMPLATE::response response = AUTO_VAL_INIT(response);
@@ -559,13 +559,13 @@ bool Plant::get_pos_block_template(cryptonote::block                            
   return true;
 }
 
-bool Plant::create_pos_tx(tools::pending_tx                                        &stake_tx,
-                          std::vector<uint8_t>                                     &extra,
-                          std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-                          const tools::transfer_details                            &pos_output,
-                          const mining::StakeDetails                               &stake_details,
-                          const crypto::hash                                       &prev_crypto_hash,
-                          const crypto::hash                                       &merkle_root)
+bool Plant::create_pos_tx(tools::pending_tx                               &stake_tx,
+                          std::vector<uint8_t>                            &extra,
+                          std::vector<std::vector<tools::get_outs_entry>> &outs,
+                          const tools::transfer_details                   &pos_output,
+                          const mining::StakeDetails                      &stake_details,
+                          const crypto::hash                              &prev_crypto_hash,
+                          const crypto::hash                              &merkle_root)
 {
   size_t fake_outs_count = d_wallet->default_mixin();
   if (fake_outs_count == 0)

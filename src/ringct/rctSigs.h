@@ -42,8 +42,8 @@ extern "C" {
 #include "crypto/random.h"
 #include "crypto/keccak.h"
 }
-#include "crypto/crypto.h"
 
+#include "crypto/crypto.h"
 #include "cryptonote_basic/token.h"
 #include "rctTypes.h"
 #include "rctOps.h"
@@ -62,128 +62,220 @@ extern "C" {
 #endif
 
 namespace hw {
-    class device;
+  class device;
 }
 
 
 namespace rct {
 
-    boroSig genBorromean(const key64 x, const key64 P1, const key64 P2, const bits indices);
-    bool verifyBorromean(const boroSig &bb, const key64 P1, const key64 P2);
+  boroSig genBorromean(const key64 x, const key64 P1, const key64 P2, const bits indices);
 
-    //Multilayered Spontaneous Anonymous Group Signatures (MLSAG signatures)
-    //These are aka MG signatutes in earlier drafts of the ring ct paper
-    // c.f. https://eprint.iacr.org/2015/1098 section 2.
-    // Gen creates a signature which proves that for some column in the keymatrix "pk"
-    //   the signer knows a secret key for each row in that column
-    // Ver verifies that the MG sig was created correctly
-    mgSig MLSAG_Gen(const key            &message,
-                    const keyM           &pk,
-                    const keyV           &xx,
-                    const multisig_kLRki *kLRki,
-                    key                  *mscout,
-                    const unsigned int    index,
-                    size_t                dsRows,
-                    hw::device           &hwdev);
-    bool MLSAG_Ver(const key &message, const keyM &pk, const mgSig &sig, size_t dsRows);
-    //mgSig MLSAG_Gen_Old(const keyM & pk, const keyV & xx, const int index);
+  bool verifyBorromean(const boroSig &bb, const key64 P1, const key64 P2);
 
-    //proveRange and verRange
-    //proveRange gives C, and mask such that \sumCi = C
-    //   c.f. https://eprint.iacr.org/2015/1098 section 5.1
-    //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
-    //   thus this proves that "amount" is in [0, 2^64]
-    //   mask is a such that C = aG + bH, and b = amount
-    //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
-    rangeSig proveRange(key & C, key & mask, const xmr_amount & amount);
-    bool verRange(const key & C, const rangeSig & as);
+  //Multilayered Spontaneous Anonymous Group Signatures (MLSAG signatures)
+  //These are aka MG signatutes in earlier drafts of the ring ct paper
+  // c.f. https://eprint.iacr.org/2015/1098 section 2.
+  // Gen creates a signature which proves that for some column in the keymatrix "pk"
+  //   the signer knows a secret key for each row in that column
+  // Ver verifies that the MG sig was created correctly
+  mgSig MLSAG_Gen(const key            &message,
+                  const keyM           &pk,
+                  const keyV           &xx,
+                  const multisig_kLRki *kLRki,
+                  key                  *mscout,
+                  const unsigned int    index,
+                  size_t                dsRows,
+                  hw::device           &hwdev);
 
-    //Ring-ct MG sigs
-    //Prove:
-    //   c.f. https://eprint.iacr.org/2015/1098 section 4. definition 10.
-    //   This does the MG sig on the "dest" part of the given key matrix, and
-    //   the last row is the sum of input commitments from that column - sum output commitments
-    //   this shows that sum inputs = sum outputs
-    //Ver:
-    //   verifies the above sig is created correсtly
-    mgSig proveRctMG(const ctkeyM & pubs, const ctkeyV & inSk, const keyV &outMasks, const ctkeyV & outPk, const multisig_kLRki *kLRki, key *mscout, unsigned int index, key txnFee, const key &message, hw::device &hwdev);
-    mgSig proveRctMGSimple(const key            &message,
-                           const ctkeyV         &pubs,
-                           const ctkey          &inSk,
-                           const key            &a,
-                           const key            &Cout,
-                           const multisig_kLRki *kLRki,
-                           key                  *mscout,
-                           unsigned int          index,
-                           hw::device           &hwdev);
-    bool verRctMG(const mgSig &mg, const ctkeyM & pubs, const ctkeyV & outPk, key txnFee, const key &message);
-    bool verRctMGSimple(const key &message, const mgSig &mg, const ctkeyV & pubs, const key & C);
+  bool MLSAG_Ver(const key &message, const keyM &pk, const mgSig &sig, size_t dsRows);
+  //mgSig MLSAG_Gen_Old(const keyM & pk, const keyV & xx, const int index);
 
-    //These functions get keys from blockchain
-    //replace these when connecting blockchain
-    //getKeyFromBlockchain grabs a key from the blockchain at "reference_index" to mix with
-    //populateFromBlockchain creates a keymatrix with "mixin" columns and one of the columns is inPk
-    //   the return value are the key matrix, and the index where inPk was put (random).
-    void getKeyFromBlockchain(ctkey & a, size_t reference_index);
-    std::tuple<ctkeyM, xmr_amount> populateFromBlockchain(ctkeyV inPk, int mixin);
+  //proveRange and verRange
+  //proveRange gives C, and mask such that \sumCi = C
+  //   c.f. https://eprint.iacr.org/2015/1098 section 5.1
+  //   and Ci is a commitment to either 0 or 2^i, i=0,...,63
+  //   thus this proves that "amount" is in [0, 2^64]
+  //   mask is a such that C = aG + bH, and b = amount
+  //verRange verifies that \sum Ci = C and that each Ci is a commitment to 0 or 2^i
+  rangeSig proveRange(key & C, key & mask, const xmr_amount & amount);
 
-    //RingCT protocol
-    //genRct:
-    //   creates an rctSig with all data necessary to verify the rangeProofs and that the signer owns one of the
-    //   columns that are claimed as inputs, and that the sum of inputs  = sum of outputs.
-    //   Also contains masked "amount" and "mask" so the receiver can see how much they received
-    //verRct:
-    //   verifies that all signatures (rangeProogs, MG sig, sum inputs = outputs) are correct
-    //decodeRct: (c.f. https://eprint.iacr.org/2015/1098 section 5.1.1)
-    //   uses the attached ecdh info to find the amounts represented by each output commitment
-    //   must know the destination private key to find the correct amount, else will return a random number
-    rctSig genRct(const key &message, const ctkeyV & inSk, const keyV & destinations, const std::vector<xmr_amount> & amounts, const ctkeyM &mixRing, const keyV &amount_keys, const multisig_kLRki *kLRki, multisig_out *msout, unsigned int index, ctkeyV &outSk, hw::device &hwdev);
-    rctSig genRct(const key &message, const ctkeyV & inSk, const ctkeyV  & inPk, const keyV & destinations, const std::vector<xmr_amount> & amounts, const keyV &amount_keys, const multisig_kLRki *kLRki, multisig_out *msout, const int mixin, hw::device &hwdev);
-    rctSig genRctSimple(const key & message, const ctkeyV & inSk, const ctkeyV & inPk, const keyV & destinations, const rct::ctamountV & inamounts, const std::vector<xmr_amount> & outamounts, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, xmr_amount txnFee, unsigned int mixin, hw::device &hwdev);
-    rctSig genRctSimple(std::function<key(const key &)> calc_message, const ctkeyV & inSk, const keyV & destinations, const rct::ctamountV &inamounts, const std::vector<xmr_amount> & outamounts, xmr_amount txnFee,
-        const ctkeyM & mixRing, const keyV &amount_keys, const std::vector<multisig_kLRki> *kLRki, multisig_out *msout, const std::vector<unsigned int> & index, ctkeyV &outSk, RangeProofType range_proof_type, hw::device &hwdev);
-    rctSig genRctSimpleBig(std::function<key(const key &)>                               calc_message,
-                           const ctkeyV                                                 &inSk,
-                           const keyV                                                   &destinations,
-                           const rct::ctamountV                                         &inamounts,
-                           const std::map<cryptonote::TokenId, std::vector<xmr_amount>> &outamounts,
-                           xmr_amount                                                    txnFee,
-                           const ctkeyM                                                 &mixRing,
-                           const keyV                                                   &amount_keys,
-                           const std::vector<multisig_kLRki>                            *kLRki,
-                           multisig_out                                                 *msout,
-                           const std::vector<unsigned int>                              &index,
-                           ctkeyV                                                       &outSk,
-                           hw::device                                                   &hwdev);
-    rctSig genRctTgtx(std::function<key(const key &)>                               calc_message,
-                      bool                                                          hidden_supply,
-                      const ctkeyV                                                 &inSk,
-                      const keyV                                                   &destinations,
-                      const rct::ctamountV                                         &inamounts,
-                      const std::map<cryptonote::TokenId, std::vector<xmr_amount>> &outamounts,
-                      xmr_amount                                                    txnFee,
-                      const ctkeyM                                                 &mixRing,
-                      const keyV                                                   &amount_keys,
-                      const std::vector<multisig_kLRki>                            *kLRki,
-                      multisig_out                                                 *msout,
-                      const std::vector<unsigned int>                              &index,
-                      ctkeyV                                                       &outSk,
-                      hw::device                                                   &hwdev);
-    bool verRct(const rctSig & rv, bool semantics);
-    static inline bool verRct(const rctSig & rv) { return verRct(rv, true) && verRct(rv, false); }
-    bool verRctSemanticsSimple(const rctSig & rv);
-    bool verRctSemanticsSimple(const std::vector<const rctSig*> &rv);
-    bool verRctSemanticsSimpleBig(const std::vector<const rctSig*> &rv);
-    bool verRctNonSemanticsSimple(const rctSig & rv);
-    static inline bool verRctSimple(const rctSig & rv) { return verRctSemanticsSimple(rv) && verRctNonSemanticsSimple(rv); }
-    xmr_amount decodeRct(const rctSig & rv, const key & sk, unsigned int i, key & mask, hw::device &hwdev);
-    xmr_amount decodeRct(const rctSig & rv, const key & sk, unsigned int i, hw::device &hwdev);
-    xmr_amount decodeRctSimple(const rctSig &rv, const key &sk, const keyV &o, unsigned int i, key & mask, hw::device &hwdev);
-    xmr_amount decodeRctSimple(const rctSig &rv, const key &sk, const keyV &o, unsigned int i, hw::device &hwdev);
+  bool verRange(const key & C, const rangeSig & as);
 
-    bool signMultisig(rctSig &rv, const std::vector<unsigned int> &indices, const keyV &k, const multisig_out &msout, const key &secret_key);
+  //Ring-ct MG sigs
+  //Prove:
+  //   c.f. https://eprint.iacr.org/2015/1098 section 4. definition 10.
+  //   This does the MG sig on the "dest" part of the given key matrix, and
+  //   the last row is the sum of input commitments from that column - sum output commitments
+  //   this shows that sum inputs = sum outputs
+  //Ver:
+  //   verifies the above sig is created correсtly
+  mgSig proveRctMG(const ctkeyM         &pubs,
+                   const ctkeyV         &inSk,
+                   const keyV           &outMasks,
+                   const ctkeyV         &outPk,
+                   const multisig_kLRki *kLRki,
+                   key                  *mscout,
+                   unsigned int          index,
+                   key                   txnFee,
+                   const key            &message,
+                   hw::device           &hwdev);
 
-    bool confirmTransactionAmount(const rctSig &rv, const key &sk, xmr_amount amount);
-}
+  mgSig proveRctMGSimple(const key            &message,
+                         const ctkeyV         &pubs,
+                         const ctkey          &inSk,
+                         const key            &a,
+                         const key            &Cout,
+                         const multisig_kLRki *kLRki,
+                         key                  *mscout,
+                         unsigned int          index,
+                         hw::device           &hwdev);
+
+  bool verRctMG(const mgSig &mg, const ctkeyM & pubs, const ctkeyV & outPk, key txnFee, const key &message);
+
+  bool verRctMGSimple(const key &message, const mgSig &mg, const ctkeyV & pubs, const key & C);
+
+  //These functions get keys from blockchain
+  //replace these when connecting blockchain
+  //getKeyFromBlockchain grabs a key from the blockchain at "reference_index" to mix with
+  //populateFromBlockchain creates a keymatrix with "mixin" columns and one of the columns is inPk
+  //   the return value are the key matrix, and the index where inPk was put (random).
+  void getKeyFromBlockchain(ctkey & a, size_t reference_index);
+
+  std::tuple<ctkeyM, xmr_amount> populateFromBlockchain(ctkeyV inPk, int mixin);
+
+  //RingCT protocol
+  //genRct:
+  //   creates an rctSig with all data necessary to verify the rangeProofs and that the signer owns one of the
+  //   columns that are claimed as inputs, and that the sum of inputs  = sum of outputs.
+  //   Also contains masked "amount" and "mask" so the receiver can see how much they received
+  //verRct:
+  //   verifies that all signatures (rangeProogs, MG sig, sum inputs = outputs) are correct
+  //decodeRct: (c.f. https://eprint.iacr.org/2015/1098 section 5.1.1)
+  //   uses the attached ecdh info to find the amounts represented by each output commitment
+  //   must know the destination private key to find the correct amount, else will return a random number
+  rctSig genRct(const key &message,
+                const ctkeyV & inSk,
+                const keyV & destinations,
+                const std::vector<xmr_amount> & amounts,
+                const ctkeyM &mixRing,
+                const keyV &amount_keys,
+                const multisig_kLRki *kLRki,
+                multisig_out *msout,
+                unsigned int index,
+                ctkeyV &outSk,
+                hw::device &hwdev);
+
+  rctSig genRct(const key &message,
+                const ctkeyV & inSk,
+                const ctkeyV  & inPk,
+                const keyV & destinations,
+                const std::vector<xmr_amount> & amounts,
+                const keyV &amount_keys,
+                const multisig_kLRki *kLRki,
+                multisig_out *msout,
+                const int mixin,
+                hw::device &hwdev);
+
+  rctSig genRctSimple(const key & message,
+                      const ctkeyV & inSk,
+                      const ctkeyV & inPk,
+                      const keyV & destinations,
+                      const rct::ctamountV & inamounts,
+                      const std::vector<xmr_amount> & outamounts,
+                      const keyV &amount_keys,
+                      const std::vector<multisig_kLRki> *kLRki,
+                      multisig_out *msout,
+                      xmr_amount txnFee,
+                      unsigned int mixin,
+                      hw::device &hwdev);
+
+  rctSig genRctSimple(std::function<key(const key &)> calc_message,
+                                        const ctkeyV & inSk,
+                                        const keyV & destinations,
+                                        const rct::ctamountV &inamounts,
+                                        const std::vector<xmr_amount> & outamounts,
+                                        xmr_amount txnFee,
+                                        const ctkeyM & mixRing,
+                                        const keyV &amount_keys,
+                                        const std::vector<multisig_kLRki> *kLRki,
+                                        multisig_out *msout,
+                                        const std::vector<unsigned int> & index,
+                                        ctkeyV &outSk,
+                                        RangeProofType range_proof_type,
+                                        hw::device &hwdev);
+
+  rctSig genRctSimpleBig(std::function<key(const key &)>                               calc_message,
+                         const ctkeyV                                                 &inSk,
+                         const keyV                                                   &destinations,
+                         const rct::ctamountV                                         &inamounts,
+                         const std::map<cryptonote::TokenId, std::vector<xmr_amount>> &outamounts,
+                         xmr_amount                                                    txnFee,
+                         const ctkeyM                                                 &mixRing,
+                         const keyV                                                   &amount_keys,
+                         const std::vector<multisig_kLRki>                            *kLRki,
+                         multisig_out                                                 *msout,
+                         const std::vector<unsigned int>                              &index,
+                         ctkeyV                                                       &outSk,
+                         hw::device                                                   &hwdev);
+  rctSig genRctTgtx(std::function<key(const key &)>                               calc_message,
+                    bool                                                          hidden_supply,
+                    const ctkeyV                                                 &inSk,
+                    const keyV                                                   &destinations,
+                    const rct::ctamountV                                         &inamounts,
+                    const std::map<cryptonote::TokenId, std::vector<xmr_amount>> &outamounts,
+                    xmr_amount                                                    txnFee,
+                    const ctkeyM                                                 &mixRing,
+                    const keyV                                                   &amount_keys,
+                    const std::vector<multisig_kLRki>                            *kLRki,
+                    multisig_out                                                 *msout,
+                    const std::vector<unsigned int>                              &index,
+                    ctkeyV                                                       &outSk,
+                    hw::device                                                   &hwdev);
+  bool verRct(const rctSig & rv, bool semantics);
+  static inline bool verRct(const rctSig & rv) { return verRct(rv, true) && verRct(rv, false); }
+  bool verRctSemanticsSimple(const rctSig & rv);
+  bool verRctSemanticsSimple(const std::vector<const rctSig*> &rv);
+  bool verRctSemanticsSimpleBig(const std::vector<const rctSig*> &rv);
+  bool verRctNonSemanticsSimple(const rctSig &rv, const std::vector<bool> *ins = nullptr);
+  static inline bool verRctSimple(const rctSig & rv) { return verRctSemanticsSimple(rv) && verRctNonSemanticsSimple(rv); }
+  xmr_amount decodeRct(const rctSig & rv, const key & sk, unsigned int i, key & mask, hw::device &hwdev);
+  xmr_amount decodeRct(const rctSig & rv, const key & sk, unsigned int i, hw::device &hwdev);
+  xmr_amount decodeRctSimple(const rctSig &rv,
+                             const key &sk,
+                             const keyV &o,
+                             unsigned int i,
+                             key & mask,
+                             hw::device &hwdev);
+
+  bool decode_to_check(const rctSig &rv,
+                       const key &sk,
+                       const keyV &o,
+                       size_t i,
+                       cryptonote::Amount &amount,
+                       hw::device &hwdev);
+
+  xmr_amount decodeRctSimple(const rctSig &rv, const key &sk, const keyV &o, unsigned int i, hw::device &hwdev);
+
+  bool signMultisig(rctSig                          &rv,
+                    const std::vector<unsigned int> &indices,
+                    const keyV                      &k,
+                    const multisig_out              &msout,
+                    const key                       &secret_key);
+
+  bool confirmTransactionAmount(const rctSig &rv, const key &sk, xmr_amount amount);
+
+std::tuple<crypto::public_key, crypto::signature> gen_token_ownership(cryptonote::TokenId       token_id,
+                                                                      cryptonote::Amount        amount,
+                                                                      const crypto::secret_key &svk,
+                                                                      const crypto::secret_key &ssk);
+  // Return the commitment that the owner of 'svk' and 'ssk' is the creator of the token with 'token_id'.
+
+ bool ver_token_ownership(cryptonote::Amount        amount,
+                          const crypto::public_key &token_public_key,
+                          const crypto::signature  &signature);
+  // Verify that the creator of the commitment for the token with 'token_id' knows 'svk' and 'ssk'.
+
+}  // namespace rct
+
 #endif  /* RCTSIGS_H */
 

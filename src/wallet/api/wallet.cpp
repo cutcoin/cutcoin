@@ -1745,11 +1745,12 @@ PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string 
     return transaction;
   }
 
-  token_summary.d_type = static_cast<cryptonote::TokenType>(token_type);
+  token_summary.d_type = token_type;
   token_summary.d_unit = COIN;
 
   COMMAND_RPC_GET_TOKENS::request req = AUTO_VAL_INIT(req);
   req.prefix = token_name;
+  req.exact_match = true;
   COMMAND_RPC_GET_TOKENS::response res = AUTO_VAL_INIT(res);
 
   std::string err;
@@ -1776,7 +1777,10 @@ PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string 
 
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->token_genesis_transaction(subaddress_account, token_summary, transaction->m_pending_tx);
+    m_wallet->token_genesis_transaction(subaddress_account,
+                                        token_summary,
+                                        transaction->m_pending_tx,
+                                        token_summary.d_token_supply);
 
     if (transaction->m_pending_tx.empty()) {
       setStatusError(tr("Could not create token genesis transaction"));

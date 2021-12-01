@@ -736,7 +736,121 @@ namespace cryptonote
       END_KV_SERIALIZE_MAP()
     };
   };
-  //-----------------------------------------------
+
+  struct COMMAND_RPC_GET_LPOUTPUTS_BIN
+  {
+    struct request
+    {
+      TokenId  token_id;
+      Amount   amount;
+      uint64_t fake_outputs_count;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(token_id)
+        KV_SERIALIZE(amount)
+        KV_SERIALIZE(fake_outputs_count)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct outkey
+    {
+      crypto::public_key key;
+      crypto::public_key tx_pub_key;
+      rct::key           mask;
+      bool               unlocked;
+      uint64_t           height;
+      uint64_t           global_index;
+      uint64_t           token_index;
+      uint64_t           internal_index;
+      cryptonote::Amount amount;
+      crypto::hash       txid;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE_VAL_POD_AS_BLOB(key)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(tx_pub_key)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(mask)
+        KV_SERIALIZE(unlocked)
+        KV_SERIALIZE(height)
+        KV_SERIALIZE(global_index)
+        KV_SERIALIZE(token_index)
+        KV_SERIALIZE(internal_index)
+        KV_SERIALIZE(amount)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(txid)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      std::vector<outkey> outs;
+      std::vector<outkey> fake_outs;
+      std::string status;
+      bool untrusted;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(outs)
+        KV_SERIALIZE(fake_outs)
+        KV_SERIALIZE(status)
+        KV_SERIALIZE(untrusted)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+struct COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN
+{
+  struct request
+  {
+    TokenId  token_id;
+    uint64_t fake_outputs_count;
+    std::vector<uint64_t> selected_indexes;
+
+  BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(token_id)
+      KV_SERIALIZE(fake_outputs_count)
+      KV_SERIALIZE(selected_indexes)
+    END_KV_SERIALIZE_MAP()
+  };
+
+  struct outkey
+  {
+    crypto::public_key key;
+    crypto::public_key tx_pub_key;
+    rct::key           mask;
+    bool               unlocked;
+    uint64_t           height;
+    uint64_t           global_index;
+    uint64_t           token_index;
+    uint64_t           internal_index;
+    cryptonote::Amount amount;
+    crypto::hash       txid;
+
+  BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE_VAL_POD_AS_BLOB(key)
+      KV_SERIALIZE_VAL_POD_AS_BLOB(tx_pub_key)
+      KV_SERIALIZE_VAL_POD_AS_BLOB(mask)
+      KV_SERIALIZE(unlocked)
+      KV_SERIALIZE(height)
+      KV_SERIALIZE(global_index)
+      KV_SERIALIZE(token_index)
+      KV_SERIALIZE(internal_index)
+      KV_SERIALIZE(amount)
+      KV_SERIALIZE_VAL_POD_AS_BLOB(txid)
+    END_KV_SERIALIZE_MAP()
+  };
+
+  struct response
+  {
+    std::vector<outkey> outs;
+    std::string status;
+    bool untrusted;
+
+  BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(outs)
+      KV_SERIALIZE(status)
+      KV_SERIALIZE(untrusted)
+    END_KV_SERIALIZE_MAP()
+  };
+};
+
   struct COMMAND_RPC_GET_OUTPUTS
   {
     struct request
@@ -779,29 +893,36 @@ namespace cryptonote
     };
   };
   //-----------------------------------------------
-    struct COMMAND_RPC_GET_TOKENS
+  struct COMMAND_RPC_GET_TOKENS
   {
     struct request
     {
       std::string prefix;
+      bool exact_match;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(prefix)
+        KV_SERIALIZE_OPT(exact_match, false)
       END_KV_SERIALIZE_MAP()
     };
 
     struct token_summary
     {
-      TokenId token_id;
-      TokenUnit token_supply;
-      std::uint64_t unit;
-      std::uint64_t type;
+      TokenId            token_id;
+      Amount             token_supply;
+      std::uint64_t      unit;
+      std::uint64_t      type;
+      crypto::public_key key;
+      crypto::signature  signature;
+      crypto::ec_scalar  r;
 
       BEGIN_KV_SERIALIZE_MAP()
-      KV_SERIALIZE(token_id)
-      KV_SERIALIZE(token_supply)
-      KV_SERIALIZE(unit)
-      KV_SERIALIZE(type)
+        KV_SERIALIZE(token_id)
+        KV_SERIALIZE(token_supply)
+        KV_SERIALIZE(unit)
+        KV_SERIALIZE(type)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(key)
+        KV_SERIALIZE_VAL_POD_AS_BLOB(signature)
       END_KV_SERIALIZE_MAP()
     };
 
@@ -809,14 +930,113 @@ namespace cryptonote
     {
       std::vector<token_summary> tokens;
       std::string status;
+      bool untrusted;
 
       BEGIN_KV_SERIALIZE_MAP()
         KV_SERIALIZE(tokens)
         KV_SERIALIZE(status)
+        KV_SERIALIZE(untrusted)
       END_KV_SERIALIZE_MAP()
     };
   };
-  //-----------------------------------------------
+
+  struct pool_summary
+  {
+    TokenId token1;
+    TokenId token2;
+    Amount  amount1;
+    Amount  amount2;
+    TokenId lp_token;
+    Amount  lp_amount;
+
+    BEGIN_KV_SERIALIZE_MAP()
+      KV_SERIALIZE(token1)
+      KV_SERIALIZE(token2)
+      KV_SERIALIZE(amount1)
+      KV_SERIALIZE(amount2)
+      KV_SERIALIZE(lp_token)
+      KV_SERIALIZE(lp_amount)
+
+    END_KV_SERIALIZE_MAP()
+  };
+
+  struct COMMAND_RPC_GET_LIQUIDITY_POOL
+  {
+    struct request
+    {
+      std::string name;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(name)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      pool_summary liquidity_pool;
+      std::string status;
+      bool untrusted;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(liquidity_pool)
+        KV_SERIALIZE(status)
+        KV_SERIALIZE(untrusted)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+  struct COMMAND_RPC_GET_LIQUIDITY_POOLS
+  {
+    struct request
+    {
+      std::string name;
+      bool        exact_match;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(name)
+        KV_SERIALIZE_OPT(exact_match, false)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      std::vector<pool_summary> liquidity_pools;
+      std::string status;
+      bool untrusted;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(liquidity_pools)
+        KV_SERIALIZE(status)
+        KV_SERIALIZE(untrusted)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
+  struct COMMAND_RPC_GET_POOL_BY_LP_TOKEN
+  {
+    struct request
+    {
+      TokenId lp_token;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(lp_token)
+      END_KV_SERIALIZE_MAP()
+    };
+
+    struct response
+    {
+      pool_summary liquidity_pool;
+      std::string status;
+      bool untrusted;
+
+      BEGIN_KV_SERIALIZE_MAP()
+        KV_SERIALIZE(liquidity_pool)
+        KV_SERIALIZE(status)
+        KV_SERIALIZE(untrusted)
+      END_KV_SERIALIZE_MAP()
+    };
+  };
+
   struct COMMAND_RPC_SEND_RAW_TX
   {
     struct request
@@ -2050,20 +2270,20 @@ namespace cryptonote
 
     struct entry
     {
-      uint64_t amount;
+      cryptonote::TokenId token_id;
       uint64_t total_instances;
       uint64_t unlocked_instances;
       uint64_t recent_instances;
 
       BEGIN_KV_SERIALIZE_MAP()
-        KV_SERIALIZE(amount);
+        KV_SERIALIZE(token_id);
         KV_SERIALIZE(total_instances);
         KV_SERIALIZE(unlocked_instances);
         KV_SERIALIZE(recent_instances);
       END_KV_SERIALIZE_MAP()
 
-      entry(uint64_t amount, uint64_t total_instances, uint64_t unlocked_instances, uint64_t recent_instances):
-          amount(amount), total_instances(total_instances), unlocked_instances(unlocked_instances), recent_instances(recent_instances) {}
+      entry(cryptonote::TokenId token_id, uint64_t total_instances, uint64_t unlocked_instances, uint64_t recent_instances):
+        token_id(token_id), total_instances(total_instances), unlocked_instances(unlocked_instances), recent_instances(recent_instances) {}
       entry() {}
     };
 

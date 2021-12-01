@@ -29,8 +29,8 @@
 #include "token.h"
 
 #include <algorithm>
+#include <stdexcept>
 #include <string>
-#include <boost/algorithm/string.hpp>
 
 namespace cryptonote {
 
@@ -38,29 +38,53 @@ TokenId token_name_to_id(const std::string &token_name)
 {
   TokenId token_id = 0;
 
-  char *token_id_ptr = reinterpret_cast<char *>(&token_id);
-  std::size_t i = 0;
-  for (; i < token_name.length() && i < sizeof(cryptonote::TokenId); ++i)  {
-    token_id <<= 8;
-    token_id += reinterpret_cast<const unsigned char *>(token_name.c_str())[i];
+  if (token_name.empty()) {
+    throw std::runtime_error("Token name must not be empty");
+  }
+
+  if (token_name == CUTCOIN_NAME) {
+    return token_id;
+  }
+
+  std::string name_view{token_name};
+  bool lp_token = (token_name.rfind(LP_PREFIX, 0) == 0);
+  if (lp_token) {
+    name_view.erase(0, LP_PREFIX.size());
+    token_id += (static_cast<unsigned char>(name_view[0]) | 0x80U);
+  }
+  else {
+    token_id += static_cast<unsigned char>(name_view[0]);
+  }
+
+  size_t i = 1;
+  for (; i < name_view.length() && i < sizeof(cryptonote::TokenId); ++i)  {
+    token_id <<= 8ull;
+    token_id += static_cast<unsigned char>(name_view[i]);
   }
   for (; i < sizeof(cryptonote::TokenId); ++i) {
-    token_id <<= 8;
+    token_id <<= 8ull;
   }
   return token_id;
 }
 
 std::string token_id_to_name(TokenId token_id)
 {
-  if (token_id == 0) return std::string("CUTCOIN");
-  char str_ptr[8];
-  for (size_t i = sizeof(TokenId); i > 0; --i)
-  {
-    str_ptr[i - 1] = static_cast<char>(token_id);
-    token_id >>= 8;
+  if (token_id == 0) {
+    return CUTCOIN_NAME;
   }
+
+  char str_ptr[8];
+  for (size_t i = sizeof(TokenId); i > 0; --i) {
+    str_ptr[i - 1] = static_cast<char>(token_id);
+    token_id >>= 8ull;
+  }
+
   std::string token_name(str_ptr, 8);
   token_name.erase(std::find(token_name.begin(), token_name.end(), '\0'), token_name.end());
+  if (static_cast<unsigned char>(token_name[0]) & 0x80U) {
+    token_name[0] = static_cast<unsigned char>(token_name[0]) ^ 0x80U;
+    token_name = LP_PREFIX + token_name;
+  }
   return token_name;
 }
 
@@ -75,7 +99,7 @@ bool validate_token_name(const std::string &token_name)
 
   for (const auto &str : PROHIBITED_TOKEN_NAMES_PREFIXES)
   {
-    if (boost::algorithm::starts_with(token_name, str))
+    if (token_name.rfind(str, 0) == 0)
       return false;
   }
 
@@ -86,6 +110,27 @@ bool validate_token_name(const std::string &token_name)
   }
 
   return true;
+}
+
+bool validate_lptoken_name(const std::string &token_name)
+{
+  if (token_name.rfind(LP_PREFIX, 0) != 0) {
+    return false;
+  }
+
+  const std::string name_view{token_name.cbegin() + LP_PREFIX.size(), token_name.cend()};
+  return validate_token_name(name_view);
+}
+
+bool is_lptoken(TokenId token_id)
+{
+  return token_id_to_name(token_id).rfind(LP_PREFIX, 0) == 0;
+}
+
+bool is_cutcoin(const std::string &token_name)
+// Return true if the specified 'token_name' is 'CUTCOIN_NAME'.
+{
+  return token_name == CUTCOIN_NAME;
 }
 
 } // namespace cryptonote

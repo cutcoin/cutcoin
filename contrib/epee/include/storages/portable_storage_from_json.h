@@ -208,8 +208,15 @@ namespace epee
               match_number2(it, buf_end, val, is_v_float, is_signed_val);
               if(!is_v_float)
               {
-                int64_t nval = boost::lexical_cast<int64_t>(val);//bool res = string_tools::string_to_num_fast(val, nval);
-                h_array = stg.insert_first_value(name, nval, current_section);
+                if(is_signed_val)
+                {
+                  int64_t nval = boost::lexical_cast<int64_t>(val);
+                  h_array = stg.insert_first_value(name, nval, current_section);
+                }else
+                {
+                  uint64_t nval = boost::lexical_cast<uint64_t >(val);
+                  h_array = stg.insert_first_value(name, nval, current_section);
+                }
                 CHECK_AND_ASSERT_THROW_MES(h_array, " failed to insert values section entry");
               }else
               {

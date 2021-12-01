@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/token.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/tx_source_entry.h"
 #include "rpc/core_rpc_server_commands_defs.h"
@@ -589,7 +590,7 @@ namespace tools
         ss << transfer_error::to_string() << ", ring size = " << (m_mixin_count + 1) << ", scanty_outs:";
         for (const auto& out: m_scanty_outs)
         {
-          ss << '\n' << cryptonote::print_money(out.first) << " - " << out.second;
+          ss << '\n' << cryptonote::token_id_to_name(out.first) << " - " << out.second;
         }
         return ss.str();
       }
@@ -645,11 +646,11 @@ namespace tools
         }
 
         ss << "\nDestinations:";
-        for (size_t i = 0; i < m_destinations.size(); ++i)
-        {
-          const cryptonote::tx_destination_entry& dst = m_destinations[i];
-          ss << "\n  " << i << ": " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress, dst.addr) << " " <<
-            cryptonote::print_money(dst.amount);
+        for (size_t i = 0; i < m_destinations.size(); ++i) {
+          const cryptonote::tx_destination_entry &dst = m_destinations[i];
+          ss << "\n  " << i
+             << ": " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress(), dst.addr)
+             << " " << cryptonote::print_money(dst.amount);
         }
 
         ss << "\nunlock_time: " << m_unlock_time;
@@ -721,7 +722,8 @@ namespace tools
           ", destinations:";
         for (const auto& dst : m_destinations)
         {
-          ss << '\n' << cryptonote::print_money(dst.amount) << " -> " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress, dst.addr);
+          ss << '\n' << cryptonote::print_money(dst.amount)
+             << " -> " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress(), dst.addr);
         }
         return ss.str();
       }
@@ -876,6 +878,13 @@ namespace tools
       {
       }
     };
+  struct get_liquidity_pools : public wallet_rpc_error
+  {
+    explicit get_liquidity_pools(std::string &&loc, const std::string &request)
+      : wallet_rpc_error(std::move(loc), "failed to get liquidity pools", request)
+    {
+    }
+  };
     //----------------------------------------------------------------------------------------------------
     struct wallet_files_doesnt_correspond : public wallet_logic_error
     {

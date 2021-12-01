@@ -131,7 +131,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
     context.d_subaddresses        = subaddresses;
     context.d_sources             = sources;
     context.d_destinations        = destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_tx_key              = tx_key;
     context.d_additional_tx_keys  = additional_tx_keys;
     bool r = construct_tx_and_get_tx_key(context, rct_txes[n]);
@@ -240,7 +240,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
   context.d_subaddresses        = subaddresses;
   context.d_sources             = sources;
   context.d_destinations        = destinations;
-  context.d_change_addr         = cryptonote::account_public_address{};
+//  context.d_change_addr         = cryptonote::account_public_address{};
   context.d_tx_key              = tx_key;
   context.d_additional_tx_keys  = additional_tx_keys;
   bool r = construct_tx_and_get_tx_key(context, tx);

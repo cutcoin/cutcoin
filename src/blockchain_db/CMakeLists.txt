@@ -64,6 +64,7 @@ target_link_libraries(blockchain_db
   PUBLIC
     common
     cncrypto
+    special_accounts
     ringct
     ${LMDB_LIBRARY}
     ${BDB_LIBRARY}

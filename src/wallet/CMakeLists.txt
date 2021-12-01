@@ -36,7 +36,8 @@ set(wallet_sources
   node_rpc_proxy.cpp
   ringdb.cpp
   wallet2.cpp
-  wallet_args.cpp)
+  wallet_args.cpp
+  gen.cpp)
 
 set(wallet_private_headers
   account_view.h
@@ -47,6 +48,7 @@ set(wallet_private_headers
   pending_tx.h
   ringdb.h
   transfer_details.h
+  tx.h
   tx_construction_data.h
   tx_creation_context.h
   unconfirmed_transfer_details.h
@@ -55,7 +57,8 @@ set(wallet_private_headers
   wallet_errors.h
   wallet_rpc_server.h
   wallet_rpc_server_commands_defs.h
-  wallet_rpc_server_error_codes.h)
+  wallet_rpc_server_error_codes.h
+  gen.h)
 
 cutcoin_private_headers(wallet
   ${wallet_private_headers})
@@ -68,6 +71,7 @@ target_link_libraries(wallet
     common
     cryptonote_core
     mnemonics
+    special_accounts
     ${LMDB_LIBRARY}
     ${Boost_CHRONO_LIBRARY}
     ${Boost_SERIALIZATION_LIBRARY}

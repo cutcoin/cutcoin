@@ -32,6 +32,8 @@
 #define CUTCOIN_TX_SOURCE_ENTRY_H
 
 #include <cryptonote_basic/amount.h>
+#include <cryptonote_basic/cryptonote_basic.h>
+#include <cryptonote_basic/dex.h>
 #include <ringct/rctOps.h>
 
 #include <boost/serialization/serialization.hpp>
@@ -50,18 +52,19 @@ struct tx_source_entry {
   std::vector <crypto::public_key> real_out_additional_tx_keys;  // incoming real tx additional public keys
   size_t                     real_output_in_tx_index;            // index in transaction outputs vector
   Amount                     amount;                             // money
+  SourceType                 o_type{SourceType::wallet};          // specify output origin: lp account or common
   bool                       rct;                                // true if the output is rct
   rct::key                   mask;                               // ringct amount mask
   rct::multisig_kLRki        multisig_kLRki;                     // multisig info
   TokenId                    token_id;                           // tx source token ID
 
-  void push_output(uint64_t idx, const crypto::public_key &k, Amount amount) {
-    outputs.emplace_back(std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::zeroCommit(amount)})));
+  void push_output(uint64_t idx, const crypto::public_key &k, Amount a) {
+    outputs.emplace_back(std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::zeroCommit(a)})));
   }
 
-  void push_output(uint64_t idx, const crypto::public_key &k, Amount amount, TokenId tid) {
+  void push_output(uint64_t idx, const crypto::public_key &k, Amount a, TokenId tid) {
     outputs.emplace_back(
-      std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::gp_zeroCommit(amount, rct::tokenIdToPoint(tid))})));
+      std::make_pair(idx, rct::ctkey({rct::pk2rct(k), rct::gp_zeroCommit(a, rct::tokenIdToPoint(tid))})));
   }
 
   BEGIN_SERIALIZE_OBJECT()

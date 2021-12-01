@@ -374,7 +374,7 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
   bool core_rpc_server::on_get_outs_bin(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res)
   {
     PERF_TIMER(on_get_outs_bin);
@@ -401,16 +401,139 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
+bool core_rpc_server::on_get_lpouts_bin(const COMMAND_RPC_GET_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_LPOUTPUTS_BIN::response& res)
+{
+  PERF_TIMER(on_get_lpouts_bin);
+  bool r;
+  if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_LPOUTPUTS_BIN>(invoke_http_mode::BIN, "/get_lpouts.bin", req, res, r))
+    return r;
+
+  res.status = "Failed";
+
+  if(!m_core.get_lpouts(req, res))
+  {
+    return true;
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
+bool core_rpc_server::on_get_mixing_lpouts_bin(const COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::response& res)
+{
+  PERF_TIMER(on_get_lpouts_bin);
+  bool r;
+  if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN>(invoke_http_mode::BIN, "/get_mixing_lpouts.bin", req, res, r))
+    return r;
+
+  res.status = "Failed";
+
+  if(!m_core.get_mixing_lpouts(req, res))
+  {
+    return true;
+  }
+
+  res.status = CORE_RPC_STATUS_OK;
+  return true;
+}
+
   bool core_rpc_server::on_get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res)
   {
     PERF_TIMER(on_get_tokens);
+    bool r;
+    if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_TOKENS>(invoke_http_mode::BIN, "/get_tokens.bin", req, res, r))
+      return r;
 
     res.status = "Failed";
 
     if(!m_core.get_tokens(req, res))
     {
       return true;
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+
+  bool core_rpc_server::on_get_liquidity_pool(const COMMAND_RPC_GET_LIQUIDITY_POOL::request& req, COMMAND_RPC_GET_LIQUIDITY_POOL::response& res)
+  {
+    PERF_TIMER(on_get_liquidity_pools);
+    bool r;
+    if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_LIQUIDITY_POOL>(invoke_http_mode::BIN, "/get_liquidity_pool.bin", req, res, r))
+      return r;
+
+    res.status = "Failed";
+
+    liqudity_pool_data_t lp_data;
+    if(!m_core.get_blockchain_storage().get_liquidity_pool(req.name, lp_data)) {
+      res.liquidity_pool = {0, 0, 0, 0, 0, 0};
+    }
+    else {
+      res.liquidity_pool = {lp_data.token1,
+                            lp_data.token2,
+                            lp_data.amount1,
+                            lp_data.amount2,
+                            lp_data.lptoken,
+                            lp_data.lpamount};
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+
+  bool core_rpc_server::on_get_liquidity_pools(const COMMAND_RPC_GET_LIQUIDITY_POOLS::request& req, COMMAND_RPC_GET_LIQUIDITY_POOLS::response& res)
+  {
+    PERF_TIMER(on_get_liquidity_pools);
+    bool r;
+    if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_LIQUIDITY_POOLS>(invoke_http_mode::BIN, "/get_liquidity_pools.bin", req, res, r))
+      return r;
+
+    res.status = "Failed";
+
+    std::vector<liqudity_pool_data_t> liquidity_pools;
+
+    if(!m_core.get_blockchain_storage().get_liquidity_pools(req.name, req.exact_match, liquidity_pools))
+    {
+      return true;
+    }
+
+    for (const liqudity_pool_data_t &lp_data: liquidity_pools) {
+      res.liquidity_pools.push_back({lp_data.token1,
+                                     lp_data.token2,
+                                     lp_data.amount1,
+                                     lp_data.amount2,
+                                     lp_data.lptoken,
+                                     lp_data.lpamount});
+    }
+
+    res.status = CORE_RPC_STATUS_OK;
+    return true;
+  }
+
+  bool core_rpc_server::on_get_pool_by_lp_token(const COMMAND_RPC_GET_POOL_BY_LP_TOKEN::request& req, COMMAND_RPC_GET_POOL_BY_LP_TOKEN::response& res)
+  {
+    PERF_TIMER(on_get_pool_by_lp_token);
+    bool r;
+    if (use_bootstrap_daemon_if_necessary<COMMAND_RPC_GET_POOL_BY_LP_TOKEN>(invoke_http_mode::BIN, "/get_pool_by_lp_token.bin", req, res, r))
+      return r;
+
+    res.status = "Failed";
+
+    cryptonote::liqudity_pool_data_t lp_data;
+    lp_data.lptoken = req.lp_token;
+
+    if(!m_core.get_blockchain_storage().get_db().get_liquidity_pool(lp_data))
+    {
+      res.liquidity_pool = {0, 0, 0, 0, 0, 0};
+    }
+    else {
+      res.liquidity_pool = {lp_data.token1,
+                            lp_data.token2,
+                            lp_data.amount1,
+                            lp_data.amount2,
+                            lp_data.lptoken,
+                            lp_data.lpamount};
     }
 
     res.status = CORE_RPC_STATUS_OK;
@@ -1846,7 +1969,7 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
   bool core_rpc_server::on_get_output_histogram(const COMMAND_RPC_GET_OUTPUT_HISTOGRAM::request& req, COMMAND_RPC_GET_OUTPUT_HISTOGRAM::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_get_output_histogram);
@@ -1877,7 +2000,7 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
   bool core_rpc_server::on_get_version(const COMMAND_RPC_GET_VERSION::request& req, COMMAND_RPC_GET_VERSION::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_get_version);
@@ -1889,7 +2012,7 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
   bool core_rpc_server::on_get_coinbase_tx_sum(const COMMAND_RPC_GET_COINBASE_TX_SUM::request& req, COMMAND_RPC_GET_COINBASE_TX_SUM::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_get_coinbase_tx_sum);
@@ -1899,7 +2022,7 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
   bool core_rpc_server::on_get_base_fee_estimate(const COMMAND_RPC_GET_BASE_FEE_ESTIMATE::request& req, COMMAND_RPC_GET_BASE_FEE_ESTIMATE::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_get_base_fee_estimate);
@@ -1912,7 +2035,7 @@ namespace cryptonote
     res.status = CORE_RPC_STATUS_OK;
     return true;
   }
-  //------------------------------------------------------------------------------------------------------------------------------
+
   bool core_rpc_server::on_get_alternate_chains(const COMMAND_RPC_GET_ALTERNATE_CHAINS::request& req, COMMAND_RPC_GET_ALTERNATE_CHAINS::response& res, epee::json_rpc::error& error_resp)
   {
     PERF_TIMER(on_get_alternate_chains);

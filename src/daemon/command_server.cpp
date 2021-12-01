@@ -262,7 +262,7 @@ t_command_server::t_command_server(
     m_command_lookup.set_handler(
       "print_tokens"
     , std::bind(&t_command_parser_executor::print_tokens, &m_parser, p::_1)
-    , "print_tokens [token_prefix]"
+    , "print_tokens [<token_prefix>] [exact_match]"
     , "Print the information about existing tokens on the blockchain."
     );
     m_command_lookup.set_handler(

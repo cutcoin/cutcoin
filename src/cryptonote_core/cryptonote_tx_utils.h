@@ -42,11 +42,11 @@
 
 namespace cryptonote {
 
-void classify_addresses(const std::vector<tx_destination_entry>       &destinations,
-                        const boost::optional<account_public_address> &change_addr,
-                        size_t                                        &num_stdaddresses,
-                        size_t                                        &num_subaddresses,
-                        account_public_address                        &single_dest_subaddress);
+void classify_addresses(const std::vector<tx_destination_entry> &destinations,
+                        const std::vector<tx_destination_entry> &change_destinations,
+                        size_t                                  &num_stdaddresses,
+                        size_t                                  &num_subaddresses,
+                        account_public_address                  &single_dest_subaddress);
 
 bool construct_miner_tx(size_t                        height,
                         size_t                        median_weight,
@@ -74,11 +74,17 @@ bool construct_tx_with_tx_key(const TxConstructionContext &context, transaction 
 
 bool construct_tx_and_get_tx_key(TxConstructionContext &context, transaction &tx);
 
-bool construct_token_tx_with_tx_key(TxConstructionContext &context, transaction &tx);
+bool construct_unified_tx_with_tx_key(const TxConstructionContext &context, transaction &tx);
 
-bool construct_token_tx_and_get_tx_key(TxConstructionContext &context, transaction &tx);
+bool construct_unified_tx_and_get_tx_key(TxConstructionContext &context, transaction &tx);
 
-void decompose_token_supply(TokenUnit token_supply, std::vector<TokenUnit> &out_amounts);
+bool construct_token_gen_tx_with_tx_key(TxConstructionContext &context, transaction &tx);
+
+bool construct_token_gen_tx_and_get_tx_key(TxConstructionContext &context, transaction &tx);
+
+void decompose_token_supply(const Amount        &token_supply,
+                            std::vector<Amount> &out_amounts,
+                            size_t               amounts_count = TOKEN_GENESIS_OUTPUTS);
 
 bool generate_genesis_block(block& bl, std::string const & genesis_tx, uint32_t nonce);
 

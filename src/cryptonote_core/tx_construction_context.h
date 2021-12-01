@@ -44,20 +44,20 @@ namespace cryptonote
 
 struct TxConstructionContext {
   account_keys                                              d_sender_account_keys;
+  account_keys                                              d_lp_account_keys;
   std::unordered_map<crypto::public_key, subaddress_index>  d_subaddresses;
   TxSources                                                 d_sources;
   std::vector<tx_destination_entry>                         d_destinations;
-  boost::optional<account_public_address>                   d_change_addr;
+  std::vector<tx_destination_entry>                         d_change_destinations;
   std::vector<uint8_t>                                      d_extra;
   uint64_t                                                  d_unlock_time;
   crypto::secret_key                                        d_tx_key;
   std::vector<crypto::secret_key>                           d_additional_tx_keys;
   TxVersion                                                 d_tx_version;
+  TxType                                                    d_tx_type;
   rct::RangeProofType                                       d_range_proof_type;
   rct::multisig_out                                        *d_msout;
   bool                                                      d_shuffle_outs;
-  bool                                                      d_tgtx;
-  bool                                                      d_hidden_supply;
 
 public:
   TxConstructionContext();

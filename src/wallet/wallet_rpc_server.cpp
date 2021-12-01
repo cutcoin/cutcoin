@@ -312,7 +312,8 @@ namespace tools
       entry.destinations.emplace_back();
       wallet_rpc::transfer_destination &td = entry.destinations.back();
       td.amount = d.amount;
-      td.address = get_account_address_as_str(m_wallet->nettype(), d.is_subaddress, d.addr);
+      td.token_id = d.token_id;
+      td.address = get_account_address_as_str(m_wallet->nettype(), d.is_subaddress(), d.addr);
     }
 
     entry.type = "out";
@@ -704,8 +705,9 @@ namespace tools
       }
 
       de.addr = info.address;
-      de.is_subaddress = info.is_subaddress;
+      de.set_subaddress(info.is_subaddress);
       de.amount = it->amount;
+      de.token_id = it->token_id;
       dsts.push_back(de);
 
       if (info.has_payment_id)
@@ -812,8 +814,9 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       }
 
       de.addr = info.address;
-      de.is_subaddress = info.is_subaddress;
+      de.set_subaddress(info.is_subaddress);
       de.amount = dst.amount;
+      de.token_id = dst.token_id;
       dsts.push_back(de);
 
       if (info.has_payment_id) {
@@ -912,6 +915,12 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
     for (const auto &dest: ptx.dests) amount += dest.amount;
     return amount;
   }
+  static uint64_t total_token_amount(const pending_tx &ptx)
+  {
+    uint64_t amount = 0;
+    for (const auto &dest: ptx.dests) if(dest.token_id != cryptonote::CUTCOIN_ID) amount += dest.amount;
+    return amount;
+  }
   //------------------------------------------------------------------------------------------------------------------------------
   template<typename Ts, typename Tu>
   bool wallet_rpc_server::fill_response(pending_tx_v          &ptx_vector,
@@ -997,7 +1006,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
   {
     for (const auto &ptx: ptx_vector) {
       // Compute amount leaving wallet in tx. By convention dests does not include change outputs
-      fill(amount, total_amount(ptx));
+      fill(amount, total_token_amount(ptx));
       fill(fee, ptx.fee);
     }
 
@@ -1315,6 +1324,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
     destination.push_back(wallet_rpc::transfer_destination());
     destination.back().amount = 0;
     destination.back().address = req.address;
+    destination.back().token_id = cryptonote::CUTCOIN_ID;
     if (!validate_transfer(destination, req.payment_id, dsts, extra, true, er))
     {
       return false;
@@ -1339,7 +1349,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
         mixin = m_wallet->adjust_mixin(req.mixin);
       }
       uint32_t priority = m_wallet->adjust_priority(req.priority);
-      pending_tx_v ptx_vector = m_wallet->create_transactions_all(req.below_amount, dsts[0].addr, dsts[0].is_subaddress, req.outputs, mixin, req.unlock_time, priority, extra, req.account_index, req.subaddr_indices);
+      pending_tx_v ptx_vector = m_wallet->create_transactions_all(req.below_amount, dsts[0].addr, dsts[0].is_subaddress(), req.outputs, mixin, req.unlock_time, priority, extra, req.account_index, req.subaddr_indices);
 
       return fill_response(ptx_vector, req.get_tx_keys, res.tx_key_list, res.amount_list, res.fee_list, res.multisig_txset, res.unsigned_txset, req.do_not_relay,
           res.tx_hash_list, req.get_tx_hex, res.tx_blob_list, req.get_tx_metadata, res.tx_metadata_list, er);
@@ -1377,6 +1387,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
     destination.push_back(wallet_rpc::transfer_destination());
     destination.back().amount = 0;
     destination.back().address = req.address;
+    destination.back().token_id = cryptonote::CUTCOIN_ID;
     if (!validate_transfer(destination, req.payment_id, dsts, extra, true, er))
     {
       return false;
@@ -1402,7 +1413,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
         mixin = m_wallet->adjust_mixin(req.mixin);
       }
       uint32_t priority = m_wallet->adjust_priority(req.priority);
-      pending_tx_v ptx_vector = m_wallet->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress, req.outputs, mixin, req.unlock_time, priority, extra);
+      pending_tx_v ptx_vector = m_wallet->create_transactions_single(ki, dsts[0].addr, dsts[0].is_subaddress(), req.outputs, mixin, req.unlock_time, priority, extra);
 
       if (ptx_vector.empty())
       {
@@ -1464,11 +1475,8 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    std::vector<tx_destination_entry> dsts;
-    std::vector<uint8_t>              extra;
-    TokenSummary                      token_summary;
+    TokenSummary token_summary;
 
-    std::string token_name;
     if (validate_token_name(req.token_name)) {
       token_summary.d_token_id = token_name_to_id(req.token_name);
     } else {
@@ -1485,11 +1493,20 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    token_summary.d_type = static_cast<cryptonote::TokenType>(req.token_type);
+    token_summary.d_type = req.token_type;
     token_summary.d_unit = COIN;
 
+    if (token_summary.d_type.is_mintable()) {
+      if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "This command is available after " + std::to_string(HF_VERSION_DEX) + " fork";
+        return false;
+      }
+    }
+
     COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
-    rq.prefix = token_name;
+    rq.prefix = req.token_name;
+    rq.exact_match = true;
     COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
     bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
     if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
@@ -1498,17 +1515,19 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    for (const auto &ts: rs.tokens) {
-      if (!token_name.compare(token_id_to_name(ts.token_id))) {
-        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
-        er.message = "Aborted, token with the specified name already exists.";
-        return false;
-      }
+    if (!rs.tokens.empty()) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Aborted, token with the specified name already exists.";
+      return false;
+    }
+
+    if (token_summary.d_type.is_mintable()) {
+      token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
     }
 
     pending_tx_v ptx_vector{};
     try {
-      m_wallet->token_genesis_transaction(0, token_summary, ptx_vector);
+      m_wallet->token_genesis_transaction(token_summary, ptx_vector, token_summary.d_token_supply);
 
       if (ptx_vector.empty()) {
         er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
@@ -1517,6 +1536,10 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       }
 
       m_wallet->commit_tx(ptx_vector);
+
+      if (token_summary.d_type.is_mintable()) {
+        res.token_secret_key = epee::string_tools::pod_to_hex(m_wallet->get_token_secret_key(token_summary.d_token_id));
+      }
     }
     catch (const std::exception &e) {
       handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
@@ -1631,6 +1654,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
     }
 
     try {
+      res.token_id = req.token_id; //TODO: return all tokens balances if 0
       AccountView v = m_wallet->get_account_view(req.account_index);
 
       v.amount(res.balance, req.token_id);
@@ -1688,6 +1712,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
     std::string err;
     cryptonote::COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
     rq.prefix = req.prefix;
+    rq.exact_match = req.exact_match;
     cryptonote::COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
     bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
     if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
@@ -1708,6 +1733,802 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
     return true;
   }
 
+  bool wallet_rpc_server::on_create_lptoken(const wallet_rpc::COMMAND_RPC_CREATE_LPTOKEN::request &req,
+                                        wallet_rpc::COMMAND_RPC_CREATE_LPTOKEN::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    if (!validate_lptoken_name(req.token_name)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits";
+      return false;
+    }
+
+    COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
+    rq.prefix = req.token_name;
+    rq.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Could not retrieve information about tokens from daemon";
+      return false;
+    }
+
+    if (!rs.tokens.empty()) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Aborted, token with the specified name already exists.";
+      return false;
+    }
+
+    TokenSummary token_summary;
+
+    token_summary.d_token_id = token_name_to_id(req.token_name);
+    token_summary.d_token_supply = MAX_TOKEN_SUPPLY / COIN;
+    token_summary.d_type = TokenType::lptoken;
+    token_summary.d_unit = COIN;
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->token_genesis_transaction(token_summary, ptx_vector, token_summary.d_token_supply);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create token genesis transaction";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_create_liquidity_pool(const wallet_rpc::COMMAND_RPC_CREATE_LIQUIDITY_POOL::request &req,
+                                        wallet_rpc::COMMAND_RPC_CREATE_LIQUIDITY_POOL::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    std::string lp_name = tokens_to_lpname(req.token_id1, req.token_id2);
+
+    if (!validate_lpname(lp_name)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Incorrect liquidity pool name";
+      return false;
+    }
+
+    {
+      COMMAND_RPC_GET_LIQUIDITY_POOLS::request rq = AUTO_VAL_INIT(rq);
+      rq.name = lp_name;
+      rq.exact_match = true;
+      COMMAND_RPC_GET_LIQUIDITY_POOLS::response rs = AUTO_VAL_INIT(rs);
+      bool r = m_wallet->invoke_http_bin("/get_liquidity_pools.bin", rq, rs);
+      if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Failed to get liquidity pools";
+        return false;
+      }
+
+      if (!rs.liquidity_pools.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "The specified liquidity pool already exists.";
+        return false;
+      }
+    }
+
+    LiquidityPoolSummary lp_summary;
+    lp_summary.d_rate.d_amount1 = req.amount1;
+    lp_summary.d_rate.d_amount2 = req.amount2;
+    lp_summary.d_token1 = req.token_id1;
+    lp_summary.d_token2 = req.token_id2;
+    lp_summary.d_lptoken = req.lptoken_id;
+
+    {
+      COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
+      rq.prefix = token_id_to_name(req.token_id1);
+      rq.exact_match = true;
+      COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
+      bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
+      if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not retrieve information about tokens from daemon";
+        return false;
+      }
+
+      if (rs.tokens.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Aborted, token with the specified name does not exist.";
+        return false;
+      }
+    }
+
+    {
+      COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
+      rq.prefix = token_id_to_name(req.token_id2);
+      rq.exact_match = true;
+      COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
+      bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
+      if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not retrieve information about tokens from daemon";
+        return false;
+      }
+
+      if (rs.tokens.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Aborted, token with the specified name does not exist.";
+        return false;
+      }
+    }
+
+    {
+      COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
+      rq.prefix = token_id_to_name(req.lptoken_id);
+      rq.exact_match = true;
+      COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
+      bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
+      if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not retrieve information about tokens from daemon";
+        return false;
+      }
+
+      if (rs.tokens.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Aborted, lp token with the specified name does not exist.";
+        return false;
+      }
+    }
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->pool_genesis_transaction(req.account_index, lp_summary, ptx_vector);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create pool genesis transaction";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_add_liquidity(const wallet_rpc::COMMAND_RPC_ADD_LIQUIDITY::request &req,
+                                        wallet_rpc::COMMAND_RPC_ADD_LIQUIDITY::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    if (!validate_lpname(req.lp_name)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Incorrect liquidity pool name";
+      return false;
+    }
+
+    COMMAND_RPC_GET_LIQUIDITY_POOLS::request rq = AUTO_VAL_INIT(rq);
+    rq.name = req.lp_name;
+    rq.exact_match = true;
+    COMMAND_RPC_GET_LIQUIDITY_POOLS::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pools.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Failed to get liquidity pools";
+      return false;
+    }
+
+    if (rs.liquidity_pools.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Could not find the specified liquidity pool.";
+      return false;
+    }
+
+    LiquidityPoolSummary old_lp;
+    LiquidityPoolSummary new_lp;
+    const auto &lp = rs.liquidity_pools[0];
+    old_lp.d_lptoken = lp.lp_token;
+    old_lp.d_rate.d_amount1 = lp.amount1;
+    old_lp.d_rate.d_amount2 = lp.amount2;
+    old_lp.d_token1 = lp.token1;
+    old_lp.d_token2 = lp.token2;
+
+    if (req.token_id == lp.token1) {
+      new_lp.d_rate.d_amount1 = req.amount;
+      new_lp.d_rate.d_amount2 = underlying_amount_from_lp_pair(old_lp.d_rate, req.amount);
+    }
+    else if (req.token_id == lp.token2) {
+      new_lp.d_rate.d_amount1 = token_amount_from_lp_pair(old_lp.d_rate, req.amount);
+      new_lp.d_rate.d_amount2 = req.amount;
+    }
+    else {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Specified token is not from liquidity pool pair.";
+      return false;
+    }
+
+    new_lp.d_lptoken = lp.lp_token;
+    new_lp.d_token1 = lp.token1;
+    new_lp.d_token2 = lp.token2;
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->pool_add_liquidity_transaction(req.account_index, old_lp, new_lp, ptx_vector);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create pool genesis transaction";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_take_liquidity(const wallet_rpc::COMMAND_RPC_TAKE_LIQUIDITY::request &req,
+                                        wallet_rpc::COMMAND_RPC_TAKE_LIQUIDITY::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    COMMAND_RPC_GET_POOL_BY_LP_TOKEN::request rq = AUTO_VAL_INIT(rq);
+    rq.lp_token = req.lptoken_id;
+    COMMAND_RPC_GET_POOL_BY_LP_TOKEN::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_pool_by_lp_token.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Failed to get liquidity pool";
+      return false;
+    }
+
+    LiquidityPoolSummary old_lp;
+    LiquidityPoolSummary new_lp;
+    const auto &lp = rs.liquidity_pool;
+    old_lp.d_lptoken = lp.lp_token;
+    old_lp.d_token1 = lp.token1;
+    old_lp.d_token2 = lp.token2;
+    old_lp.d_rate.d_amount1 = lp.amount1;
+    old_lp.d_rate.d_amount2 = lp.amount2;
+
+    new_lp.d_lptoken = lp.lp_token;
+    new_lp.d_token1 = lp.token1;
+    new_lp.d_token2 = lp.token2;
+    new_lp.d_rate.d_amount1 = lp.amount1;
+    new_lp.d_rate.d_amount2 = lp.amount2;
+    // TODO: fill new_lp.d_current
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->pool_take_liquidity_transaction(req.account_index, old_lp, new_lp, ptx_vector);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create pool genesis transaction";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_get_liquidity_pools(const wallet_rpc::COMMAND_RPC_GET_LIQUIDITY_POOLS::request &req,
+                                        wallet_rpc::COMMAND_RPC_GET_LIQUIDITY_POOLS::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    std::string err;
+    cryptonote::COMMAND_RPC_GET_LIQUIDITY_POOLS::request rq = AUTO_VAL_INIT(rq);
+    rq.name = req.name;
+    rq.exact_match = req.exact_match;
+    cryptonote::COMMAND_RPC_GET_LIQUIDITY_POOLS::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Could not retrieve information about tokens from daemon";
+      return false;
+    }
+
+    for (const auto &lp_summary: rs.liquidity_pools) {
+      wallet_rpc::COMMAND_RPC_GET_LIQUIDITY_POOLS::pool_info info;
+      info.token1   = lp_summary.token1;
+      info.token2   = lp_summary.token2;
+      info.lp_token = lp_summary.lp_token;
+      info.amount1  = lp_summary.amount1;
+      info.amount2  = lp_summary.amount2;
+      res.tokens.emplace_back(info);
+    }
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_buy(const wallet_rpc::COMMAND_RPC_BUY::request &req,
+                                        wallet_rpc::COMMAND_RPC_BUY::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    if (!validate_lpname(req.lp_name)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Incorrect liquidity pool name";
+      return false;
+    }
+
+    COMMAND_RPC_GET_LIQUIDITY_POOLS::request rq = AUTO_VAL_INIT(rq);
+    rq.name = req.lp_name;
+    rq.exact_match = true;
+    COMMAND_RPC_GET_LIQUIDITY_POOLS::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pools.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Failed to get liquidity pools";
+      return false;
+    }
+
+    if (rs.liquidity_pools.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Could not find the specified liquidity pool.";
+      return false;
+    }
+
+    LiquidityPoolSummary lp_summary;
+    const auto &lp = rs.liquidity_pools[0];
+    lp_summary.d_lptoken = lp.lp_token;
+    lp_summary.d_rate.d_amount1 = lp.amount1;
+    lp_summary.d_rate.d_amount2 = lp.amount2;
+    lp_summary.d_token1 = lp.token1;
+    lp_summary.d_token2 = lp.token2;
+
+    ExchangeTransfer et;
+    et.d_side  = ExchangeTransfer::buy;
+    et.d_token1 = lp_summary.d_token1;
+    et.d_token2 = lp_summary.d_token2;
+    et.d_amount = req.amount;
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->exchange_transfer(req.account_index, lp_summary, et, ptx_vector);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create transaction for buying";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_sell(const wallet_rpc::COMMAND_RPC_SELL::request &req,
+                                        wallet_rpc::COMMAND_RPC_SELL::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    if (!validate_lpname(req.lp_name)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Incorrect liquidity pool name";
+      return false;
+    }
+
+    COMMAND_RPC_GET_LIQUIDITY_POOLS::request rq = AUTO_VAL_INIT(rq);
+    rq.name = req.lp_name;
+    rq.exact_match = true;
+    COMMAND_RPC_GET_LIQUIDITY_POOLS::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pools.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Failed to get liquidity pools";
+      return false;
+    }
+
+    if (rs.liquidity_pools.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Could not find the specified liquidity pool.";
+      return false;
+    }
+
+    LiquidityPoolSummary lp_summary;
+    const auto &lp = rs.liquidity_pools[0];
+    lp_summary.d_lptoken = lp.lp_token;
+    lp_summary.d_rate.d_amount1 = lp.amount1;
+    lp_summary.d_rate.d_amount2 = lp.amount2;
+    lp_summary.d_token1 = lp.token1;
+    lp_summary.d_token2 = lp.token2;
+
+    ExchangeTransfer et;
+    et.d_side  = ExchangeTransfer::sell;
+    et.d_token1 = lp_summary.d_token1;
+    et.d_token2 = lp_summary.d_token2;
+    et.d_amount = req.amount;
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->exchange_transfer(req.account_index, lp_summary, et, ptx_vector);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create transaction for selling";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_mint_token_supply(const wallet_rpc::COMMAND_RPC_MINT_TOKEN_SUPPLY::request &req,
+                                        wallet_rpc::COMMAND_RPC_MINT_TOKEN_SUPPLY::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    Amount new_token_supply = 0;
+    TokenSummary token_summary;
+    token_summary.d_token_id = req.token_id;
+
+    if (is_valid_token_supply(req.token_supply)) {
+      token_summary.d_token_supply = req.token_supply;
+    } else {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Token supply is not in the allowed range";
+      return false;
+    }
+
+    COMMAND_RPC_GET_TOKENS::request rq = AUTO_VAL_INIT(rq);
+    rq.prefix = token_id_to_name(req.token_id);
+    rq.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response rs = AUTO_VAL_INIT(rs);
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", rq, rs);
+    if (!r || rs.status == CORE_RPC_STATUS_BUSY || rs.status != CORE_RPC_STATUS_OK) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Could not retrieve information about tokens from daemon";
+      return false;
+    }
+
+    if (rs.tokens.empty()) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Aborted, token with the specified name does not exists.";
+      return false;
+    }
+    else {
+      const auto &ts = rs.tokens[0];
+      if (TokenType::is_mintable(ts.type)) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Token must have 'mintable' token type.";
+        return false;
+      }
+      if (token_summary.d_token_supply <= ts.token_supply) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "New token supply must be greater than the current one.";
+        return false;
+      }
+
+      new_token_supply = token_summary.d_token_supply - ts.token_supply;
+      token_summary.d_type = ts.type;
+      token_summary.d_unit = ts.unit;
+    }
+
+    if (!req.token_secret_key.empty()) {
+      epee::wipeable_string token_key_string = req.token_secret_key;
+      if (!token_key_string.hex_to_pod(unwrap(unwrap(token_summary.d_skey)))) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Failed to parse token secret key.";
+        return false;
+      }
+    }
+    else {
+      token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
+    }
+
+    pending_tx_v ptx_vector{};
+    try {
+      m_wallet->token_genesis_transaction(token_summary, ptx_vector, new_token_supply);
+
+      if (ptx_vector.empty()) {
+        er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+        er.message = "Could not create token genesis transaction";
+        return false;
+      }
+
+      m_wallet->commit_tx(ptx_vector);
+    }
+    catch (const std::exception &e) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    } catch (...) {
+      handle_rpc_exception(std::current_exception(), er, WALLET_RPC_ERROR_CODE_GENERIC_TRANSFER_ERROR);
+      return false;
+    }
+
+    if (ptx_vector.size() != 1) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Transaction was not created";
+      return false;
+    }
+
+    res.fee = ptx_vector[0].fee;
+    res.tx_blob = tx_to_blob(ptx_vector[0].tx);
+    res.tx_id = epee::string_tools::pod_to_hex(get_transaction_hash(ptx_vector[0].tx));
+
+    return true;
+  }
+
+  bool wallet_rpc_server::on_get_mintable_token_key(const wallet_rpc::COMMAND_RPC_GET_MINTABLE_TOKEN_KEY::request &req,
+                                        wallet_rpc::COMMAND_RPC_GET_MINTABLE_TOKEN_KEY::response      &res,
+                                        epee::json_rpc::error                             &er)
+  {
+    using namespace cryptonote;
+
+    if (!m_wallet) {
+      return not_open(er);
+    }
+
+    if (m_restricted)
+    {
+      er.code = WALLET_RPC_ERROR_CODE_DENIED;
+      er.message = "Command unavailable in restricted mode.";
+      return false;
+    }
+
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
+      er.message = "Fork version is less then " + std::to_string(HF_VERSION_DEX);
+      return false;
+    }
+
+    res.token_secret_key = epee::string_tools::pod_to_hex(m_wallet->get_token_secret_key(req.token_id));
+
+    return true;
+  }
   //------------------------------------------------------------------------------------------------------------------------------
   bool wallet_rpc_server::on_relay_tx(const wallet_rpc::COMMAND_RPC_RELAY_TX::request& req, wallet_rpc::COMMAND_RPC_RELAY_TX::response& res, epee::json_rpc::error& er)
   {

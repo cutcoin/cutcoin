@@ -4217,7 +4217,7 @@ bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liqudity_poo
 
   std::string lp_name = tokens_to_lpname(token1, token2);
   liqudity_pool_data_t lp_data{};
-  if (!get_liquidity_pool(token1, token2, lp_data)) {
+  if (!get_liquidity_pool(tokens_to_lpname(token1, token2), lp_data)) {
     LOG_PRINT_L2("Could not find the liquidity pool matching the tokens in the exchange transaction");
     return false;
   }

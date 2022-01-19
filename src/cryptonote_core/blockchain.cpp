@@ -5558,13 +5558,6 @@ leave:
     goto leave;
   }
 
-  if (liquidity_pools_update.size() > 1) {
-    MERROR_VER("Block contains inconsistent liquidity pools info.");
-    bvc.m_verifivation_failed = true;
-    return_tx_to_pool(txs);
-    goto leave;
-  }
-
   m_blocks_txs_check.clear();
 
   TIME_MEASURE_START(vmt);

@@ -118,6 +118,10 @@ bool pools_to_composite_exchange_transfer(std::vector<ExchangeTransfer>    &exch
     return false;
   }
 
+  if (token1 == token2) {
+    return false;
+  }
+
   if (pools[0].d_token1 != token1 && pools[0].d_token2 != token1) {
     return false;
   }
@@ -152,64 +156,79 @@ bool pools_to_composite_exchange_transfer(std::vector<ExchangeTransfer>    &exch
     return true;
   }
 
-  TokenId t1 = token1;
-  TokenId t2 = token2;
-
-  for (size_t i = 0; i < pools.size(); ++i) {
-    // use original pool to copy the data
-    ExchangeTransfer et;
-    et.d_token1    = pools[i].d_token1;
-    et.d_token2    = pools[i].d_token2;
-    et.d_old_ratio = pools[i].d_ratio;
-
-    // use pool copy to invert if needed
-    if (t1 == pools[i].d_token1) {
-      const LiquidityPool &p = pools[i];
-      if (side == ExchangeSide::buy) {
-        amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
-        et.d_new_ratio = {p.d_ratio.d_amount1 - amount1, p.d_ratio.d_amount1 + amount2};
-      } else {
-        amount2 = derive_sell_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
-        et.d_new_ratio = {p.d_ratio.d_amount1 + amount1, p.d_ratio.d_amount1 - amount2};
+  std::vector<LiquidityPool> pools_copy;
+  TokenId leading_token = token1;
+  for (const auto p: pools) {
+      if (leading_token == p.d_token1) {
+        pools_copy.push_back(p);
+        leading_token = p.d_token2;
       }
-      t1      = p.d_token1;
-      amount1 = amount2;
-    }
-    if (t1 == pools[i].d_token2) {
-      const LiquidityPool p = inverse(pools[i]);
-      if (side == ExchangeSide::buy) {
-        amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
-        et.d_new_ratio = {p.d_ratio.d_amount1 - amount2, p.d_ratio.d_amount1 + amount1};
+      else if (leading_token == p.d_token2) {
+        pools_copy.emplace_back(inverse(p));
+        leading_token = p.d_token1;
       }
       else {
-        amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
-        et.d_new_ratio = {p.d_ratio.d_amount1 + amount2, p.d_ratio.d_amount1 - amount1};
+        return false;
       }
-      t1      = p.d_token1;
-      amount1 = amount2;
+  }
+
+  for (size_t i = 0; i < pools_copy.size(); ++i) {
+    const LiquidityPool &p = pools[i];
+    const LiquidityPool &pc = pools_copy[i];
+    ExchangeTransfer et{};
+
+    et.d_token1    = p.d_token1;
+    et.d_token2    = p.d_token2;
+    et.d_old_ratio = p.d_ratio;
+
+    if (side == ExchangeSide::buy) {
+      amount2 = derive_buy_amount_from_lp_pair(pc.d_ratio, amount1, pool_interest);
+      if (pc.d_ratio.d_amount1 < amount1 || pc.d_ratio.d_amount2 + amount2 < pc.d_ratio.d_amount2) return false;
+      if (pc == pools[i]) {
+        et.d_new_ratio = {pc.d_ratio.d_amount1 - amount1, pc.d_ratio.d_amount2 + amount2};
+      }
+      else {
+        et.d_new_ratio = {pc.d_ratio.d_amount2 + amount2, pc.d_ratio.d_amount1 - amount1};
+      }
     }
+    else {
+      amount2 = derive_sell_amount_from_lp_pair(pc.d_ratio, amount1, pool_interest);
+      if (pc.d_ratio.d_amount1 + amount1 < pc.d_ratio.d_amount1 || pc.d_ratio.d_amount2 < amount2) return false;
+      if (pc == pools[i]) {
+        et.d_new_ratio = {pc.d_ratio.d_amount1 + amount1, pc.d_ratio.d_amount2 - amount2};
+      }
+      else {
+        et.d_new_ratio = {pc.d_ratio.d_amount2 - amount2, pc.d_ratio.d_amount1 + amount1};
+      }
+    }
+
+    amount1 = amount2;
+
     exchange_transfers.emplace_back(et);
   }
 
   Amount old_amount1, old_amount2;
   Amount new_amount1, new_amount2;
 
-  if (token1 == exchange_transfers[0].d_token1) {
-    old_amount1 = exchange_transfers[0].d_old_ratio.d_amount1;
-    new_amount1 = exchange_transfers[0].d_new_ratio.d_amount1;
+  const ExchangeTransfer &etf = exchange_transfers[0];
+  const ExchangeTransfer &etl = exchange_transfers[exchange_transfers.size() - 1];
+
+  if (token1 == etf.d_token1) {
+    old_amount1 = etf.d_old_ratio.d_amount1;
+    new_amount1 = etf.d_new_ratio.d_amount1;
   }
   else {
-    old_amount1 = exchange_transfers[0].d_old_ratio.d_amount2;
-    new_amount1 = exchange_transfers[0].d_new_ratio.d_amount2;
+    old_amount1 = etf.d_old_ratio.d_amount2;
+    new_amount1 = etf.d_new_ratio.d_amount2;
   }
 
-  if (token2 == exchange_transfers[exchange_transfers.size() - 1].d_token1) {
-    old_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_old_ratio.d_amount1;
-    new_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_new_ratio.d_amount1;
+  if (token2 == etl.d_token1) {
+    old_amount2 = etl.d_old_ratio.d_amount1;
+    new_amount2 = etl.d_new_ratio.d_amount1;
   }
   else {
-    old_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_old_ratio.d_amount2;
-    new_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_new_ratio.d_amount2;
+    old_amount2 = etl.d_old_ratio.d_amount2;
+    new_amount2 = etl.d_new_ratio.d_amount2;
   }
 
   summary = {

@@ -2264,7 +2264,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
 
     pending_tx_v ptx_vector{};
     try {
-      m_wallet->exchange_transfer(req.account_index, lp_summary, et, ptx_vector);
+      m_wallet->exchange_transfer(req.account_index, et, ptx_vector);
 
       if (ptx_vector.empty()) {
         er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
@@ -2357,7 +2357,7 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
 
     pending_tx_v ptx_vector{};
     try {
-      m_wallet->exchange_transfer(req.account_index, lp_summary, et, ptx_vector);
+      m_wallet->exchange_transfer(req.account_index, et, ptx_vector);
 
       if (ptx_vector.empty()) {
         er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;

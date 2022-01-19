@@ -669,16 +669,15 @@ namespace tools
                                          size_t                           custom_fake_outs_count = 0);
 
     void exchange_transfer(const uint32_t                   subaddress_account,
-                           const cryptonote::LiquidityPool &lp_summary,
                            cryptonote::CompositeTransfer   &composite_transfer,
                            pending_tx_v                    &ptx_vector,
                            size_t                           custom_fake_outs_count = 0);
 
     void exchange_rate(std::vector<cryptonote::TokenId> &hops,
                        double                           &final_rate,
-                       const std::string &name1,
-                       const std::string &name2,
-                       const cryptonote::Amount &amount);
+                       const cryptonote::TokenId        &source,
+                       const cryptonote::TokenId        &target,
+                       const cryptonote::Amount         &amount);
 
     pending_tx_v exchange_basic(const std::vector<cryptonote::tx_destination_entry>  &destinations,
                                 const size_t                                          fake_outs_count,

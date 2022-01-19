@@ -2475,9 +2475,9 @@ simple_wallet::simple_wallet()
                            std::bind(&simple_wallet::take_liquidity, this, std::placeholders::_1),
                            tr("take_liquidity <lp_name> <lptoken_name=N>"),
                            tr("Take liquidity from the pool with the specified 'lp_name'. You must specify one of the tokens from the pool pair and its amount."));
-  m_cmd_binder.set_handler("get_liquidity_pools",
-                           std::bind(&simple_wallet::get_liquidity_pools, this, std::placeholders::_1),
-                           tr("get_liquidity_pools [prefix] [exact_match]"),
+  m_cmd_binder.set_handler("liquidity_pools",
+                           std::bind(&simple_wallet::liquidity_pools, this, std::placeholders::_1),
+                           tr("liquidity_pools [prefix] [exact_match]"),
                            tr("List liquidity pools that have the names starting from the optional 'prefix'."));
   m_cmd_binder.set_handler("buy",
                            std::bind(&simple_wallet::buy, this, std::placeholders::_1),
@@ -2487,6 +2487,14 @@ simple_wallet::simple_wallet()
                            std::bind(&simple_wallet::sell, this, std::placeholders::_1),
                            tr("sell <token_pair_name> <N>"),
                            tr("Sell the specified amount of the first token in the liquidity pool pair. Example: as the result of 'buy T1/cutcoin 1' command, you send 1 T1 token from 'T1/cutcoin' pool using the current ratio."));
+  m_cmd_binder.set_handler("cross_buy",
+                           std::bind(&simple_wallet::cross_buy, this, std::placeholders::_1),
+                           tr("cross_buy <token_pair_name> <N>"),
+                           tr("buy the specified amount of the first token in the pair using one or several liquidity pools. Example: as the result of 'buy T1/cutcoin 1' command, you receive 1 T1 token from 'T1/cutcoin' pool using the current ratio."));
+  m_cmd_binder.set_handler("cross_sell",
+                           std::bind(&simple_wallet::cross_sell, this, std::placeholders::_1),
+                           tr("cross_sell <token_pair_name> <N>"),
+                           tr("sell the specified amount of the first token in the pair using one or several liquidity pools. Example: as the result of 'buy T1/cutcoin 1' command, you send 1 T1 token from 'T1/cutcoin' pool using the current ratio."));
   m_cmd_binder.set_handler("exchange_rate",
                            std::bind(&simple_wallet::exchange_rate, this, std::placeholders::_1),
                            tr("exchange_rate <token_to_sell> <token_to_buy> <amount>"),
@@ -7130,11 +7138,11 @@ bool simple_wallet::take_liquidity(const std::vector<std::string> &args)
   return true;
 }
 
-bool simple_wallet::get_liquidity_pools(const std::vector<std::string> &args)
+bool simple_wallet::liquidity_pools(const std::vector<std::string> &args)
 {
   using namespace cryptonote;
 
-  //  "get_liquidity_pools [name] [exact_match]"
+  //  "liquidity_pools [name] [exact_match]"
   if (!try_connect_to_daemon()) {
     message_writer() << "No connection to the daemon";
     return true;
@@ -7278,7 +7286,7 @@ bool simple_wallet::buy(const std::vector<std::string> &args)
 
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->exchange_transfer(m_current_subaddress_account, lp_summary, et, ptx_vector);
+    m_wallet->exchange_transfer(m_current_subaddress_account, et, ptx_vector);
 
     if (ptx_vector.size() != 1) {
       fail_msg_writer() << tr("Could not create transaction for buying");
@@ -7407,7 +7415,7 @@ bool simple_wallet::sell(const std::vector<std::string> &args)
 
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->exchange_transfer(m_current_subaddress_account, lp_summary, et, ptx_vector);
+    m_wallet->exchange_transfer(m_current_subaddress_account, et, ptx_vector);
 
     if (ptx_vector.size() != 1) {
       fail_msg_writer() << tr("Could not create transaction for selling");
@@ -7432,6 +7440,232 @@ bool simple_wallet::sell(const std::vector<std::string> &args)
               % token_id_to_name(lp_summary.d_token2) << std::endl;
     prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
               % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for selling.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::cross_buy(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "cross_buy <token_pair_name> <N>"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_name'"))).str();
+    return true;
+  }
+
+  std::string lp_name;
+  if(parse_lp_name(local_args[0], lp_name)) {
+    local_args.erase(local_args.begin());
+  } else {
+    fail_msg_writer() << (boost::format(tr("Incorrect liquidity pool name"))).str();
+    return true;
+  }
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: amount to buy"))).str();
+    return true;
+  }
+
+  Amount amount;
+  bool ok = cryptonote::parse_amount(amount, local_args[0]);
+  if(!ok || 0 == amount) {
+    fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
+                      << ", " << tr("expected number from 0 to ") << print_money(std::numeric_limits<uint64_t>::max());
+    return true;
+  }
+
+  TokenId token1, token2;
+  {
+    bool res = lpname_to_tokens(lp_name, token1, token2);
+    if (!res) {
+      fail_msg_writer() << (boost::format(tr("Wrong token names"))).str();
+      return true;
+    }
+  }
+
+  CompositeTransfer et{};
+  et.d_side          = ExchangeSide::buy;
+  et.d_token1        = token1;
+  et.d_token2        = token2;
+  et.d_amount        = amount;
+  et.d_pool_interest = config::DEX_FEE_PER_MILLE;
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->exchange_transfer(m_current_subaddress_account, et, ptx_vector);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for buying");
+      return true;
+    }
+
+    std::stringstream prompt;
+//    prompt << boost::format(tr("By accepting this transaction you are buying %s "
+//                               "with exchange rate %d."))
+//              % token_id_to_name(token1)
+//              % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+//    Amount deposit = derive_buy_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest);
+//    prompt << boost::format(tr("You are sending to the pool %s %s"))
+//              % print_money(deposit) % token_id_to_name(lp_summary.d_token2) << std::endl;
+//    prompt << boost::format(tr("and receiving to the wallet %s %s"))
+//              % print_money(et.d_amount) % token_id_to_name(lp_summary.d_token1) << std::endl;
+//    prompt << boost::format(tr("price impact %s"))
+//              % buy_price_impact(lp_summary.d_ratio, et.d_amount, et.d_pool_interest) << std::endl;
+//    prompt << boost::format(tr("pool interest %s %s."))
+//              % print_money(derive_buy_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest) -
+//                            derive_buy_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, 0))
+//              % token_id_to_name(lp_summary.d_token2) << std::endl;
+//    prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
+//              % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for buying.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::cross_sell(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "cross_sell <token_pair_name> <N>"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_name'"))).str();
+    return true;
+  }
+
+  std::string lp_name;
+  if(parse_lp_name(local_args[0], lp_name)) {
+    local_args.erase(local_args.begin());
+  } else {
+    fail_msg_writer() << (boost::format(tr("Incorrect liquidity pool name"))).str();
+    return true;
+  }
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: amount to sell"))).str();
+    return true;
+  }
+
+  Amount amount;
+  bool ok = cryptonote::parse_amount(amount, local_args[0]);
+  if(!ok || 0 == amount) {
+    fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
+                      << ", " << tr("expected number from 0 to ") << print_money(std::numeric_limits<uint64_t>::max());
+    return true;
+  }
+
+  TokenId token1, token2;
+  {
+    bool res = lpname_to_tokens(lp_name, token1, token2);
+    if (!res) {
+      fail_msg_writer() << (boost::format(tr("Wrong token names"))).str();
+      return true;
+    }
+  }
+
+  CompositeTransfer et{};
+  et.d_side          = ExchangeSide::sell;
+  et.d_token1        = token1;
+  et.d_token2        = token2;
+  et.d_amount        = amount;
+  et.d_pool_interest = config::DEX_FEE_PER_MILLE;
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->exchange_transfer(m_current_subaddress_account, et, ptx_vector);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for selling");
+      return true;
+    }
+
+    std::stringstream prompt;
+//    prompt << boost::format(tr("By accepting this transaction you are selling %s "
+//                               "with exchange rate %d."))
+//              % token_id_to_name(lp_summary.d_token1)
+//              % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+//    Amount withdrawal = derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest);
+//    prompt << boost::format(tr("You are receiving to the wallet %s %s"))
+//              % print_money(withdrawal) % token_id_to_name(lp_summary.d_token2) << std::endl;
+//    prompt << boost::format(tr("and sending to the pool %s %s"))
+//              % print_money(et.d_amount) % token_id_to_name(lp_summary.d_token1) << std::endl;
+//    prompt << boost::format(tr("price impact %s"))
+//              % sell_price_impact(lp_summary.d_ratio, et.d_amount, et.d_pool_interest) << std::endl;
+//    prompt << boost::format(tr("pool interest %s %s."))
+//              % print_money(derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, 0) -
+//                            derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest))
+//              % token_id_to_name(lp_summary.d_token2) << std::endl;
+//    prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
+//              % print_money(ptx_vector[0].fee) << std::endl;
     prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
 
     std::string accepted = input_line(prompt.str());
@@ -7521,7 +7755,7 @@ bool simple_wallet::exchange_rate(const std::vector<std::string> &args)
   double               final_rate;
 
   try {
-    m_wallet->exchange_rate(hops, final_rate, token1, token2, amount);
+    m_wallet->exchange_rate(hops, final_rate, token_name_to_id(token1), token_name_to_id(token2), amount);
   }
   catch (const std::exception &e) {
     handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());

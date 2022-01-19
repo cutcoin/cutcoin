@@ -15451,7 +15451,6 @@ void wallet2::pool_take_liquidity_transaction(const uint32_t                   s
 }
 
 void wallet2::exchange_transfer(const uint32_t                   subaddress_account,
-                                const cryptonote::LiquidityPool &lp_summary,
                                 cryptonote::CompositeTransfer   &composite_transfer,
                                 pending_tx_v                    &ptx_vector,
                                 size_t                           custom_fake_outs_count)
@@ -15470,31 +15469,75 @@ void wallet2::exchange_transfer(const uint32_t                   subaddress_acco
 
   tx_extra_exchange_data exchange_data{};
 
-  if (composite_transfer.d_side == ExchangeSide::buy) {
-    THROW_WALLET_EXCEPTION_IF(lp_summary.d_ratio.d_amount1 < composite_transfer.d_amount,
+  std::vector<ExchangeTransfer> exchange_transfers;
+  ExchangeTransfer summary;
+
+  {
+    std::vector<TokenId> hops;
+    double final_rate;
+    exchange_rate(hops,
+                  final_rate,
+                  composite_transfer.d_token1,
+                  composite_transfer.d_token2,
+                  composite_transfer.d_amount);
+
+    THROW_WALLET_EXCEPTION_IF(hops.empty(), wallet_internal_error, "'exchange_transfer': no way to exchange.");
+    THROW_WALLET_EXCEPTION_IF(hops.size() < 2, wallet_internal_error, "'exchange_transfer': unknown error.");
+
+    std::vector<LiquidityPool> pools;
+
+    for (size_t i = 0; i < hops.size() - 1; ++i) {
+      std::string pool_name = tokens_to_lpname(hops[i], hops[i + 1]);
+
+      COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+      COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+      req.name = pool_name;
+
+      bool r = invoke_http_bin("/get_liquidity_pool.bin", req, res);
+      THROW_WALLET_EXCEPTION_IF(!r, error::no_connection_to_daemon, "'exchange_transfer'");
+      THROW_WALLET_EXCEPTION_IF(res.status == CORE_RPC_STATUS_BUSY, error::daemon_busy, "'exchange_transfer'");
+      THROW_WALLET_EXCEPTION_IF(res.status != CORE_RPC_STATUS_OK, error::wallet_internal_error, "'exchange_transfer'");
+
+      pools.push_back({res.liquidity_pool.lp_token,
+                       res.liquidity_pool.token1,
+                       res.liquidity_pool.token2,
+                       res.liquidity_pool.lp_amount,
+                       {res.liquidity_pool.amount1, res.liquidity_pool.amount2}});
+    }
+
+    bool res = pools_to_composite_exchange_transfer(exchange_transfers,
+                                                    summary,
+                                                    composite_transfer.d_token1,
+                                                    composite_transfer.d_token2,
+                                                    composite_transfer.d_amount,
+                                                    composite_transfer.d_pool_interest,
+                                                    pools,
+                                                    composite_transfer.d_side);
+
+    THROW_WALLET_EXCEPTION_IF(!res,
                               wallet_internal_error,
-                              "'exchange_transfer': too big amount to change.");
+                              "'exchange_transfer': composite exchange transfer is not constructed.");
 
-//    bool res = pools_to_composite_exchange_transfer(std::vector<ExchangeTransfer>    &exchange_transfers,
-//                                              ExchangeTransfer                 &summary,
-//                                              const TokenId                    &token1,
-//                                              const TokenId                    &token2,
-//                                              const Amount                     &amount,
-//                                              const Amount                     &pool_interest,
-//                                              const std::vector<LiquidityPool> &pools,
-//                                              const ExchangeSide               &side)
+    THROW_WALLET_EXCEPTION_IF(exchange_transfers.empty(),
+                              wallet_internal_error,
+                              "'exchange_transfer': composite exchange transfer is not constructed.");
+  }
 
+  for (const ExchangeTransfer &et: exchange_transfers) {
+    exchange_data.data.emplace_back(et);
+  }
+
+  if (summary.d_old_ratio.d_amount1 > summary.d_new_ratio.d_amount1) {
+    // buy
     token1_destination.addr     = m_account.get_keys().m_account_address;
-    token1_destination.amount   = composite_transfer.d_amount;
-    token1_destination.token_id = composite_transfer.d_token1;
+    token1_destination.amount   = summary.d_old_ratio.d_amount1 - summary.d_new_ratio.d_amount1;
+    token1_destination.token_id = summary.d_token1;
     token1_destination.set_subaddress(false);
     token1_destination.set_send_change_to_myself(false);
     token1_destination.set_lpw_origin(true);
 
     token2_destination.addr     = LpAccount::get().get_keys().m_account_address;
-    token2_destination.amount   = derive_buy_amount_from_lp_pair(lp_summary.d_ratio,
-                                                                 composite_transfer.d_amount,
-                                                                 composite_transfer.d_pool_interest);
+    token2_destination.amount   = summary.d_new_ratio.d_amount2 - summary.d_old_ratio.d_amount2;
     token2_destination.token_id = composite_transfer.d_token2;
     token2_destination.set_subaddress(false);
     token2_destination.set_send_change_to_myself(true);
@@ -15503,98 +15546,34 @@ void wallet2::exchange_transfer(const uint32_t                   subaddress_acco
     THROW_WALLET_EXCEPTION_IF(token2_destination.amount == 0,
                               wallet_internal_error,
                               "'exchange_transfer': too small amount to change.");
-
-    ExchangeTransfer et;
-    et.d_token1    = composite_transfer.d_token1;
-    et.d_token2    = composite_transfer.d_token2;
-    et.d_old_ratio = lp_summary.d_ratio;
-    et.d_new_ratio = {lp_summary.d_ratio.d_amount1 - token1_destination.amount,
-                      lp_summary.d_ratio.d_amount2 + token2_destination.amount};
-    exchange_data.data.emplace_back(et);
-
-    destinations.emplace_back(token1_destination);
-    destinations.emplace_back(token2_destination);
   }
   else {
-    THROW_WALLET_EXCEPTION_IF(lp_summary.d_ratio.d_amount1 + composite_transfer.d_amount < lp_summary.d_ratio.d_amount1,
-                              wallet_internal_error,
-                              "'exchange_transfer': too big amount to change.");
-
+    //sell
     token1_destination.addr     = LpAccount::get().get_keys().m_account_address;
-    token1_destination.amount   = composite_transfer.d_amount;
-    token1_destination.token_id = composite_transfer.d_token1;
+    token1_destination.amount   = summary.d_new_ratio.d_amount1 - summary.d_old_ratio.d_amount1;
+    token1_destination.token_id = summary.d_token1;
     token1_destination.set_subaddress(false);
     token1_destination.set_send_change_to_myself(true);
     token1_destination.set_lpw_origin(false);
 
     token2_destination.addr     = m_account.get_keys().m_account_address;
-    token2_destination.amount   = derive_sell_amount_from_lp_pair(lp_summary.d_ratio,
-                                                                  composite_transfer.d_amount,
-                                                                  composite_transfer.d_pool_interest);
+    token2_destination.amount   = summary.d_old_ratio.d_amount2 - summary.d_new_ratio.d_amount2;
 
     THROW_WALLET_EXCEPTION_IF(token2_destination.amount == 0,
                               error::wallet_internal_error,
                               "'exchange_transfer': too small amount to change.");
 
-    token2_destination.token_id = composite_transfer.d_token2;
+    token2_destination.token_id = summary.d_token2;
     token2_destination.set_subaddress(false);
     token2_destination.set_send_change_to_myself(false);
     token2_destination.set_lpw_origin(true);
-
-    ExchangeTransfer et;
-    et.d_token1    = composite_transfer.d_token1;
-    et.d_token2    = composite_transfer.d_token2;
-    et.d_old_ratio = lp_summary.d_ratio;
-    et.d_new_ratio = {lp_summary.d_ratio.d_amount1 + token1_destination.amount,
-                      lp_summary.d_ratio.d_amount2 - token2_destination.amount};
-    exchange_data.data.emplace_back(et);
-
-    destinations.emplace_back(token1_destination);
-    destinations.emplace_back(token2_destination);
   }
 
-  {
-    tx_destination_entry cutcoin_destination;
-    cutcoin_destination.addr     = {};
-    cutcoin_destination.amount   = 0;
-    cutcoin_destination.token_id = CUTCOIN_ID;
-    token2_destination.set_subaddress(false);
-    token2_destination.set_send_change_to_myself(true);
-    token2_destination.set_lpw_origin(false);
-    destinations.emplace_back(cutcoin_destination);
-  }
+  destinations.emplace_back(token1_destination);
+  destinations.emplace_back(token2_destination);
 
-  uint64_t fake_outs_count = custom_fake_outs_count == 0 ? default_mixin(): custom_fake_outs_count;
-  fake_outs_count = adjust_mixin(fake_outs_count);
 
-  uint64_t unlock_time = config::TOKEN_UNLOCK_TIME;
 
-  std::vector<uint8_t> extra;
-
-  THROW_WALLET_EXCEPTION_IF(!add_exchange_data_to_tx_extra(extra, exchange_data),
-                            error::wallet_internal_error,
-                            "Cannot write 'exchange_data' to tx extra field.");
-
-  ptx_vector = exchange_basic(destinations, fake_outs_count, unlock_time, extra);
-
-  THROW_WALLET_EXCEPTION_IF(ptx_vector.size() != 1,
-                            error::wallet_internal_error,
-                            "'create_token' command issued # of txs != 1.");
-
-//  using namespace cryptonote;
-//  using namespace error;
-//
-//  THROW_WALLET_EXCEPTION_IF(m_light_wallet,
-//                            wallet_internal_error,
-//                            "Exchange transfer is not possible in light wallet!");
-//
-//  std::vector<cryptonote::tx_destination_entry> destinations;
-//
-//  tx_destination_entry token1_destination;
-//  tx_destination_entry token2_destination;
-//
-//  tx_extra_exchange_data exchange_data{};
-//
 //  if (composite_transfer.d_side == ExchangeSide::buy) {
 //    THROW_WALLET_EXCEPTION_IF(lp_summary.d_ratio.d_amount1 < composite_transfer.d_amount,
 //                              wallet_internal_error,
@@ -15632,7 +15611,7 @@ void wallet2::exchange_transfer(const uint32_t                   subaddress_acco
 //    destinations.emplace_back(token2_destination);
 //  }
 //  else {
-//    THROW_WALLET_EXCEPTION_IF(lp_summary.d_ratio.d_amount1 + composite_transferexchange_transfer.d_amount < lp_summary.d_ratio.d_amount1,
+//    THROW_WALLET_EXCEPTION_IF(lp_summary.d_ratio.d_amount1 + composite_transfer.d_amount < lp_summary.d_ratio.d_amount1,
 //                              wallet_internal_error,
 //                              "'exchange_transfer': too big amount to change.");
 //
@@ -15668,41 +15647,40 @@ void wallet2::exchange_transfer(const uint32_t                   subaddress_acco
 //    destinations.emplace_back(token1_destination);
 //    destinations.emplace_back(token2_destination);
 //  }
-//
-//  {
-//    tx_destination_entry cutcoin_destination;
-//    cutcoin_destination.addr     = {};
-//    cutcoin_destination.amount   = 0;
-//    cutcoin_destination.token_id = CUTCOIN_ID;
-//    token2_destination.set_subaddress(false);
-//    token2_destination.set_send_change_to_myself(true);
-//    token2_destination.set_lpw_origin(false);
-//    destinations.emplace_back(cutcoin_destination);
-//  }
-//
-//  uint64_t fake_outs_count = custom_fake_outs_count == 0 ? default_mixin(): custom_fake_outs_count;
-//  fake_outs_count = adjust_mixin(fake_outs_count);
-//
-//  uint64_t unlock_time = config::TOKEN_UNLOCK_TIME;
-//
-//  std::vector<uint8_t> extra;
-//
-//  THROW_WALLET_EXCEPTION_IF(!add_exchange_data_to_tx_extra(extra, exchange_data),
-//                            error::wallet_internal_error,
-//                            "Cannot write 'exchange_data' to tx extra field.");
-//
-//  ptx_vector = exchange_basic(destinations, fake_outs_count, unlock_time, extra);
-//
-//  THROW_WALLET_EXCEPTION_IF(ptx_vector.size() != 1,
-//                            error::wallet_internal_error,
-//                            "'create_token' command issued # of txs != 1.");
-}
 
+  {
+    tx_destination_entry cutcoin_destination;
+    cutcoin_destination.addr     = {};
+    cutcoin_destination.amount   = 0;
+    cutcoin_destination.token_id = CUTCOIN_ID;
+    token2_destination.set_subaddress(false);
+    token2_destination.set_send_change_to_myself(true);
+    token2_destination.set_lpw_origin(false);
+    destinations.emplace_back(cutcoin_destination);
+  }
+
+  uint64_t fake_outs_count = custom_fake_outs_count == 0 ? default_mixin(): custom_fake_outs_count;
+  fake_outs_count = adjust_mixin(fake_outs_count);
+
+  uint64_t unlock_time = config::TOKEN_UNLOCK_TIME;
+
+  std::vector<uint8_t> extra;
+
+  THROW_WALLET_EXCEPTION_IF(!add_exchange_data_to_tx_extra(extra, exchange_data),
+                            error::wallet_internal_error,
+                            "Cannot write 'exchange_data' to tx extra field.");
+
+  ptx_vector = exchange_basic(destinations, fake_outs_count, unlock_time, extra);
+
+  THROW_WALLET_EXCEPTION_IF(ptx_vector.size() != 1,
+                            error::wallet_internal_error,
+                            "'create_token' command issued # of txs != 1.");
+}
 
 void wallet2::exchange_rate(std::vector<cryptonote::TokenId> &hops,
                             double                           &final_rate,
-                            const std::string                &name1,
-                            const std::string                &name2,
+                            const cryptonote::TokenId        &source,
+                            const cryptonote::TokenId        &target,
                             const cryptonote::Amount         &amount)
 {
   using namespace cryptonote;
@@ -15711,9 +15689,6 @@ void wallet2::exchange_rate(std::vector<cryptonote::TokenId> &hops,
   using NodeInfo = std::pair<TokenId, double>;
 
   hops.clear();
-
-  TokenId source = token_name_to_id(name1);
-  TokenId target = token_name_to_id(name2);
 
   // tokens
   std::unordered_map<TokenId, double> verticies;

@@ -30,6 +30,7 @@
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/dex.h"
 #include <cryptonote_core/cryptonote_tx_utils.h>
 #include "cryptonote_core/tx_construction_context.h"
 #include "cryptonote_core/tx_destination_entry.h"
@@ -54,119 +55,119 @@ using namespace cryptonote;
 
 void generate_dummy(transaction &tx, const int *out_idx, int mixin, uint64_t amount_paid)
 {
-  uint64_t amount             = 30000000000000;
-  uint64_t fake_outputs_count = 10;
-  uint64_t ts_start           = 1234567890;
-
-  cryptonote::account_base miner_account;
-  miner_account.generate();
-
-  MAKE_GENESIS_BLOCK(blk_0, miner_account, ts_start);
-
-  // create 4 miner accounts, and have them mine the next 4 blocks
-  const cryptonote::block *prev_block = &blk_0;
-  cryptonote::block blocks[fake_outputs_count];
-  for (size_t n = 0; n < fake_outputs_count; ++n) {
-    ASSERT_TRUE(generator.construct_block_manually(
-      blocks[n], *prev_block, miner_account,
-      test_generator::bf_major_ver | test_generator::bf_minor_ver | test_generator::bf_timestamp | test_generator::bf_hf_version,
-      2, 2, prev_block->timestamp + DIFFICULTY_BLOCKS_ESTIMATE_TIMESPAN * 2, // v2 has blocks twice as long
-      crypto::hash(), 0, transaction(), std::vector<crypto::hash>(), 0, 0, 2));
-    prev_block = blocks + n;
-    LOG_PRINT_L0("Initial miner tx " << n << ": " << obj_to_json_str(blocks[n].miner_tx));
-  }
-
-  //prepare token inputs
-  {
-    account_public_address address = miner_account.get_keys().m_account_address;
-    keypair pseudo_tx_key = keypair::generate(miner_account.get_device());
-    crypto::key_derivation derivation = AUTO_VAL_INIT(derivation);
-
-    ASSERT_TRUE(crypto::generate_key_derivation(address.m_view_public_key, pseudo_tx_key.sec, derivation));
-
-    const size_t output_index = 0;
-    crypto::public_key pseudo_out_pub_key = AUTO_VAL_INIT(pseudo_out_pub_key);
-    ASSERT_TRUE(crypto::derive_public_key(derivation, output_index, address.m_spend_public_key, pseudo_out_pub_key));
-
-    tx_source_entry pseudo_source;
-    pseudo_source.token_id = CUTCOIN_ID;
-    pseudo_source.amount = amount;
-    pseudo_source.real_out_tx_key = pseudo_tx_key.pub;
-    pseudo_source.real_output = 0;
-    pseudo_source.real_output_in_tx_index = 0;
-    pseudo_source.mask = rct::identity();
-    pseudo_source.rct = false;
-    pseudo_source.push_output(0, pseudo_out_pub_key, pseudo_source.amount, pseudo_source.token_id);
-
-    for (size_t m = 0; m < fake_outputs_count; ++m) {
-      pseudo_source.push_output(m + 1, boost::get<txout_to_key>(blocks[m].miner_tx.vout[0].target).key, pseudo_source.amount);
-    }
-
-    std::vector<tx_source_entry> pseudo_sources{pseudo_source};
-
-    //fill outputs entry
-    tx_destination_entry td;
-    td.token_id = CUTCOIN_ID;
-    td.addr = address;
-    td.amount = amount;
-    std::vector<tx_destination_entry> pseudo_destinations{td};
-
-    std::unordered_map<crypto::public_key, subaddress_index> subaddresses;
-    subaddresses[address.m_spend_public_key] = {0, 0};
-    transaction tmp_tx;
-
-    {
-      TxConstructionContext context;
-      context.d_sender_account_keys = miner_account.get_keys();
-      context.d_subaddresses = subaddresses;
-      context.d_sources = pseudo_sources;
-      context.d_destinations = pseudo_destinations;
-//      context.d_change_addr = account_public_address{};
-      context.d_tx_version = TxVersion::tokens;
-      context.d_range_proof_type = rct::RangeProofType::RangeProofPaddedBulletproof;
-
-      bool r = construct_tx_and_get_tx_key(context, tmp_tx);
-
-      ASSERT_TRUE(r);
-      ASSERT_EQ(tmp_tx.vout.size(), 1);
-
-      ASSERT_TRUE(crypto::generate_key_derivation(address.m_view_public_key, context.d_tx_key, derivation));
-    }
-
-    crypto::secret_key amount_key;
-    crypto::derivation_to_scalar(derivation, 0, amount_key);
-    rct::key mask{};
-    std::vector<rct::key> points{rct::tokenIdToPoint(CUTCOIN_ID)};
-    rct::xmr_amount sent_amount = rct::decodeRctSimple(tmp_tx.rct_signatures,
-                                                       rct::sk2rct(amount_key),
-                                                       points,
-                                                       0,
-                                                       mask,
-                                                       hw::get_device("default"));
-    ASSERT_EQ(sent_amount, amount);
-
-    // measurement
-    {
-      using namespace std::chrono;
-
-      size_t num_repetitions = 1000;
-
-      auto t1 = high_resolution_clock::now();
-      for (size_t i = 0; i < num_repetitions; ++i) {
-        rct::decodeRctSimple(tmp_tx.rct_signatures,
-                             rct::sk2rct(amount_key),
-                             points,
-                             0,
-                             mask,
-                             miner_account.get_device());
-      }
-      auto t2 = high_resolution_clock::now();
-      duration<double, std::milli> ms_double = t2 - t1;
-      double single_call_duration = ms_double.count() / num_repetitions;
-      std::cout << "Single decode call duration is " << single_call_duration << std::endl;
-    }
-
-  }
+//  uint64_t amount             = 30000000000000;
+//  uint64_t fake_outputs_count = 10;
+//  uint64_t ts_start           = 1234567890;
+//
+//  cryptonote::account_base miner_account;
+//  miner_account.generate();
+//
+//  MAKE_GENESIS_BLOCK(blk_0, miner_account, ts_start);
+//
+//  // create 4 miner accounts, and have them mine the next 4 blocks
+//  const cryptonote::block *prev_block = &blk_0;
+//  cryptonote::block blocks[fake_outputs_count];
+//  for (size_t n = 0; n < fake_outputs_count; ++n) {
+//    ASSERT_TRUE(generator.construct_block_manually(
+//      blocks[n], *prev_block, miner_account,
+//      test_generator::bf_major_ver | test_generator::bf_minor_ver | test_generator::bf_timestamp | test_generator::bf_hf_version,
+//      2, 2, prev_block->timestamp + DIFFICULTY_BLOCKS_ESTIMATE_TIMESPAN * 2, // v2 has blocks twice as long
+//      crypto::hash(), 0, transaction(), std::vector<crypto::hash>(), 0, 0, 2));
+//    prev_block = blocks + n;
+//    LOG_PRINT_L0("Initial miner tx " << n << ": " << obj_to_json_str(blocks[n].miner_tx));
+//  }
+//
+//  //prepare token inputs
+//  {
+//    account_public_address address = miner_account.get_keys().m_account_address;
+//    keypair pseudo_tx_key = keypair::generate(miner_account.get_device());
+//    crypto::key_derivation derivation = AUTO_VAL_INIT(derivation);
+//
+//    ASSERT_TRUE(crypto::generate_key_derivation(address.m_view_public_key, pseudo_tx_key.sec, derivation));
+//
+//    const size_t output_index = 0;
+//    crypto::public_key pseudo_out_pub_key = AUTO_VAL_INIT(pseudo_out_pub_key);
+//    ASSERT_TRUE(crypto::derive_public_key(derivation, output_index, address.m_spend_public_key, pseudo_out_pub_key));
+//
+//    tx_source_entry pseudo_source;
+//    pseudo_source.token_id = CUTCOIN_ID;
+//    pseudo_source.amount = amount;
+//    pseudo_source.real_out_tx_key = pseudo_tx_key.pub;
+//    pseudo_source.real_output = 0;
+//    pseudo_source.real_output_in_tx_index = 0;
+//    pseudo_source.mask = rct::identity();
+//    pseudo_source.rct = false;
+//    pseudo_source.push_output(0, pseudo_out_pub_key, pseudo_source.amount, pseudo_source.token_id);
+//
+//    for (size_t m = 0; m < fake_outputs_count; ++m) {
+//      pseudo_source.push_output(m + 1, boost::get<txout_to_key>(blocks[m].miner_tx.vout[0].target).key, pseudo_source.amount);
+//    }
+//
+//    std::vector<tx_source_entry> pseudo_sources{pseudo_source};
+//
+//    //fill outputs entry
+//    tx_destination_entry td;
+//    td.token_id = CUTCOIN_ID;
+//    td.addr = address;
+//    td.amount = amount;
+//    std::vector<tx_destination_entry> pseudo_destinations{td};
+//
+//    std::unordered_map<crypto::public_key, subaddress_index> subaddresses;
+//    subaddresses[address.m_spend_public_key] = {0, 0};
+//    transaction tmp_tx;
+//
+//    {
+//      TxConstructionContext context;
+//      context.d_sender_account_keys = miner_account.get_keys();
+//      context.d_subaddresses = subaddresses;
+//      context.d_sources = pseudo_sources;
+//      context.d_destinations = pseudo_destinations;
+////      context.d_change_addr = account_public_address{};
+//      context.d_tx_version = TxVersion::tokens;
+//      context.d_range_proof_type = rct::RangeProofType::RangeProofPaddedBulletproof;
+//
+//      bool r = construct_tx_and_get_tx_key(context, tmp_tx);
+//
+//      ASSERT_TRUE(r);
+//      ASSERT_EQ(tmp_tx.vout.size(), 1);
+//
+//      ASSERT_TRUE(crypto::generate_key_derivation(address.m_view_public_key, context.d_tx_key, derivation));
+//    }
+//
+//    crypto::secret_key amount_key;
+//    crypto::derivation_to_scalar(derivation, 0, amount_key);
+//    rct::key mask{};
+//    std::vector<rct::key> points{rct::tokenIdToPoint(CUTCOIN_ID)};
+//    rct::xmr_amount sent_amount = rct::decodeRctSimple(tmp_tx.rct_signatures,
+//                                                       rct::sk2rct(amount_key),
+//                                                       points,
+//                                                       0,
+//                                                       mask,
+//                                                       hw::get_device("default"));
+//    ASSERT_EQ(sent_amount, amount);
+//
+//    // measurement
+//    {
+//      using namespace std::chrono;
+//
+//      size_t num_repetitions = 1000;
+//
+//      auto t1 = high_resolution_clock::now();
+//      for (size_t i = 0; i < num_repetitions; ++i) {
+//        rct::decodeRctSimple(tmp_tx.rct_signatures,
+//                             rct::sk2rct(amount_key),
+//                             points,
+//                             0,
+//                             mask,
+//                             miner_account.get_device());
+//      }
+//      auto t2 = high_resolution_clock::now();
+//      duration<double, std::milli> ms_double = t2 - t1;
+//      double single_call_duration = ms_double.count() / num_repetitions;
+//      std::cout << "Single decode call duration is " << single_call_duration << std::endl;
+//    }
+//
+//  }
 }
 
 TEST(dex, special_address_creation_speed) {
@@ -176,4 +177,238 @@ TEST(dex, special_address_creation_speed) {
   const uint64_t amount_paid = 10000;
 
   generate_dummy(dummy_tx, out_idx, mixin, amount_paid);
+}
+
+TEST(dex, pools_to_composite_exchange_transfer_empty_pools) {
+  using namespace cryptonote;
+
+  std::string token_name1 = "T1";
+  std::string token_name2 = "T2";
+  std::string token_name3 = "T3";
+  std::string token_name4 = "T4";
+  std::string token_name5 = "T5";
+  std::string token_name6 = "T6";
+
+  std::string lp_token_name1 = "lpT1";
+  std::string lp_token_name2 = "lpT2";
+  std::string lp_token_name3 = "lpT3";
+  std::string lp_token_name4 = "lpT4";
+  std::string lp_token_name5 = "lpT5";
+  std::string lp_token_name6 = "lpT6";
+
+
+  std::vector<ExchangeTransfer> et;
+  ExchangeTransfer              summary;
+  TokenId                       token1 = token_name_to_id(token_name1);
+  TokenId                       token2 = token_name_to_id(token_name6);
+  Amount                        amount = 1 * COIN;
+  Amount                        pi = config::DEX_FEE_PER_MILLE;
+  ExchangeSide                  side = ExchangeSide::buy;
+
+
+  std::vector<LiquidityPool> pools {};
+  bool r = pools_to_composite_exchange_transfer(et, summary, token1, token2, amount, pi, pools, side);
+
+  ASSERT_FALSE(r);
+}
+
+TEST(dex, pools_to_composite_exchange_transfer_equal_tokens) {
+  using namespace cryptonote;
+
+  std::string token_name1 = "T1";
+  std::string token_name2 = "T2";
+  std::string token_name3 = "T3";
+  std::string token_name4 = "T4";
+  std::string token_name5 = "T5";
+  std::string token_name6 = "T6";
+
+  std::string lp_token_name1 = "lpT1";
+  std::string lp_token_name2 = "lpT2";
+  std::string lp_token_name3 = "lpT3";
+  std::string lp_token_name4 = "lpT4";
+  std::string lp_token_name5 = "lpT5";
+  std::string lp_token_name6 = "lpT6";
+
+
+  std::vector<ExchangeTransfer> et;
+  ExchangeTransfer              summary;
+  TokenId                       token1 = token_name_to_id(token_name1);
+  TokenId                       token2 = token1;
+  Amount                        amount = 1 * COIN;
+  Amount                        pi = config::DEX_FEE_PER_MILLE;
+  ExchangeSide                  side = ExchangeSide::buy;
+
+
+  std::vector<LiquidityPool> pools {
+    // pool 1
+    {
+      token_name_to_id(lp_token_name1),
+      token_name_to_id(token_name1),
+      token_name_to_id(token_name2),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+  };
+  bool r = pools_to_composite_exchange_transfer(et, summary, token1, token2, amount, pi, pools, side);
+
+  ASSERT_FALSE(r);
+}
+
+TEST(dex, pools_to_composite_exchange_transfer_wrong_pools) {
+  using namespace cryptonote;
+
+  std::string token_name1 = "T1";
+  std::string token_name2 = "T2";
+  std::string token_name3 = "T3";
+  std::string token_name4 = "T4";
+  std::string token_name5 = "T5";
+  std::string token_name6 = "T6";
+
+  std::string lp_token_name1 = "lpT1";
+  std::string lp_token_name2 = "lpT2";
+  std::string lp_token_name3 = "lpT3";
+  std::string lp_token_name4 = "lpT4";
+  std::string lp_token_name5 = "lpT5";
+  std::string lp_token_name6 = "lpT6";
+
+
+  std::vector<ExchangeTransfer> et;
+  ExchangeTransfer              summary;
+  TokenId                       token1 = token_name_to_id(token_name3);
+  TokenId                       token2 = token_name_to_id(token_name4);
+  Amount                        amount = 1 * COIN;
+  Amount                        pi = config::DEX_FEE_PER_MILLE;
+  ExchangeSide                  side = ExchangeSide::buy;
+
+
+  std::vector<LiquidityPool> pools {
+    // pool 1
+    {
+      token_name_to_id(lp_token_name1),
+      token_name_to_id(token_name1),
+      token_name_to_id(token_name2),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 2
+    {
+      token_name_to_id(lp_token_name2),
+      token_name_to_id(token_name3),
+      token_name_to_id(token_name2),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 3
+    {
+      token_name_to_id(lp_token_name3),
+      token_name_to_id(token_name4),
+      token_name_to_id(token_name3),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 4
+    {
+      token_name_to_id(lp_token_name4),
+      token_name_to_id(token_name4),
+      token_name_to_id(token_name5),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 5
+    {
+      token_name_to_id(lp_token_name5),
+      token_name_to_id(token_name5),
+      token_name_to_id(token_name6),
+      0,
+      {20 * COIN, 40 * COIN}
+    }
+  };
+  bool r = pools_to_composite_exchange_transfer(et, summary, token1, token2, amount, pi, pools, side);
+
+  ASSERT_FALSE(r);
+}
+
+TEST(dex, pools_to_composite_exchange_transfer_correct) {
+  using namespace cryptonote;
+
+  std::string token_name1 = "T1";
+  std::string token_name2 = "T2";
+  std::string token_name3 = "T3";
+  std::string token_name4 = "T4";
+  std::string token_name5 = "T5";
+  std::string token_name6 = "T6";
+
+  std::string lp_token_name1 = "lpT1";
+  std::string lp_token_name2 = "lpT2";
+  std::string lp_token_name3 = "lpT3";
+  std::string lp_token_name4 = "lpT4";
+  std::string lp_token_name5 = "lpT5";
+  std::string lp_token_name6 = "lpT6";
+
+
+  std::vector<ExchangeTransfer> et;
+  ExchangeTransfer              summary;
+  TokenId                       token1 = token_name_to_id(token_name1);
+  TokenId                       token2 = token_name_to_id(token_name6);
+  Amount                        amount = 1 * COIN;
+  Amount                        pi = config::DEX_FEE_PER_MILLE;
+  ExchangeSide                  side = ExchangeSide::buy;
+
+
+  std::vector<LiquidityPool> pools {
+    // pool 1
+    {
+      token_name_to_id(lp_token_name1),
+      token_name_to_id(token_name1),
+      token_name_to_id(token_name2),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 2
+    {
+      token_name_to_id(lp_token_name2),
+      token_name_to_id(token_name3),
+      token_name_to_id(token_name2),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 3
+    {
+      token_name_to_id(lp_token_name3),
+      token_name_to_id(token_name4),
+      token_name_to_id(token_name3),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 4
+    {
+      token_name_to_id(lp_token_name4),
+      token_name_to_id(token_name4),
+      token_name_to_id(token_name5),
+      0,
+      {20 * COIN, 40 * COIN}
+    },
+
+    // pool 5
+    {
+      token_name_to_id(lp_token_name5),
+      token_name_to_id(token_name5),
+      token_name_to_id(token_name6),
+      0,
+      {20 * COIN, 40 * COIN}
+    }
+  };
+  bool r = pools_to_composite_exchange_transfer(et, summary, token1, token2, amount, pi, pools, side);
+
+  ASSERT_TRUE(r);
+
+  ASSERT_EQ(summary.d_new_ratio.d_amount1, 190000000000);
+  ASSERT_EQ(summary.d_new_ratio.d_amount2, 425413108481);
 }

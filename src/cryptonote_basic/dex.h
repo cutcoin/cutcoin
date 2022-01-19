@@ -107,7 +107,7 @@ bool pools_to_composite_exchange_transfer(std::vector<ExchangeTransfer>    &exch
 
 constexpr
 LiquidityPool inverse(const LiquidityPool &p) {
-  return LiquidityPool{p.d_lptoken, p.d_token2, p.d_token1, p.d_lp_amount, {p.d_ratio.d_amount1, p.d_ratio.d_amount2}};
+  return LiquidityPool{p.d_lptoken, p.d_token2, p.d_token1, p.d_lp_amount, {p.d_ratio.d_amount2, p.d_ratio.d_amount1}};
 }
 
 //constexpr

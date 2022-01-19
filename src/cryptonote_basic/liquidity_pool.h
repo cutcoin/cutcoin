@@ -113,8 +113,17 @@ double sell_price_impact(const AmountRatio &ratio, const Amount &amount, const A
 bool check_initial_pool_liquidity(Amount amount1, Amount amount2) noexcept;
   // Validate the initial pool liquidity.
 
+constexpr bool operator ==(const AmountRatio &a, const AmountRatio &b) {
+  return a.d_amount1 == b.d_amount1 && a.d_amount2 == b.d_amount2;
+}
+
 constexpr bool operator !=(const AmountRatio &a, const AmountRatio &b) {
-  return a.d_amount1 != b.d_amount1 && a.d_amount2 != b.d_amount2;
+  return !(a == b);
+}
+
+constexpr bool operator ==(const LiquidityPool &a, const LiquidityPool &b) {
+  return a.d_token1 == b.d_token1 && a.d_token2 == b.d_token2 && a.d_lptoken == b.d_lptoken
+  && a.d_lp_amount == b.d_lp_amount && a.d_ratio == b.d_ratio;
 }
 
 }  // namespace cryptonote

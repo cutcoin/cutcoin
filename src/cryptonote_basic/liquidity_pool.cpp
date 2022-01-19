@@ -92,7 +92,6 @@ Amount token_amount_from_lp_pair(const AmountRatio &ratio, const Amount &amount)
 {
   const num::u128_t a{ratio.d_amount1};
   const num::u128_t b{ratio.d_amount2};
-  const num::u128_t c{COIN};
   const num::u128_t d{amount};
 
   const num::u128_t token_fraction = d * a / b;
@@ -107,7 +106,6 @@ Amount underlying_amount_from_lp_pair(const AmountRatio &ratio, const Amount &am
 {
   const num::u128_t a{ratio.d_amount1};
   const num::u128_t b{ratio.d_amount2};
-  const num::u128_t c{COIN};
   const num::u128_t d{amount};
 
   const num::u128_t token_fraction = d * b / a;

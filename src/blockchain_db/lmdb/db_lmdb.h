@@ -84,7 +84,7 @@ typedef struct mdb_txn_cursors
 #define m_cur_tx_indices	m_cursors->m_txc_tx_indices
 #define m_cur_tx_outputs	m_cursors->m_txc_tx_outputs
 #define m_cur_liquidity_pools	m_cursors->m_txc_liquidity_pools
-#define m_cur_tokens	    m_cursors->m_txc_tokens
+#define m_cur_tokens	m_cursors->m_txc_tokens
 #define m_cur_spent_keys	m_cursors->m_txc_spent_keys
 #define m_cur_txpool_meta	m_cursors->m_txc_txpool_meta
 #define m_cur_txpool_blob	m_cursors->m_txc_txpool_blob
@@ -457,10 +457,40 @@ public:
   /**
    * @brief get liquidity pool data
    *
-   * @param lp_data struct to fill (by lptoken_id)
+   * @param lp_token id of a liquidity pool token
+   * @param lp_data the returned value
    * @return true on success
    */
-  virtual bool get_liquidity_pool(cryptonote::liqudity_pool_data_t &lp_data) const;
+  virtual bool get_liquidity_pool(const TokenId &lp_token, liquidity_pool_data_t &lp_data) const;
+
+  /**
+   * @brief get liquidity pool
+   *
+   * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+   * 'lptoken', 'token1' and 'token2'.
+   *
+   * @param liquidity_pool liquidity pools structure.
+   * @param name liquidity pool name
+   *
+   * @return 'true' if the pool is found, otherwise 'false'.
+   */
+  virtual bool get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const;
+
+  /**
+   * @brief get liquidity pool
+   *
+   * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+   * 'lptoken', 'token1' and 'token2'.
+   *
+   * @param token1 ticker token in the liquidity pool pair
+   * @param token2 underlying token in the liquidity pool pair
+   * @param liquidity_pool liquidity pools structure.
+   *
+   * @return 'true' if the pool is found, otherwise 'false'.
+   */
+  virtual bool get_liquidity_pool(const TokenId         &token1,
+                                  const TokenId         &token2,
+                                  liquidity_pool_data_t &liquidity_pool) const;
 
    /**
    * @brief get all liquidity pools data
@@ -468,7 +498,7 @@ public:
    * @param liquidity_pools vector of liquidity pool data structures.
    * @return true on success
    */
-  virtual bool get_all_liquidity_pools(std::vector<liqudity_pool_data_t> &liquidity_pools) const;
+  virtual bool get_all_liquidity_pools(std::vector<liquidity_pool_data_t> &liquidity_pools) const;
 
   /**
    * @brief get token data
@@ -484,7 +514,7 @@ public:
    * @param lp_data pool data to add
    * @return true on success
    */
-  virtual bool add_liqudity_pool(const cryptonote::liqudity_pool_data_t &lp_data);
+  virtual bool add_liqudity_pool(const cryptonote::liquidity_pool_data_t &lp_data);
 
 private:
   void do_resize(uint64_t size_increase=0);

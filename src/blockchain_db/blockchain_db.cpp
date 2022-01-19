@@ -394,7 +394,7 @@ void BlockchainDB::remove_transaction(const crypto::hash& tx_hash)
     tx_extra_lp_data lp_data{};
     get_lp_data(tx, lp_data);
 
-    liqudity_pool_data_t new_lp_data{};
+    liquidity_pool_data_t new_lp_data{};
     new_lp_data.token1   = lp_data.d_token1;
     new_lp_data.token2   = lp_data.d_token2;
     new_lp_data.amount1  = lp_data.d_old_amount1;
@@ -411,15 +411,19 @@ void BlockchainDB::remove_transaction(const crypto::hash& tx_hash)
     tx_extra_exchange_data exchange_data{};
     get_exchange_data(tx, exchange_data);
 
-    liqudity_pool_data_t lp_data{};
-    lp_data.lptoken = exchange_data.d_lp_token;
-    get_liquidity_pool(lp_data);
+    for (const ExchangeTransfer &et: exchange_data.data) {
+      liquidity_pool_data_t lp_data;
+      if (!get_liquidity_pool(et.d_token1, et.d_token2, lp_data)) {
+        LOG_PRINT_L2("Failed to find a liquidity pool in the db:" << tokens_to_lpname(et.d_token1, et.d_token2));
+        throw DB_ERROR("Failed to find a liquidity pool in the db:");
+      }
 
-    lp_data.amount1  = exchange_data.d_pool_amount1;
-    lp_data.amount2  = exchange_data.d_pool_amount2;
-    lp_data.lpamount = get_lp_token_to_funds({lp_data.amount1, lp_data.amount2});
+      lp_data.amount1  = et.d_old_ratio.d_amount1;
+      lp_data.amount2  = et.d_old_ratio.d_amount2;
+      lp_data.lpamount = get_lp_token_to_funds(et.d_old_ratio);
 
-    add_liqudity_pool(lp_data);
+      add_liqudity_pool(lp_data);
+    }
   }
 
   if (tx.type.is_tgtx()) {

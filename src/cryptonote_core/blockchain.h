@@ -536,7 +536,7 @@ namespace cryptonote
      *
      * @return 'true' if the pool is found, otherwise 'false'.
      */
-    bool get_liquidity_pool(const std::string &name, liqudity_pool_data_t &liquidity_pool) const;
+    bool get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const;
 
     /**
      * @brief gets liquidity pools list
@@ -550,7 +550,9 @@ namespace cryptonote
      *
      * @return true
      */
-    bool get_liquidity_pools(const std::string &name, const bool &exact_match, std::vector<liqudity_pool_data_t> &liquidity_pools) const;
+    bool get_liquidity_pools(const std::string &name,
+                             const bool &exact_match,
+                             std::vector<liquidity_pool_data_t> &liquidity_pools) const;
 
     /**
      * @brief gets an output's key and unlocked state
@@ -793,7 +795,7 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_lp_gtx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update);
+    bool check_lp_gtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
 
     /**
      * @brief validate add liquidity transaction
@@ -806,7 +808,7 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_lp_addtx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update);
+    bool check_lp_addtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
 
     /**
      * @brief validate take liquidity transaction
@@ -819,7 +821,7 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_lp_taketx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update);
+    bool check_lp_taketx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
 
     /**
      * @brief validate buy DEX transaction
@@ -832,7 +834,7 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_lp_buy_tx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update);
+    bool check_lp_buy_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
 
     /**
      * @brief validate sell DEX transaction
@@ -845,7 +847,7 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_lp_sell_tx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update);
+    bool check_lp_sell_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
 
     /**
      * @brief gets the block weight limit based on recent blocks

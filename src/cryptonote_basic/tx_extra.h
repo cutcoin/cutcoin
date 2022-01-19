@@ -31,8 +31,9 @@
 
 #pragma once
 
-
+#include "dex.h"
 #include <ringct/rctTypes.h>
+
 
 #define TX_EXTRA_PADDING_MAX_COUNT            255
 #define TX_EXTRA_NONCE_MAX_COUNT              255
@@ -54,8 +55,8 @@
 #define TX_EXTRA_NONCE_PAYMENT_ID             0x00
 #define TX_EXTRA_NONCE_ENCRYPTED_PAYMENT_ID   0x01
 
-namespace cryptonote
-{
+namespace cryptonote  {
+
   struct tx_extra_padding
   {
     size_t size;
@@ -271,38 +272,52 @@ struct tx_extra_lp_data
 
 struct tx_extra_exchange_data
 {
-  TokenId d_lp_token;
-  Amount  d_ex_amount1;
-  Amount  d_ex_amount2;
-  Amount  d_pool_amount1;
-  Amount  d_pool_amount2;
+//  TokenId d_lp_token;
+//  Amount  d_ex_amount1;
+//  Amount  d_ex_amount2;
+//  Amount  d_pool_amount1;
+//  Amount  d_pool_amount2;
+//
+//  BEGIN_SERIALIZE()
+//    FIELD(d_lp_token)
+//    FIELD(d_ex_amount1)
+//    FIELD(d_ex_amount2)
+//    FIELD(d_pool_amount1)
+//    FIELD(d_pool_amount2)
+//  END_SERIALIZE()
+
+  std::vector<ExchangeTransfer> data;
 
   BEGIN_SERIALIZE()
-    FIELD(d_lp_token)
-    FIELD(d_ex_amount1)
-    FIELD(d_ex_amount2)
-    FIELD(d_pool_amount1)
-    FIELD(d_pool_amount2)
+    FIELD(data)
   END_SERIALIZE()
 };
 
-  // tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
-  //   varint tag;
-  //   varint size;
-  //   varint data[];
-  typedef boost::variant<tx_extra_padding,
-                         tx_extra_pub_key,
-                         tx_extra_nonce,
-                         tx_extra_merge_mining_tag,
-                         tx_extra_additional_pub_keys,
-                         tx_extra_tgtx_pub_keys,
-                         tx_extra_mysterious_minergate,
-                         tx_extra_pos_stamp,
-                         tx_extra_token_data,
-                         tx_extra_token_genesis_ownership,
-                         tx_extra_lp_data,
-                         tx_extra_exchange_data> tx_extra_field;
+// tx_extra_field format, except tx_extra_padding and tx_extra_pub_key:
+//   varint tag;
+//   varint size;
+//   varint data[];
+typedef boost::variant<tx_extra_padding,
+                       tx_extra_pub_key,
+                       tx_extra_nonce,
+                       tx_extra_merge_mining_tag,
+                       tx_extra_additional_pub_keys,
+                       tx_extra_tgtx_pub_keys,
+                       tx_extra_mysterious_minergate,
+                       tx_extra_pos_stamp,
+                       tx_extra_token_data,
+                       tx_extra_token_genesis_ownership,
+                       tx_extra_lp_data,
+                       tx_extra_exchange_data> tx_extra_field;
+
+constexpr bool operator !=(const ExchangeTransfer &a, const ExchangeTransfer &b) {
+  return a.d_token1 != b.d_token1 ||
+    a.d_token2 != b.d_token2 ||
+    a.d_new_ratio != b.d_new_ratio ||
+    a.d_old_ratio != b.d_old_ratio;
 }
+
+}  // namespace cryptonote
 
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_padding, TX_EXTRA_TAG_PADDING);
 VARIANT_TAG(binary_archive, cryptonote::tx_extra_pub_key, TX_EXTRA_TAG_PUBKEY);

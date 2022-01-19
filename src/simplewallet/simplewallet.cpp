@@ -2487,9 +2487,9 @@ simple_wallet::simple_wallet()
                            std::bind(&simple_wallet::sell, this, std::placeholders::_1),
                            tr("sell <token_pair_name> <N>"),
                            tr("Sell the specified amount of the first token in the liquidity pool pair. Example: as the result of 'buy T1/cutcoin 1' command, you send 1 T1 token from 'T1/cutcoin' pool using the current ratio."));
-  m_cmd_binder.set_handler("exchange_info",
-                           std::bind(&simple_wallet::exchange_info, this, std::placeholders::_1),
-                           tr("exchange_info <token_to_sell> <token_to_buy> <amount>"),
+  m_cmd_binder.set_handler("exchange_rate",
+                           std::bind(&simple_wallet::exchange_rate, this, std::placeholders::_1),
+                           tr("exchange_rate <token_to_sell> <token_to_buy> <amount>"),
                            tr("Print effective exchange rate for the pair of tokens, the required liquidity pools to make exchange, and the final amount of tokens that you receive. First argument is the token to sell, second argument is the token to buy, third argument is optional amount of the first token."));
   m_cmd_binder.set_handler("donate",
                            std::bind(&simple_wallet::donate, this, std::placeholders::_1),
@@ -6726,12 +6726,12 @@ bool simple_wallet::create_liquidity_pool(const std::vector<std::string> &args)
     }
   }
 
-  LiquidityPoolSummary lp_summary;
+  LiquidityPool lp_summary;
   lp_summary.d_token1    = token_name_to_id(token1);
   lp_summary.d_token2    = token_name_to_id(token2);
-  lp_summary.d_rate      = { amount1, amount2 };
+  lp_summary.d_ratio     = { amount1, amount2 };
   lp_summary.d_lptoken   = token_name_to_id(lptoken);
-  lp_summary.d_lp_amount = get_lp_token_to_funds(lp_summary.d_rate);
+  lp_summary.d_lp_amount = get_lp_token_to_funds(lp_summary.d_ratio);
 
   if (token1 != CUTCOIN_NAME) {
     COMMAND_RPC_GET_TOKENS::request req{};
@@ -6803,10 +6803,10 @@ bool simple_wallet::create_liquidity_pool(const std::vector<std::string> &args)
                                "with lp token %s and initial exchange rate %d."))
         % tokens_to_lpname(lp_summary.d_token1, lp_summary.d_token2)
         % token_id_to_name(lp_summary.d_lptoken)
-        % (((double)lp_summary.d_rate.d_amount1) / lp_summary.d_rate.d_amount2) << std::endl;
+        % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
     prompt << boost::format(tr("Sending from the wallet to the pool %s %s and %s %s."))
-        % print_money(lp_summary.d_rate.d_amount1) % token_id_to_name(lp_summary.d_token1)
-        % print_money(lp_summary.d_rate.d_amount2) % token_id_to_name(lp_summary.d_token2) << std::endl;
+        % print_money(lp_summary.d_ratio.d_amount1) % token_id_to_name(lp_summary.d_token1)
+        % print_money(lp_summary.d_ratio.d_amount2) % token_id_to_name(lp_summary.d_token2) << std::endl;
     prompt << boost::format(tr("Receiving to the wallet %s %s."))
         % print_money(lp_summary.d_lp_amount)
         % token_id_to_name(lp_summary.d_lptoken) << std::endl;
@@ -6885,7 +6885,7 @@ bool simple_wallet::add_liquidity(const std::vector<std::string> &args)
     return true;
   }
 
-  LiquidityPoolSummary old_lp{}, new_lp{};
+  LiquidityPool old_lp{}, new_lp{};
   Amount deposit1, deposit2, lp_withdrawal;
   {
     COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
@@ -6906,7 +6906,7 @@ bool simple_wallet::add_liquidity(const std::vector<std::string> &args)
     const auto &lp = res.liquidity_pool;
     old_lp.d_token1    = lp.token1;
     old_lp.d_token2    = lp.token2;
-    old_lp.d_rate      = { lp.amount1 ,lp.amount2 };
+    old_lp.d_ratio     = { lp.amount1 ,lp.amount2 };
     old_lp.d_lptoken   = lp.lp_token;
     old_lp.d_lp_amount = lp.lp_amount;
 
@@ -6918,18 +6918,18 @@ bool simple_wallet::add_liquidity(const std::vector<std::string> &args)
 
     if (tokenId == lp.token1) {
       deposit1 = amount;
-      deposit2 = underlying_amount_from_lp_pair(old_lp.d_rate, amount);
+      deposit2 = underlying_amount_from_lp_pair(old_lp.d_ratio, amount);
     }
     else {
-      deposit1 = token_amount_from_lp_pair(old_lp.d_rate, amount);
+      deposit1 = token_amount_from_lp_pair(old_lp.d_ratio, amount);
       deposit2 = amount;
     }
 
     new_lp.d_token1    = lp.token1;
     new_lp.d_token2    = lp.token2;
-    new_lp.d_rate      = { old_lp.d_rate.d_amount1 + deposit1, old_lp.d_rate.d_amount2 + deposit2};
+    new_lp.d_ratio      = { old_lp.d_ratio.d_amount1 + deposit1, old_lp.d_ratio.d_amount2 + deposit2};
     new_lp.d_lptoken   = lp.lp_token;
-    new_lp.d_lp_amount = get_lp_token_to_funds(new_lp.d_rate);
+    new_lp.d_lp_amount = get_lp_token_to_funds(new_lp.d_ratio);
 
     lp_withdrawal = new_lp.d_lp_amount - old_lp.d_lp_amount;
   }
@@ -6950,10 +6950,10 @@ bool simple_wallet::add_liquidity(const std::vector<std::string> &args)
                                "with lp token %s and current exchange rate %d."))
         % tokens_to_lpname(new_lp.d_token1, new_lp.d_token2)
         % token_id_to_name(new_lp.d_lptoken)
-        % (((double)new_lp.d_rate.d_amount1) / new_lp.d_rate.d_amount2) << std::endl;
+        % (((double)new_lp.d_ratio.d_amount1) / new_lp.d_ratio.d_amount2) << std::endl;
     prompt << boost::format(tr("Currently liquidity pool has %s %s and %s %s."))
-        % print_money(old_lp.d_rate.d_amount1) % token_id_to_name(old_lp.d_token1)
-        % print_money(old_lp.d_rate.d_amount2) % token_id_to_name(old_lp.d_token2) << std::endl;
+        % print_money(old_lp.d_ratio.d_amount1) % token_id_to_name(old_lp.d_token1)
+        % print_money(old_lp.d_ratio.d_amount2) % token_id_to_name(old_lp.d_token2) << std::endl;
     prompt << boost::format(tr("Sending from the wallet to the pool %s %s and %s %s."))
         % print_money(deposit1) % token_id_to_name(old_lp.d_token1)
         % print_money(deposit2) % token_id_to_name(old_lp.d_token2) << std::endl;
@@ -7035,7 +7035,7 @@ bool simple_wallet::take_liquidity(const std::vector<std::string> &args)
     return true;
   }
 
-  LiquidityPoolSummary old_lp{}, new_lp{};
+  LiquidityPool old_lp{}, new_lp{};
   Amount withdrawal1, withdrawal2, lp_deposit;
   {
     COMMAND_RPC_GET_POOL_BY_LP_TOKEN::request req{};
@@ -7051,7 +7051,7 @@ bool simple_wallet::take_liquidity(const std::vector<std::string> &args)
     const auto &lp = res.liquidity_pool;
     old_lp.d_token1    = lp.token1;
     old_lp.d_token2    = lp.token2;
-    old_lp.d_rate      = { lp.amount1, lp.amount2 };
+    old_lp.d_ratio     = { lp.amount1, lp.amount2 };
     old_lp.d_lptoken   = lp.lp_token;
     old_lp.d_lp_amount = lp.lp_amount;
 
@@ -7060,15 +7060,15 @@ bool simple_wallet::take_liquidity(const std::vector<std::string> &args)
       return true;
     }
 
-    const LiquidityPoolRatio new_funds = get_funds_to_lp_token(old_lp.d_lp_amount,
-                                                               old_lp.d_lp_amount - lpt_amount,
-                                                               old_lp.d_rate);
-    withdrawal1 = old_lp.d_rate.d_amount1 - new_funds.d_amount1;
-    withdrawal2 = old_lp.d_rate.d_amount2 - new_funds.d_amount2;
+    const AmountRatio new_funds = get_funds_to_lp_token(old_lp.d_lp_amount,
+                                                        old_lp.d_lp_amount - lpt_amount,
+                                                        old_lp.d_ratio);
+    withdrawal1 = old_lp.d_ratio.d_amount1 - new_funds.d_amount1;
+    withdrawal2 = old_lp.d_ratio.d_amount2 - new_funds.d_amount2;
 
     new_lp.d_token1    = lp.token1;
     new_lp.d_token2    = lp.token2;
-    new_lp.d_rate      = { new_funds.d_amount1, new_funds.d_amount2 };
+    new_lp.d_ratio     = { new_funds.d_amount1, new_funds.d_amount2 };
     new_lp.d_lptoken   = lp.lp_token;
     new_lp.d_lp_amount = old_lp.d_lp_amount - lpt_amount;
 
@@ -7091,10 +7091,10 @@ bool simple_wallet::take_liquidity(const std::vector<std::string> &args)
                                "with lp token %s and initial exchange rate %d."))
         % tokens_to_lpname(new_lp.d_token1, new_lp.d_token2)
         % token_id_to_name(new_lp.d_lptoken)
-        % (((double)old_lp.d_rate.d_amount1) / old_lp.d_rate.d_amount2) << std::endl;
+        % (((double)old_lp.d_ratio.d_amount1) / old_lp.d_ratio.d_amount2) << std::endl;
     prompt << boost::format(tr("Currently liquidity pool has %s %s and %s %s."))
-              % print_money(old_lp.d_rate.d_amount1) % token_id_to_name(old_lp.d_token1)
-              % print_money(old_lp.d_rate.d_amount2) % token_id_to_name(old_lp.d_token2) << std::endl;
+              % print_money(old_lp.d_ratio.d_amount1) % token_id_to_name(old_lp.d_token1)
+              % print_money(old_lp.d_ratio.d_amount2) % token_id_to_name(old_lp.d_token2) << std::endl;
     prompt << boost::format(tr("Sending from the pool to the wallet %s %s and %s %s."))
               % print_money(withdrawal1) % token_id_to_name(old_lp.d_token1)
               % print_money(withdrawal2) % token_id_to_name(old_lp.d_token2) << std::endl;
@@ -7189,7 +7189,7 @@ bool simple_wallet::get_liquidity_pools(const std::vector<std::string> &args)
   for (const auto &lp_summary: res.liquidity_pools) {
     oss << std::setw(30) << tokens_to_lpname(lp_summary.token1, lp_summary.token2)
         << std::setw(15) << token_id_to_name(lp_summary.lp_token)
-        << std::setw(15) << ((double)lp_summary.amount1) / lp_summary.amount2
+        << std::setw(15) << ((double)lp_summary.amount2) / lp_summary.amount1
         << std::setw(20) << print_money(lp_summary.amount1)
         << std::setw(20) << print_money(lp_summary.amount2) << std::endl;
   }
@@ -7242,7 +7242,7 @@ bool simple_wallet::buy(const std::vector<std::string> &args)
     return true;
   }
 
-  LiquidityPoolSummary lp_summary{};
+  LiquidityPool lp_summary{};
   {
     COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
     req.name = lp_name;
@@ -7260,16 +7260,15 @@ bool simple_wallet::buy(const std::vector<std::string> &args)
     }
 
     const auto &lp = res.liquidity_pool;
-    lp_summary.d_token1 = lp.token1;
-    lp_summary.d_token2 = lp.token2;
-    lp_summary.d_rate.d_amount1 = lp.amount1;
-    lp_summary.d_rate.d_amount2 = lp.amount2;
-    lp_summary.d_lptoken = lp.lp_token;
+    lp_summary.d_token1    = lp.token1;
+    lp_summary.d_token2    = lp.token2;
+    lp_summary.d_ratio     = { lp.amount1, lp.amount2 };
+    lp_summary.d_lptoken   = lp.lp_token;
     lp_summary.d_lp_amount = lp.lp_amount;
   }
 
-  ExchangeTransfer et{};
-  et.d_side          = ExchangeTransfer::buy;
+  CompositeTransfer et{};
+  et.d_side          = ExchangeSide::buy;
   et.d_token1        = lp_summary.d_token1;
   et.d_token2        = lp_summary.d_token2;
   et.d_amount        = amount;
@@ -7290,17 +7289,17 @@ bool simple_wallet::buy(const std::vector<std::string> &args)
     prompt << boost::format(tr("By accepting this transaction you are buying %s "
                                "with exchange rate %d."))
         % token_id_to_name(lp_summary.d_token1)
-        % (((double)lp_summary.d_rate.d_amount1) / lp_summary.d_rate.d_amount2) << std::endl;
-    Amount deposit = derive_buy_amount_from_lp_pair(lp_summary.d_rate, et.d_amount, et.d_pool_interest);
+        % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+    Amount deposit = derive_buy_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest);
     prompt << boost::format(tr("You are sending to the pool %s %s"))
         % print_money(deposit) % token_id_to_name(lp_summary.d_token2) << std::endl;
     prompt << boost::format(tr("and receiving to the wallet %s %s"))
         % print_money(et.d_amount) % token_id_to_name(lp_summary.d_token1) << std::endl;
     prompt << boost::format(tr("price impact %s"))
-              % buy_price_impact(lp_summary.d_rate, et.d_amount, et.d_pool_interest) << std::endl;
+              % buy_price_impact(lp_summary.d_ratio, et.d_amount, et.d_pool_interest) << std::endl;
     prompt << boost::format(tr("pool interest %s %s."))
-        % print_money(derive_buy_amount_from_lp_pair(lp_summary.d_rate, et.d_amount, et.d_pool_interest) -
-                      derive_buy_amount_wo_interest_from_lp_pair(lp_summary.d_rate, et.d_amount))
+        % print_money(derive_buy_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest) -
+                      derive_buy_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, 0))
         % token_id_to_name(lp_summary.d_token2) << std::endl;
     prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
               % print_money(ptx_vector[0].fee) << std::endl;
@@ -7372,7 +7371,7 @@ bool simple_wallet::sell(const std::vector<std::string> &args)
     return true;
   }
 
-  LiquidityPoolSummary lp_summary{};
+  LiquidityPool lp_summary{};
   {
     COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
     req.name = lp_name;
@@ -7390,16 +7389,15 @@ bool simple_wallet::sell(const std::vector<std::string> &args)
     }
 
     const auto &lp = res.liquidity_pool;
-    lp_summary.d_token1 = lp.token1;
-    lp_summary.d_token2 = lp.token2;
-    lp_summary.d_rate.d_amount1 = lp.amount1;
-    lp_summary.d_rate.d_amount2 = lp.amount2;
-    lp_summary.d_lptoken = lp.lp_token;
+    lp_summary.d_token1    = lp.token1;
+    lp_summary.d_token2    = lp.token2;
+    lp_summary.d_ratio     = { lp.amount1, lp.amount2 };
+    lp_summary.d_lptoken   = lp.lp_token;
     lp_summary.d_lp_amount = lp.lp_amount;
   }
 
-  ExchangeTransfer et{};
-  et.d_side          = ExchangeTransfer::sell;
+  CompositeTransfer et{};
+  et.d_side          = ExchangeSide::sell;
   et.d_token1        = lp_summary.d_token1;
   et.d_token2        = lp_summary.d_token2;
   et.d_amount        = amount;
@@ -7420,17 +7418,17 @@ bool simple_wallet::sell(const std::vector<std::string> &args)
     prompt << boost::format(tr("By accepting this transaction you are selling %s "
                                "with exchange rate %d."))
               % token_id_to_name(lp_summary.d_token1)
-              % (((double)lp_summary.d_rate.d_amount1) / lp_summary.d_rate.d_amount2) << std::endl;
-    Amount withdrawal = derive_sell_amount_from_lp_pair(lp_summary.d_rate, et.d_amount, et.d_pool_interest);
+              % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+    Amount withdrawal = derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest);
     prompt << boost::format(tr("You are receiving to the wallet %s %s"))
               % print_money(withdrawal) % token_id_to_name(lp_summary.d_token2) << std::endl;
     prompt << boost::format(tr("and sending to the pool %s %s"))
               % print_money(et.d_amount) % token_id_to_name(lp_summary.d_token1) << std::endl;
     prompt << boost::format(tr("price impact %s"))
-              % sell_price_impact(lp_summary.d_rate, et.d_amount, et.d_pool_interest) << std::endl;
+              % sell_price_impact(lp_summary.d_ratio, et.d_amount, et.d_pool_interest) << std::endl;
     prompt << boost::format(tr("pool interest %s %s."))
-              % print_money(derive_sell_amount_wo_interest_from_lp_pair(lp_summary.d_rate, et.d_amount) -
-              derive_sell_amount_from_lp_pair(lp_summary.d_rate, et.d_amount, et.d_pool_interest))
+              % print_money(derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, 0) -
+                            derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest))
               % token_id_to_name(lp_summary.d_token2) << std::endl;
     prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
               % print_money(ptx_vector[0].fee) << std::endl;
@@ -7459,9 +7457,11 @@ bool simple_wallet::sell(const std::vector<std::string> &args)
   return true;
 }
 
-bool simple_wallet::exchange_info(const std::vector<std::string> &args)
+bool simple_wallet::exchange_rate(const std::vector<std::string> &args)
 {
-  //  "exchange_info <token_to_sell> <token_to_buy> <amount>"
+  using namespace cryptonote;
+
+  //  "exchange_rate <token_to_sell> <token_to_buy> <amount>"
   if (!try_connect_to_daemon()) {
     message_writer() << "No connection to the daemon";
     return true;
@@ -7502,9 +7502,14 @@ bool simple_wallet::exchange_info(const std::vector<std::string> &args)
     return true;
   }
 
+  if (token1 == token2) {
+    success_msg_writer(true) << "If you need to exchange " << token1 << " to itself you can do nothing";
+    return true;
+  }
+
   Amount amount{0};
   if (!local_args.empty()) {
-    bool ok = cryptonote::parse_amount(amount, local_args[0]);
+    bool ok = parse_amount(amount, local_args[0]);
     if(!ok || 0 == amount) {
       fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
                         << ", " << tr("expected number from 0 to ") << print_money(std::numeric_limits<uint64_t>::max());
@@ -7512,8 +7517,45 @@ bool simple_wallet::exchange_info(const std::vector<std::string> &args)
     }
   }
 
-  std::vector<cryptonote::TokenId> hops;
-  m_wallet->exchange_info(hops, token1, token2, amount);
+  std::vector<TokenId> hops;
+  double               final_rate;
+
+  try {
+    m_wallet->exchange_rate(hops, final_rate, token1, token2, amount);
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  if (hops.empty()) {
+    success_msg_writer(true) << tr("No way to exchange ") << token1 << " to " << token2;
+    return true;
+  }
+
+  if (hops.size() < 2) {
+    fail_msg_writer() << tr("Unknown error");
+    return true;
+  }
+
+  std::stringstream s;
+  for (size_t i = 0; i < hops.size() - 1; ++i) {
+    s << tokens_to_lpname(hops[i], hops[i + 1]);
+    if (i + 1 < hops.size() - 1) {
+      s << " --> ";
+    }
+  }
+
+  s << std::endl;
+  s << "Final rate: " << final_rate;
+
+  if (amount != 0) {
+    s << std::endl;
+    s << "Final amount: " << print_money(amount * final_rate);
+  }
+  success_msg_writer(true) << s.str();
 
   return true;
 }

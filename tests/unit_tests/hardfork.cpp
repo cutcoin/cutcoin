@@ -194,9 +194,11 @@ public:
   virtual cryptonote::blobdata get_txpool_tx_blob(const crypto::hash& txid) const { return ""; }
   virtual bool for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const cryptonote::blobdata*)>, bool include_blob = false, bool include_unrelayed_txes = false) const { return false; }
 
-  virtual bool add_liqudity_pool(const cryptonote::liqudity_pool_data_t &lp_data) { return true; }
-  virtual bool get_liquidity_pool(cryptonote::liqudity_pool_data_t &lp_data) const { return true; }
-  virtual bool get_all_liquidity_pools(std::vector<liqudity_pool_data_t> &liquidity_pools) const { return true; }
+  virtual bool add_liqudity_pool(const cryptonote::liquidity_pool_data_t &lp_data) { return true; }
+  virtual bool get_liquidity_pool(const cryptonote::TokenId &lptoken, cryptonote::liquidity_pool_data_t &lp_data) const { return true; }
+  virtual bool get_liquidity_pool(const std::string &token_name, cryptonote::liquidity_pool_data_t &lp_data) const { return true; }
+  virtual bool get_liquidity_pool(const cryptonote::TokenId &token1, const cryptonote::TokenId &token2, cryptonote::liquidity_pool_data_t &lp_data) const { return true; }
+  virtual bool get_all_liquidity_pools(std::vector<liquidity_pool_data_t> &liquidity_pools) const { return true; }
   virtual void remove_liqudity_pool(const cryptonote::TokenId &lptoken_id) {}
   virtual bool add_token_data(const cryptonote::token_data_t &token_data) { return true; }
   virtual void remove_token_data(const cryptonote::TokenId &token_id) {}

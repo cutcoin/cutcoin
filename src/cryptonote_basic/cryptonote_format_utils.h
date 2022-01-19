@@ -181,15 +181,6 @@ bool generate_key_image_helper_precomp(const account_keys& ack,
                                        crypto::key_image& ki,
                                        hw::device &hwdev);
 
-bool generate_lp_key_image_helper_precomp(const account_keys& ack,
-                                          const crypto::public_key& out_key,
-                                          const crypto::key_derivation& recv_derivation,
-                                          size_t real_output_index,
-                                          const subaddress_index& received_index,
-                                          keypair& in_ephemeral,
-                                          crypto::key_image& ki,
-                                          hw::device &hwdev);
-
 void get_blob_hash(const blobdata& blob, crypto::hash& res);
 
 crypto::hash get_blob_hash(const blobdata& blob);

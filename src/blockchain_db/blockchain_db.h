@@ -170,7 +170,7 @@ struct txpool_tx_meta_t
   uint8_t padding[76]; // till 192 bytes
 };
 
-struct liqudity_pool_data_t {
+struct liquidity_pool_data_t {
   TokenId     lptoken;
   TokenId     token1;
   TokenId     token2;
@@ -882,7 +882,7 @@ public:
    * @param lp_data pool data to add
    * @return true on success
    */
-  virtual bool add_liqudity_pool(const cryptonote::liqudity_pool_data_t &lp_data) = 0;
+  virtual bool add_liqudity_pool(const cryptonote::liquidity_pool_data_t &lp_data) = 0;
 
   /**
    * @brief checks if a block exists
@@ -1544,15 +1544,44 @@ public:
    * @param lp_data struct to fill (by lptoken_id)
    * @return true on success
    */
-  virtual bool get_liquidity_pool(liqudity_pool_data_t &lp_data) const = 0;
+  virtual bool get_liquidity_pool(const TokenId &lptoken, liquidity_pool_data_t &lp_data) const = 0;
 
   /**
- * @brief get all liquidity pools data
- *
- * @param liquidity_pools vector of liquidity pool data structures.
- * @return true on success
- */
-  virtual bool get_all_liquidity_pools(std::vector<liqudity_pool_data_t> &liquidity_pools) const = 0;
+   * @brief get liquidity pool
+   *
+   * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+   * 'lptoken', 'token1' and 'token2'.
+   *
+   * @param name liquidity pool name
+   * @param liquidity_pool liquidity pools structure.
+   *
+   * @return 'true' if the pool is found, otherwise 'false'.
+   */
+  virtual bool get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const = 0;
+
+  /**
+   * @brief get liquidity pool
+   *
+   * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+   * 'lptoken', 'token1' and 'token2'.
+   *
+   * @param token1 id of the pool ticker token
+   * @param token1 id of the pool underlying token
+   * @param liquidity_pool liquidity pools structure.
+   *
+   * @return 'true' if the pool is found, otherwise 'false'.
+   */
+  virtual bool get_liquidity_pool(const TokenId &token1,
+                                  const TokenId &token2,
+                                  liquidity_pool_data_t &liquidity_pool) const = 0;
+
+  /**
+   * @brief get all liquidity pools data
+   *
+   * @param liquidity_pools vector of liquidity pool data structures.
+   * @return true on success
+   */
+  virtual bool get_all_liquidity_pools(std::vector<liquidity_pool_data_t> &liquidity_pools) const = 0;
 
   /**
    * @brief get token data

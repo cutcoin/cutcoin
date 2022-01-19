@@ -465,7 +465,7 @@ bool core_rpc_server::on_get_mixing_lpouts_bin(const COMMAND_RPC_GET_MIXING_LPOU
 
     res.status = "Failed";
 
-    liqudity_pool_data_t lp_data;
+    liquidity_pool_data_t lp_data;
     if(!m_core.get_blockchain_storage().get_liquidity_pool(req.name, lp_data)) {
       res.liquidity_pool = {0, 0, 0, 0, 0, 0};
     }
@@ -491,14 +491,14 @@ bool core_rpc_server::on_get_mixing_lpouts_bin(const COMMAND_RPC_GET_MIXING_LPOU
 
     res.status = "Failed";
 
-    std::vector<liqudity_pool_data_t> liquidity_pools;
+    std::vector<liquidity_pool_data_t> liquidity_pools;
 
     if(!m_core.get_blockchain_storage().get_liquidity_pools(req.name, req.exact_match, liquidity_pools))
     {
       return true;
     }
 
-    for (const liqudity_pool_data_t &lp_data: liquidity_pools) {
+    for (const liquidity_pool_data_t &lp_data: liquidity_pools) {
       res.liquidity_pools.push_back({lp_data.token1,
                                      lp_data.token2,
                                      lp_data.amount1,
@@ -520,10 +520,8 @@ bool core_rpc_server::on_get_mixing_lpouts_bin(const COMMAND_RPC_GET_MIXING_LPOU
 
     res.status = "Failed";
 
-    cryptonote::liqudity_pool_data_t lp_data;
-    lp_data.lptoken = req.lp_token;
-
-    if(!m_core.get_blockchain_storage().get_db().get_liquidity_pool(lp_data))
+    cryptonote::liquidity_pool_data_t lp_data;
+    if(!m_core.get_blockchain_storage().get_db().get_liquidity_pool(req.lp_token, lp_data))
     {
       res.liquidity_pool = {0, 0, 0, 0, 0, 0};
     }

@@ -94,16 +94,132 @@ bool lpname_to_tokens(const std::string &name, TokenId &token1, TokenId &token2)
 
 bool validate_lpname(const std::string &pool_name)
 {
-  std::size_t delimeter_pos = pool_name.find(delimiter);
-  if (delimeter_pos  == std::string::npos) {
+  std::size_t delimiter_pos = pool_name.find(delimiter);
+  if (delimiter_pos  == std::string::npos) {
     return false;
   }
 
-  std::string t1 = pool_name.substr(0, delimeter_pos);
-  std::string t2 = pool_name.substr(delimeter_pos + 1);
+  std::string t1 = pool_name.substr(0, delimiter_pos);
+  std::string t2 = pool_name.substr(delimiter_pos + 1);
 
   return !(t1 == t2);
 }
 
+bool pools_to_composite_exchange_transfer(std::vector<ExchangeTransfer>    &exchange_transfers,
+                                          ExchangeTransfer                 &summary,
+                                          const TokenId                    &token1,
+                                          const TokenId                    &token2,
+                                          const Amount                     &amount,
+                                          const Amount                     &pool_interest,
+                                          const std::vector<LiquidityPool> &pools,
+                                          const ExchangeSide               &side)
+{
+  if (pools.empty()) {
+    return false;
+  }
+
+  if (pools[0].d_token1 != token1 && pools[0].d_token2 != token1) {
+    return false;
+  }
+
+  if (pools[pools.size() - 1].d_token1 != token2 && pools[pools.size() - 1].d_token2 != token2) {
+    return false;
+  }
+
+  Amount amount1 = amount;
+  Amount amount2 = 0;
+
+  if (pools.size() == 1) {
+    const LiquidityPool &p = pools[0];
+    if (side == ExchangeSide::buy) {
+      amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
+      summary = {
+        p.d_token1,
+        p.d_token2,
+        p.d_ratio,
+        {p.d_ratio.d_amount1 - amount1, p.d_ratio.d_amount2 + amount2}
+      };
+    } else {
+      amount2 = derive_sell_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
+      summary = {
+        p.d_token1,
+        p.d_token2,
+        p.d_ratio,
+        {p.d_ratio.d_amount1 + amount1, p.d_ratio.d_amount2 - amount2}
+      };
+    }
+    exchange_transfers.push_back(summary);
+    return true;
+  }
+
+  TokenId t1 = token1;
+  TokenId t2 = token2;
+
+  for (size_t i = 0; i < pools.size(); ++i) {
+    // use original pool to copy the data
+    ExchangeTransfer et;
+    et.d_token1    = pools[i].d_token1;
+    et.d_token2    = pools[i].d_token2;
+    et.d_old_ratio = pools[i].d_ratio;
+
+    // use pool copy to invert if needed
+    if (t1 == pools[i].d_token1) {
+      const LiquidityPool &p = pools[i];
+      if (side == ExchangeSide::buy) {
+        amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
+        et.d_new_ratio = {p.d_ratio.d_amount1 - amount1, p.d_ratio.d_amount1 + amount2};
+      } else {
+        amount2 = derive_sell_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
+        et.d_new_ratio = {p.d_ratio.d_amount1 + amount1, p.d_ratio.d_amount1 - amount2};
+      }
+      t1      = p.d_token1;
+      amount1 = amount2;
+    }
+    if (t1 == pools[i].d_token2) {
+      const LiquidityPool p = inverse(pools[i]);
+      if (side == ExchangeSide::buy) {
+        amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
+        et.d_new_ratio = {p.d_ratio.d_amount1 - amount2, p.d_ratio.d_amount1 + amount1};
+      }
+      else {
+        amount2 = derive_buy_amount_from_lp_pair(p.d_ratio, amount1, pool_interest);
+        et.d_new_ratio = {p.d_ratio.d_amount1 + amount2, p.d_ratio.d_amount1 - amount1};
+      }
+      t1      = p.d_token1;
+      amount1 = amount2;
+    }
+    exchange_transfers.emplace_back(et);
+  }
+
+  Amount old_amount1, old_amount2;
+  Amount new_amount1, new_amount2;
+
+  if (token1 == exchange_transfers[0].d_token1) {
+    old_amount1 = exchange_transfers[0].d_old_ratio.d_amount1;
+    new_amount1 = exchange_transfers[0].d_new_ratio.d_amount1;
+  }
+  else {
+    old_amount1 = exchange_transfers[0].d_old_ratio.d_amount2;
+    new_amount1 = exchange_transfers[0].d_new_ratio.d_amount2;
+  }
+
+  if (token2 == exchange_transfers[exchange_transfers.size() - 1].d_token1) {
+    old_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_old_ratio.d_amount1;
+    new_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_new_ratio.d_amount1;
+  }
+  else {
+    old_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_old_ratio.d_amount2;
+    new_amount2 = exchange_transfers[exchange_transfers.size() - 1].d_new_ratio.d_amount2;
+  }
+
+  summary = {
+    token1,
+    token2,
+    {old_amount1, old_amount2},
+    {new_amount1, new_amount2}
+  };
+
+  return true;
+}
 
 }  // namespace cryptonote

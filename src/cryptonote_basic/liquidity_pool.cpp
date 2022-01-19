@@ -32,15 +32,15 @@
 
 namespace cryptonote {
 
-Amount get_lp_token_to_funds(const LiquidityPoolRatio &ratio) {
+Amount get_lp_token_to_funds(const AmountRatio &ratio) noexcept {
   const num::u128_t a{ratio.d_amount1};
   const num::u128_t b{ratio.d_amount2};
   return sqrt(a * b).val[0];
 }
 
 Amount get_lp_token_increment(const Amount             &lp_token_amount,
-                              const LiquidityPoolRatio &old_ratio,
-                              const LiquidityPoolRatio &new_ratio)
+                              const AmountRatio &old_ratio,
+                              const AmountRatio &new_ratio)
 {
   const num::u128_t a1{old_ratio.d_amount1};
   const num::u128_t b1{old_ratio.d_amount2};
@@ -58,8 +58,8 @@ Amount get_lp_token_increment(const Amount             &lp_token_amount,
 }
 
 Amount get_lp_token_decrement(const Amount &lp_token_amount,
-                              const LiquidityPoolRatio &old_ratio,
-                              const LiquidityPoolRatio &new_ratio)
+                              const AmountRatio &old_ratio,
+                              const AmountRatio &new_ratio)
 {
   const num::u128_t a1{old_ratio.d_amount1};
   const num::u128_t b1{old_ratio.d_amount2};
@@ -74,9 +74,9 @@ Amount get_lp_token_decrement(const Amount &lp_token_amount,
   return r1.val[0];
 }
 
-LiquidityPoolRatio get_funds_to_lp_token(const Amount             &old_lpt_amount,
-                                         const Amount             &new_lpt_amount,
-                                         const LiquidityPoolRatio &ratio) {
+AmountRatio get_funds_to_lp_token(const Amount             &old_lpt_amount,
+                                  const Amount             &new_lpt_amount,
+                                  const AmountRatio &ratio) noexcept {
   const num::u128_t lp1{old_lpt_amount};
   const num::u128_t lp2{new_lpt_amount};
   const num::u128_t r0_1{ratio.d_amount1};
@@ -88,7 +88,7 @@ LiquidityPoolRatio get_funds_to_lp_token(const Amount             &old_lpt_amoun
   return {r1_1.val[0], r1_2.val[0]};
 }
 
-Amount token_amount_from_lp_pair(const LiquidityPoolRatio &ratio, const Amount &amount)
+Amount token_amount_from_lp_pair(const AmountRatio &ratio, const Amount &amount)
 {
   const num::u128_t a{ratio.d_amount1};
   const num::u128_t b{ratio.d_amount2};
@@ -103,7 +103,7 @@ Amount token_amount_from_lp_pair(const LiquidityPoolRatio &ratio, const Amount &
   return token_fraction.val[0];
 }
 
-Amount underlying_amount_from_lp_pair(const LiquidityPoolRatio &ratio, const Amount &amount)
+Amount underlying_amount_from_lp_pair(const AmountRatio &ratio, const Amount &amount)
 {
   const num::u128_t a{ratio.d_amount1};
   const num::u128_t b{ratio.d_amount2};
@@ -118,7 +118,7 @@ Amount underlying_amount_from_lp_pair(const LiquidityPoolRatio &ratio, const Amo
   return token_fraction.val[0];
 }
 
-Amount derive_buy_amount_from_lp_pair(const LiquidityPoolRatio &ratio,
+Amount derive_buy_amount_from_lp_pair(const AmountRatio &ratio,
                                       const Amount             &amount,
                                       const Amount             &pool_interest)
 {
@@ -140,7 +140,7 @@ Amount derive_buy_amount_from_lp_pair(const LiquidityPoolRatio &ratio,
   return token_fraction.val[0];
 }
 
-Amount derive_sell_amount_from_lp_pair(const LiquidityPoolRatio &ratio,
+Amount derive_sell_amount_from_lp_pair(const AmountRatio &ratio,
                                        const Amount             &amount,
                                        const Amount             &pool_interest)
 {
@@ -161,45 +161,7 @@ Amount derive_sell_amount_from_lp_pair(const LiquidityPoolRatio &ratio,
   return res.val[0];
 }
 
-Amount derive_buy_amount_wo_interest_from_lp_pair(const LiquidityPoolRatio &ratio,
-                                                  const Amount             &amount)
-{
-  const num::u128_t a1{ratio.d_amount1};
-  const num::u128_t b1{ratio.d_amount2};
-  const num::u128_t a{amount};
-
-  num::u128_t token_fraction = a * b1 / (a1 - a);
-  if (token_fraction.val[1] != 0) {
-    throw std::runtime_error{"Liquidity pool ratio overflow"};
-  }
-
-  if (token_fraction.val[1] != 0) {
-    throw std::runtime_error{"Liquidity pool interest overflow"};
-  }
-
-  return token_fraction.val[0];
-}
-
-Amount derive_sell_amount_wo_interest_from_lp_pair(const LiquidityPoolRatio &ratio,
-                                                   const Amount             &amount)
-{
-  const num::u128_t a1{ratio.d_amount1};
-  const num::u128_t b1{ratio.d_amount2};
-  const num::u128_t a{amount};
-  const num::u128_t a2{ratio.d_amount1 + a};
-
-
-  num::u128_t token_fraction = a1 * b1 / a2;
-  if (token_fraction.val[1] != 0) {
-    throw std::runtime_error{"Liquidity pool ratio overflow"};
-  }
-
-  num::u128_t res = b1 - token_fraction;
-
-  return res.val[0];
-}
-
-double buy_price_impact(const LiquidityPoolRatio &ratio, const Amount &amount, const Amount &pool_interest)
+double buy_price_impact(const AmountRatio &ratio, const Amount &amount, const Amount &pool_interest) noexcept
 {
   Amount a = derive_buy_amount_from_lp_pair(ratio, amount, pool_interest);
   Amount t1 = ratio.d_amount1 + amount;
@@ -209,7 +171,7 @@ double buy_price_impact(const LiquidityPoolRatio &ratio, const Amount &amount, c
   return r2 / r1 - r1;
 }
 
-double sell_price_impact(const LiquidityPoolRatio &ratio, const Amount &amount, const Amount &pool_interest)
+double sell_price_impact(const AmountRatio &ratio, const Amount &amount, const Amount &pool_interest) noexcept
 {
   Amount a = derive_sell_amount_from_lp_pair(ratio, amount, pool_interest);
   Amount t1 = ratio.d_amount1 - amount;
@@ -219,7 +181,7 @@ double sell_price_impact(const LiquidityPoolRatio &ratio, const Amount &amount, 
   return r2 / r1 - r1;
 }
 
-bool check_initial_pool_liquidity(Amount amount1, Amount amount2)
+bool check_initial_pool_liquidity(Amount amount1, Amount amount2) noexcept
 {
   return amount1 > 0 && amount2 > 0;
 }

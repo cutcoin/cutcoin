@@ -2314,41 +2314,17 @@ bool Blockchain::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_
   return true;
 }
 
-bool Blockchain::get_liquidity_pool(const std::string &name, liqudity_pool_data_t &liquidity_pool) const
+bool Blockchain::get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   CRITICAL_REGION_LOCAL(m_blockchain_lock);
 
-  liquidity_pool = {0, 0, 0, 0, 0, 0};
-
-  TokenId token1, token2;
-  if (!lpname_to_tokens(name, token1, token2)) {
-    return false;
-  }
-
-  std::vector<liqudity_pool_data_t> lps;
-  try {
-    if (!m_db->get_all_liquidity_pools(lps)) {
-      return false;
-    }
-  }
-  catch (const std::exception &e) {
-    return false;
-  }
-
-  for (const auto &lp: lps) {
-    if (lp.token1 == token1 && lp.token2 == token2) {
-      liquidity_pool = lp;
-      return true;
-    }
-  }
-
-  return false;
+  return m_db->get_liquidity_pool(name, liquidity_pool);
 }
 
-bool Blockchain::get_liquidity_pools(const std::string                             &name,
-                                     const bool                                    &exact_match,
-                                     std::vector<cryptonote::liqudity_pool_data_t> &liquidity_pools) const
+bool Blockchain::get_liquidity_pools(const std::string                  &name,
+                                     const bool                         &exact_match,
+                                     std::vector<liquidity_pool_data_t> &liquidity_pools) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   CRITICAL_REGION_LOCAL(m_blockchain_lock);
@@ -2364,9 +2340,8 @@ bool Blockchain::get_liquidity_pools(const std::string                          
 
       for (const TokenId &id: tokens) {
         if (is_lptoken(id)) {
-          cryptonote::liqudity_pool_data_t lp_data;
-          lp_data.lptoken = id;
-          if (m_db->get_liquidity_pool(lp_data)) {
+          liquidity_pool_data_t lp_data;
+          if (m_db->get_liquidity_pool(id, lp_data)) {
             liquidity_pools.emplace_back(lp_data);
           }
         }
@@ -2383,11 +2358,10 @@ bool Blockchain::get_liquidity_pools(const std::string                          
     try
     {
       m_db->get_all_lptokens(tokens);
-      cryptonote::liqudity_pool_data_t lp_data;
+      liquidity_pool_data_t lp_data;
       for (const TokenId &id: tokens)
       {
-        lp_data.lptoken = id;
-        if (m_db->get_liquidity_pool(lp_data)) {
+        if (m_db->get_liquidity_pool(id, lp_data)) {
           if (exact_match) {
             if (tokens_to_lpname(lp_data.token1,lp_data.token2) == name) {
               liquidity_pools.emplace_back(lp_data);
@@ -2418,7 +2392,7 @@ void Blockchain::get_output_key_mask_unlocked(const TokenId& token_id, const uin
   tx_out_index toi = m_db->get_output_tx_and_index(token_id, index);
   unlocked = is_tx_spendtime_unlocked(m_db->get_tx_unlock_time(toi.first));
 }
-//------------------------------------------------------------------
+
 bool Blockchain::get_output_distribution(cryptonote::TokenId    token_id,
                                          uint64_t               from_height,
                                          uint64_t               to_height,
@@ -3026,14 +3000,13 @@ bool Blockchain::check_no_lp_inputs(const transaction &tx) const {
 
 bool Blockchain::check_existing_liquidity_pool(const TokenId &id1, const TokenId &id2, const TokenId &lp_id) const
 {
-  liqudity_pool_data_t lp_data{};
-  lp_data.lptoken = lp_id;
-  if (m_db->get_liquidity_pool(lp_data)) {
+  liquidity_pool_data_t lp_data{};
+  if (m_db->get_liquidity_pool(lp_id, lp_data)) {
     return false;
   }
 
-  liqudity_pool_data_t liquidity_pool;
-  if (get_liquidity_pool(tokens_to_lpname(id1, id2), liquidity_pool)) {
+  liquidity_pool_data_t liquidity_pool;
+  if (m_db->get_liquidity_pool(id1, id2, liquidity_pool)) {
     return false;
   }
 
@@ -3795,7 +3768,7 @@ bool Blockchain::check_ps_tgtx(const transaction &tx)
   return true;
 }
 
-bool Blockchain::check_lp_gtx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update)
+bool Blockchain::check_lp_gtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
 {
   if (tx.type.has_flags()) {
     MERROR_VER("Liquidity pool genesis transaction must have no flags");
@@ -3916,19 +3889,19 @@ bool Blockchain::check_lp_gtx(const transaction &tx, std::vector<liqudity_pool_d
   }
 
   if (liquidity_pools_update != nullptr) {
-    liqudity_pool_data_t lpd{lp_data.d_lptoken,
-                             lp_data.d_token1,
-                             lp_data.d_token2,
-                             lp_data.d_lpamount,
-                             lp_data.d_amount1,
-                             lp_data.d_amount2};
+    liquidity_pool_data_t lpd{lp_data.d_lptoken,
+                              lp_data.d_token1,
+                              lp_data.d_token2,
+                              lp_data.d_lpamount,
+                              lp_data.d_amount1,
+                              lp_data.d_amount2};
     liquidity_pools_update->emplace_back(lpd);
   }
 
   return true;
 }
 
-bool Blockchain::check_lp_addtx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update)
+bool Blockchain::check_lp_addtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
 {
   if (tx.type.has_flags()) {
     MERROR_VER("Add liquidity transaction must have no flags");
@@ -3950,8 +3923,8 @@ bool Blockchain::check_lp_addtx(const transaction &tx, std::vector<liqudity_pool
     return false;
   }
 
-  liqudity_pool_data_t old_lp_data{};
-  if (!get_liquidity_pool(tokens_to_lpname(token_id1, token_id2), old_lp_data)) {
+  liquidity_pool_data_t old_lp_data{};
+  if (!m_db->get_liquidity_pool(token_id1, token_id2, old_lp_data)) {
     LOG_PRINT_L2("Liquidity pool doesn't exist in blockchain");
     return false;
   }
@@ -4016,19 +3989,19 @@ bool Blockchain::check_lp_addtx(const transaction &tx, std::vector<liqudity_pool
   }
 
   if (liquidity_pools_update != nullptr) {
-    liqudity_pool_data_t lpd{new_lp_data.d_lptoken,
-                             new_lp_data.d_token1,
-                             new_lp_data.d_token2,
-                             new_lp_data.d_lpamount,
-                             new_lp_data.d_amount1,
-                             new_lp_data.d_amount2};
+    liquidity_pool_data_t lpd{new_lp_data.d_lptoken,
+                              new_lp_data.d_token1,
+                              new_lp_data.d_token2,
+                              new_lp_data.d_lpamount,
+                              new_lp_data.d_amount1,
+                              new_lp_data.d_amount2};
     liquidity_pools_update->emplace_back(lpd);
   }
 
   return true;
 }
 
-bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update)
+bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
 {
   if (tx.type.has_flags()) {
     MERROR_VER("Take liquidity transaction must have no flags");
@@ -4037,7 +4010,7 @@ bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liqudity_poo
 
   tx_extra_lp_data new_lp_data{};
   if (!get_lp_data(tx, new_lp_data)) {
-    LOG_PRINT_L2("Could not extract liquidity pool data from add liquidity transaction");
+    LOG_PRINT_L2("Could not extract liquidity pool data from take liquidity transaction");
     return false;
   }
 
@@ -4050,8 +4023,8 @@ bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liqudity_poo
     return false;
   }
 
-  liqudity_pool_data_t old_lp_data{};
-  if (!get_liquidity_pool(tokens_to_lpname(token_id1, token_id2), old_lp_data)) {
+  liquidity_pool_data_t old_lp_data{};
+  if (!m_db->get_liquidity_pool(token_id1, token_id2, old_lp_data)) {
     LOG_PRINT_L2("Liquidity pool doesn't exist in blockchain");
     return false;
   }
@@ -4067,9 +4040,7 @@ bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liqudity_poo
     return false;
   }
 
-  LiquidityPoolRatio new_funds = get_funds_to_lp_token(old_lp_data.lpamount,
-                                                       new_lp_data.d_lpamount,
-                                                       {old_a1, old_a2});
+  AmountRatio new_funds = get_funds_to_lp_token(old_lp_data.lpamount, new_lp_data.d_lpamount, {old_a1, old_a2});
 
   if (new_a1 >= old_a1 || new_a2 >= old_a2) {
     LOG_PRINT_L2("New pool liquidity must be less then the old one");
@@ -4120,7 +4091,7 @@ bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liqudity_poo
   }
 
   if (liquidity_pools_update != nullptr) {
-    liqudity_pool_data_t lpd{new_lp_data.d_lptoken,
+    liquidity_pool_data_t lpd{new_lp_data.d_lptoken,
                              new_lp_data.d_token1,
                              new_lp_data.d_token2,
                              new_lp_data.d_lpamount,
@@ -4132,7 +4103,7 @@ bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liqudity_poo
   return true;
 }
 
-bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update)
+bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
 {
   if (tx.type.has_flags()) {
     MERROR_VER("Exchange transaction must have no flags");
@@ -4141,7 +4112,7 @@ bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liqudity_poo
 
   tx_extra_exchange_data exchange_data{};
   if (!get_exchange_data(tx, exchange_data)) {
-    LOG_PRINT_L2("Could not extract exchange data from add liquidity transaction");
+    LOG_PRINT_L2("Could not extract exchange data from buy transaction");
     return false;
   }
 
@@ -4149,33 +4120,36 @@ bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liqudity_poo
 
   std::set<TokenId> pool_out_tokens;
   for (const auto &in: tx.vin) {
-    if (in.type() == typeid(txin_to_key)) {
-      const txin_to_key &in_to_key = boost::get<txin_to_key>(in);
-      if (in_to_key.s_type == SourceType::lp) {
-        pool_out_tokens.insert(in_to_key.token_id);
+    if (in.type() != typeid(txin_to_key)) {
+      MERROR_VER("Input must have 'txin_to_key' type");
+      return false;
+    }
 
-        std::vector<uint64_t> absolute_offsets = relative_output_offsets_to_absolute(in_to_key.key_offsets);
-        std::vector<lpoutput_data_t> outputs;
+    const txin_to_key &in_to_key = boost::get<txin_to_key>(in);
+    if (in_to_key.s_type == SourceType::lp) {
+      pool_out_tokens.insert(in_to_key.token_id);
 
-        try {
-          m_db->get_output_key_lpool(in_to_key.token_id, absolute_offsets, outputs, true);
-          if (absolute_offsets.size() != outputs.size()) {
-            MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
-            return false;
-          }
-        }
-        catch (...) {
+      std::vector<uint64_t> absolute_offsets = relative_output_offsets_to_absolute(in_to_key.key_offsets);
+      std::vector<lpoutput_data_t> outputs;
+
+      try {
+        m_db->get_output_key_lpool(in_to_key.token_id, absolute_offsets, outputs, true);
+        if (absolute_offsets.size() != outputs.size()) {
           MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
           return false;
         }
-
-        token1_amount += outputs[0].amount;
       }
+      catch (...) {
+        MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+        return false;
+      }
+
+      token1_amount += outputs[0].amount;
     }
   }
 
   if (pool_out_tokens.size() != 1) {
-    MERROR_VER("Exchange transaction must have 1 token from liquidity pool");
+    MERROR_VER("Exchange transaction must have 1 outbounding token (from liquidity pool)");
     return false;
   }
 
@@ -4207,7 +4181,7 @@ bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liqudity_poo
   pool_out_tokens.insert(pool_in_tokens.cbegin(), pool_in_tokens.cend());
 
   if (pool_out_tokens.size() != 2) {
-    MERROR_VER("Exchange transaction must have 1 token coming into liquidity pool");
+    MERROR_VER("Exchange transaction must have 1 inbounding token (into liquidity pool)");
     return false;
   }
 
@@ -4215,46 +4189,85 @@ bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liqudity_poo
   const TokenId &token2 = (pool_out_token != *pool_out_tokens.cbegin()) ?
     *pool_out_tokens.cbegin() : *pool_out_tokens.crbegin();
 
-  std::string lp_name = tokens_to_lpname(token1, token2);
-  liqudity_pool_data_t lp_data{};
-  if (!get_liquidity_pool(tokens_to_lpname(token1, token2), lp_data)) {
-    LOG_PRINT_L2("Could not find the liquidity pool matching the tokens in the exchange transaction");
+  if (exchange_data.data.empty()) {
+    LOG_PRINT_L2("Could not extract exchange data from 'add liquidity' transaction");
     return false;
   }
 
-  if (lp_data.lptoken != exchange_data.d_lp_token ||
-      lp_data.amount1 != exchange_data.d_pool_amount1 ||
-      lp_data.amount2 != exchange_data.d_pool_amount2) {
-    LOG_PRINT_L2("Exchange transfer contains incorrect exchange data.");
-    return false;
+  // get all pools in the exchange chain
+  std::vector<LiquidityPool> pools;
+  for (const auto &e: exchange_data.data) {
+    liquidity_pool_data_t lp{};
+    if (!get_liquidity_pool(tokens_to_lpname(e.d_token1, e.d_token2), lp)) {
+      return false;
+    }
+    pools.push_back({lp.lptoken,
+                     lp.token1,
+                     lp.token2,
+                     lp.lpamount,
+                     {lp.amount1, lp.amount2}});
   }
 
   Amount derived_amount = token1_amount - token1_change;
-  Amount real_amount = derive_buy_amount_from_lp_pair({lp_data.amount1, lp_data.amount2},
-                                                      derived_amount,
-                                                      config::DEX_FEE_PER_MILLE);
+
+  std::vector<ExchangeTransfer> exchange_transfers;
+  ExchangeTransfer summary;
+  if (!pools_to_composite_exchange_transfer(exchange_transfers,
+                                            summary,
+                                            token1,
+                                            token2,
+                                            derived_amount,
+                                            config::DEX_FEE_PER_MILLE,
+                                            pools,
+                                            ExchangeSide::buy)) {
+    LOG_PRINT_L2("Incorrect 'buy' transaction");
+    return false;
+  }
+
+  if (exchange_data.data.size() != exchange_transfers.size()) {
+    LOG_PRINT_L2("Wrong number of pools in the exchange transaction");
+    return false;
+  }
+
+  for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+    if (exchange_data.data[i] != exchange_transfers[i]) {
+      LOG_PRINT_L2("Wrong pools in exchange");
+      return false;
+    }
+  }
+
+  Amount real_amount = token2 == summary.d_token2 ? summary.d_new_ratio.d_amount2 - summary.d_old_ratio.d_amount2 :
+                       summary.d_new_ratio.d_amount1 - summary.d_old_ratio.d_amount1;
 
   if (token2_amount != real_amount) {
     LOG_PRINT_L2("Exchange ratio is not correct. Probably another exchange transaction just has happened.");
     return false;
   }
 
-  if (derived_amount != exchange_data.d_ex_amount1 || token2_amount != exchange_data.d_ex_amount2) {
-    LOG_PRINT_L2("Exchange transfer contains incorrect exchange data.");
+  if (exchange_transfers.size() != pools.size()) {
+    LOG_PRINT_L2("Something went wrong during buy tx check");
     return false;
   }
 
-  lp_data.amount1 -= derived_amount;
-  lp_data.amount2 += token2_amount;
-
   if (liquidity_pools_update != nullptr) {
-    liquidity_pools_update->emplace_back(lp_data);
+    for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+      const ExchangeTransfer &et = exchange_transfers[i];
+      const LiquidityPool    &p  = pools[i];
+      liquidity_pools_update->push_back({
+        p.d_lptoken,
+        et.d_token1,
+        et.d_token2,
+        p.d_lp_amount,
+        et.d_new_ratio.d_amount1,
+        et.d_new_ratio.d_amount2
+      });
+    }
   }
 
   return true;
 }
 
-bool Blockchain::check_lp_sell_tx(const transaction &tx, std::vector<liqudity_pool_data_t> *liquidity_pools_update)
+bool Blockchain::check_lp_sell_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
 {
   if (tx.type.has_flags()) {
     MERROR_VER("Exchange transaction must have no flags");
@@ -4263,7 +4276,7 @@ bool Blockchain::check_lp_sell_tx(const transaction &tx, std::vector<liqudity_po
 
   tx_extra_exchange_data exchange_data{};
   if (!get_exchange_data(tx, exchange_data)) {
-    LOG_PRINT_L2("Could not extract exchange data from add liquidity transaction");
+    LOG_PRINT_L2("Could not extract exchange data from sell transaction");
     return false;
   }
 
@@ -4337,40 +4350,82 @@ bool Blockchain::check_lp_sell_tx(const transaction &tx, std::vector<liqudity_po
   const TokenId &token2 = (pool_out_token != *pool_out_tokens.cbegin()) ?
                           *pool_out_tokens.cbegin() : *pool_out_tokens.crbegin();
 
-  std::string lp_name = tokens_to_lpname(token1, token2);
-  liqudity_pool_data_t lp_data{};
-  if (!get_liquidity_pool(tokens_to_lpname(token1, token2), lp_data)) {
-    LOG_PRINT_L2("Could not find the liquidity pool matching the tokens in the exchange transaction");
+
+  if (exchange_data.data.empty()) {
+    LOG_PRINT_L2("Could not extract exchange data from 'add liquidity' transaction");
     return false;
   }
 
-  if (lp_data.lptoken != exchange_data.d_lp_token ||
-      lp_data.amount1 != exchange_data.d_pool_amount1 ||
-      lp_data.amount2 != exchange_data.d_pool_amount2) {
-    LOG_PRINT_L2("Exchange transfer contains incorrect exchange data.");
+  // get all pools in the exchange chain
+  std::vector<LiquidityPool> pools;
+  for (const auto &e: exchange_data.data) {
+    liquidity_pool_data_t lp{};
+    if (!get_liquidity_pool(tokens_to_lpname(e.d_token1, e.d_token2), lp)) {
+      return false;
+    }
+    pools.push_back({lp.lptoken,
+                     lp.token1,
+                     lp.token2,
+                     lp.lpamount,
+                     {lp.amount1, lp.amount2}});
+  }
+
+
+
+  std::vector<ExchangeTransfer> exchange_transfers;
+  ExchangeTransfer summary;
+  if (!pools_to_composite_exchange_transfer(exchange_transfers,
+                                            summary,
+                                            token1,
+                                            token2,
+                                            token1_amount,
+                                            config::DEX_FEE_PER_MILLE,
+                                            pools,
+                                            ExchangeSide::sell)) {
+    LOG_PRINT_L2("Incorrect 'sell' transaction");
     return false;
   }
 
-  Amount real_amount = derive_sell_amount_from_lp_pair({lp_data.amount1, lp_data.amount2},
-                                                       token1_amount,
-                                                        config::DEX_FEE_PER_MILLE);
+  if (exchange_data.data.size() != exchange_transfers.size()) {
+    LOG_PRINT_L2("Wrong number of pools in the exchange transaction");
+    return false;
+  }
+
+  for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+    if (exchange_data.data[i] != exchange_transfers[i]) {
+      LOG_PRINT_L2("Wrong pools in exchange");
+      return false;
+    }
+  }
 
   Amount derived_amount = token2_amount - token2_change;
+
+  Amount real_amount = token1 == summary.d_token2 ? summary.d_old_ratio.d_amount2 - summary.d_new_ratio.d_amount2:
+    summary.d_old_ratio.d_amount1 - summary.d_new_ratio.d_amount1;
+
   if (derived_amount != real_amount) {
     LOG_PRINT_L2("Exchange ratio is not correct. Probably another exchange transaction just has happened.");
     return false;
   }
 
-  if (token1_amount != exchange_data.d_ex_amount1 || derived_amount != exchange_data.d_ex_amount2) {
-    LOG_PRINT_L2("Exchange transfer contains incorrect exchange data.");
+  if (exchange_transfers.size() != pools.size()) {
+    LOG_PRINT_L2("Something went wrong during sell tx check");
     return false;
   }
 
-  lp_data.amount1 += token1_amount;
-  lp_data.amount2 -= derived_amount;
-
   if (liquidity_pools_update != nullptr) {
-    liquidity_pools_update->emplace_back(lp_data);
+    for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+      const ExchangeTransfer &et = exchange_transfers[i];
+      const LiquidityPool    &p  = pools[i];
+      liquidity_pools_update->push_back({
+                                          p.d_lptoken,
+                                          et.d_token1,
+                                          et.d_token2,
+                                          p.d_lp_amount,
+                                          et.d_new_ratio.d_amount1,
+                                          et.d_new_ratio.d_amount2
+                                        });
+    }
   }
 
   return true;
@@ -5292,7 +5347,7 @@ leave:
   TIME_MEASURE_FINISH(t3);
 
   size_t special_tx_counter = 0;
-  std::vector<liqudity_pool_data_t> liquidity_pools_update;
+  std::vector<liquidity_pool_data_t> liquidity_pools_update;
 
   // Iterate over the block's transaction hashes, grabbing each
   // from the tx_pool and validating them.  Each is then added

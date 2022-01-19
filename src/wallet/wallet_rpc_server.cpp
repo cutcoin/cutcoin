@@ -1869,9 +1869,9 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       }
     }
 
-    LiquidityPoolSummary lp_summary;
-    lp_summary.d_rate.d_amount1 = req.amount1;
-    lp_summary.d_rate.d_amount2 = req.amount2;
+    LiquidityPool lp_summary;
+    lp_summary.d_ratio.d_amount1 = req.amount1;
+    lp_summary.d_ratio.d_amount2 = req.amount2;
     lp_summary.d_token1 = req.token_id1;
     lp_summary.d_token2 = req.token_id2;
     lp_summary.d_lptoken = req.lptoken_id;
@@ -2012,22 +2012,22 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    LiquidityPoolSummary old_lp;
-    LiquidityPoolSummary new_lp;
+    LiquidityPool old_lp;
+    LiquidityPool new_lp;
     const auto &lp = rs.liquidity_pools[0];
     old_lp.d_lptoken = lp.lp_token;
-    old_lp.d_rate.d_amount1 = lp.amount1;
-    old_lp.d_rate.d_amount2 = lp.amount2;
+    old_lp.d_ratio.d_amount1 = lp.amount1;
+    old_lp.d_ratio.d_amount2 = lp.amount2;
     old_lp.d_token1 = lp.token1;
     old_lp.d_token2 = lp.token2;
 
     if (req.token_id == lp.token1) {
-      new_lp.d_rate.d_amount1 = req.amount;
-      new_lp.d_rate.d_amount2 = underlying_amount_from_lp_pair(old_lp.d_rate, req.amount);
+      new_lp.d_ratio.d_amount1 = req.amount;
+      new_lp.d_ratio.d_amount2 = underlying_amount_from_lp_pair(old_lp.d_ratio, req.amount);
     }
     else if (req.token_id == lp.token2) {
-      new_lp.d_rate.d_amount1 = token_amount_from_lp_pair(old_lp.d_rate, req.amount);
-      new_lp.d_rate.d_amount2 = req.amount;
+      new_lp.d_ratio.d_amount1 = token_amount_from_lp_pair(old_lp.d_ratio, req.amount);
+      new_lp.d_ratio.d_amount2 = req.amount;
     }
     else {
       er.code = WALLET_RPC_ERROR_CODE_TX_NOT_POSSIBLE;
@@ -2105,20 +2105,20 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    LiquidityPoolSummary old_lp;
-    LiquidityPoolSummary new_lp;
+    LiquidityPool old_lp;
+    LiquidityPool new_lp;
     const auto &lp = rs.liquidity_pool;
     old_lp.d_lptoken = lp.lp_token;
     old_lp.d_token1 = lp.token1;
     old_lp.d_token2 = lp.token2;
-    old_lp.d_rate.d_amount1 = lp.amount1;
-    old_lp.d_rate.d_amount2 = lp.amount2;
+    old_lp.d_ratio.d_amount1 = lp.amount1;
+    old_lp.d_ratio.d_amount2 = lp.amount2;
 
     new_lp.d_lptoken = lp.lp_token;
     new_lp.d_token1 = lp.token1;
     new_lp.d_token2 = lp.token2;
-    new_lp.d_rate.d_amount1 = lp.amount1;
-    new_lp.d_rate.d_amount2 = lp.amount2;
+    new_lp.d_ratio.d_amount1 = lp.amount1;
+    new_lp.d_ratio.d_amount2 = lp.amount2;
     // TODO: fill new_lp.d_current
 
     pending_tx_v ptx_vector{};
@@ -2203,8 +2203,8 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
   }
 
   bool wallet_rpc_server::on_buy(const wallet_rpc::COMMAND_RPC_BUY::request &req,
-                                        wallet_rpc::COMMAND_RPC_BUY::response      &res,
-                                        epee::json_rpc::error                             &er)
+                                 wallet_rpc::COMMAND_RPC_BUY::response      &res,
+                                 epee::json_rpc::error                      &er)
   {
     using namespace cryptonote;
 
@@ -2248,16 +2248,16 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    LiquidityPoolSummary lp_summary;
+    LiquidityPool lp_summary;
     const auto &lp = rs.liquidity_pools[0];
     lp_summary.d_lptoken = lp.lp_token;
-    lp_summary.d_rate.d_amount1 = lp.amount1;
-    lp_summary.d_rate.d_amount2 = lp.amount2;
+    lp_summary.d_ratio.d_amount1 = lp.amount1;
+    lp_summary.d_ratio.d_amount2 = lp.amount2;
     lp_summary.d_token1 = lp.token1;
     lp_summary.d_token2 = lp.token2;
 
-    ExchangeTransfer et;
-    et.d_side  = ExchangeTransfer::buy;
+    CompositeTransfer et;
+    et.d_side  = ExchangeSide::buy;
     et.d_token1 = lp_summary.d_token1;
     et.d_token2 = lp_summary.d_token2;
     et.d_amount = req.amount;
@@ -2341,16 +2341,16 @@ bool wallet_rpc_server::validate_token_transfer(const std::list<wallet_rpc::tran
       return false;
     }
 
-    LiquidityPoolSummary lp_summary;
+    LiquidityPool lp_summary;
     const auto &lp = rs.liquidity_pools[0];
     lp_summary.d_lptoken = lp.lp_token;
-    lp_summary.d_rate.d_amount1 = lp.amount1;
-    lp_summary.d_rate.d_amount2 = lp.amount2;
+    lp_summary.d_ratio.d_amount1 = lp.amount1;
+    lp_summary.d_ratio.d_amount2 = lp.amount2;
     lp_summary.d_token1 = lp.token1;
     lp_summary.d_token2 = lp.token2;
 
-    ExchangeTransfer et;
-    et.d_side  = ExchangeTransfer::sell;
+    CompositeTransfer et;
+    et.d_side  = ExchangeSide::sell;
     et.d_token1 = lp_summary.d_token1;
     et.d_token2 = lp_summary.d_token2;
     et.d_amount = req.amount;

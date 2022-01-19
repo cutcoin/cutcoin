@@ -645,10 +645,10 @@ namespace tools
                            cryptonote::transaction                                  &tx,
                            pending_tx                                               &ptx);
 
-    void pool_genesis_transaction(const uint32_t                          subaddress_account,
-                                  const cryptonote::LiquidityPoolSummary &lp_summary,
-                                  pending_tx_v                           &ptx_vector,
-                                  size_t                                  custom_fake_outs_count = 0);
+    void pool_genesis_transaction(const uint32_t                   subaddress_account,
+                                  const cryptonote::LiquidityPool &lp_summary,
+                                  pending_tx_v                    &ptx_vector,
+                                  size_t                           custom_fake_outs_count = 0);
 
     pending_tx_v pool_genesis_basic(const std::vector<cryptonote::tx_destination_entry>  &destinations,
                                     const size_t                                          fake_outs_count,
@@ -657,24 +657,25 @@ namespace tools
                                     std::vector<uint8_t>                                 &extra);
 
     void pool_add_liquidity_transaction(const uint32_t                          subaddress_account,
-                                        const cryptonote::LiquidityPoolSummary &old_lp_summary,
-                                        cryptonote::LiquidityPoolSummary       &new_lp_summary,
+                                        const cryptonote::LiquidityPool &old_lp_summary,
+                                        cryptonote::LiquidityPool       &new_lp_summary,
                                         pending_tx_v                           &ptx_vector,
                                         size_t                                  custom_fake_outs_count = 0);
 
-    void pool_take_liquidity_transaction(const uint32_t                          subaddress_account,
-                                         const cryptonote::LiquidityPoolSummary &old_lp_summary,
-                                         cryptonote::LiquidityPoolSummary       &new_lp_summary,
-                                         pending_tx_v                           &ptx_vector,
-                                         size_t                                  custom_fake_outs_count = 0);
+    void pool_take_liquidity_transaction(const uint32_t                   subaddress_account,
+                                         const cryptonote::LiquidityPool &old_lp_summary,
+                                         cryptonote::LiquidityPool       &new_lp_summary,
+                                         pending_tx_v                    &ptx_vector,
+                                         size_t                           custom_fake_outs_count = 0);
 
-    void exchange_transfer(const uint32_t                          subaddress_account,
-                           const cryptonote::LiquidityPoolSummary &lp_summary,
-                           cryptonote::ExchangeTransfer           &exchange_transfer,
-                           pending_tx_v                           &ptx_vector,
-                           size_t                                  custom_fake_outs_count = 0);
+    void exchange_transfer(const uint32_t                   subaddress_account,
+                           const cryptonote::LiquidityPool &lp_summary,
+                           cryptonote::CompositeTransfer   &composite_transfer,
+                           pending_tx_v                    &ptx_vector,
+                           size_t                           custom_fake_outs_count = 0);
 
-    void exchange_info(std::vector<cryptonote::TokenId> &hops,
+    void exchange_rate(std::vector<cryptonote::TokenId> &hops,
+                       double                           &final_rate,
                        const std::string &name1,
                        const std::string &name2,
                        const cryptonote::Amount &amount);

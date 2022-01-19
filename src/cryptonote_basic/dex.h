@@ -30,6 +30,8 @@
 #define CUTCOIN_DEX_H
 
 #include "cryptonote_basic/token.h"
+#include "liquidity_pool.h"
+#include "serialization/serialization.h"
 
 namespace cryptonote {
 
@@ -38,23 +40,48 @@ enum OutputOriginType {
   LpAccount = 1
 };
 
+enum ExchangeSide {
+  // Exchange type.
+
+  sell = 0,
+
+  buy  = 1
+};
+
 struct ExchangeTransfer {
   // Represent exchange transfer.
-
-  enum Side {
-    sell = 0,
-    buy  = 1
-  };
-
-  Side        d_side;
 
   TokenId     d_token1;
 
   TokenId     d_token2;
 
-  Amount      d_amount;
+  AmountRatio d_old_ratio;  // amounts rate at the pool before the transfer has happened
 
-  Amount      d_pool_interest;
+  AmountRatio d_new_ratio;  // amounts rate at the pool after the transfer has happened
+
+  BEGIN_SERIALIZE()
+    FIELD(d_token1)
+    FIELD(d_token2)
+    FIELD(d_old_ratio)
+    FIELD(d_new_ratio)
+  END_SERIALIZE()
+};
+
+struct CompositeTransfer {
+  // Represent composite exchange transfer that may consist of multiple exchanges
+  // at different liquidity pools.
+
+  TokenId                       d_token1;
+
+  TokenId                       d_token2;
+
+  Amount                        d_amount;
+
+  Amount                        d_pool_interest;
+
+  ExchangeSide                  d_side;
+
+  std::vector<ExchangeTransfer> d_transfers;
 };
 
 std::string tokens_to_lpname(const TokenId &id1, const TokenId &id2);
@@ -68,6 +95,25 @@ bool lpname_to_tokens(const std::string &name, TokenId &token1, TokenId &token2)
 
 bool validate_lpname(const std::string &pool_name);
   // Validate the specified 'pool_name'.
+
+bool pools_to_composite_exchange_transfer(std::vector<ExchangeTransfer>    &exchange_transfers,
+                                          ExchangeTransfer                 &summary,
+                                          const TokenId                    &token1,
+                                          const TokenId                    &token2,
+                                          const Amount                     &amount,
+                                          const Amount                     &pool_interest,
+                                          const std::vector<LiquidityPool> &pools,
+                                          const ExchangeSide               &side);
+
+constexpr
+LiquidityPool inverse(const LiquidityPool &p) {
+  return LiquidityPool{p.d_lptoken, p.d_token2, p.d_token1, p.d_lp_amount, {p.d_ratio.d_amount1, p.d_ratio.d_amount2}};
+}
+
+//constexpr
+//ExchangeSide exchange_side(const ExchangeTransfer &et) {
+//  return et.d_old_ratio.d_amount1 < et.d_new_ratio.d_amount1 ? ExchangeSide::buy : ExchangeSide::sell;
+//}
 
 }  // namespace cryptonote
 

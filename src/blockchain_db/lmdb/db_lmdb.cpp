@@ -2689,7 +2689,7 @@ std::tuple<uint64_t, uint64_t, lpoutput_data_t> BlockchainLMDB::get_output_key_l
 
   const auto *okp = (const lpoutkey *)v.mv_data;
   TXN_POSTFIX_RDONLY();
-  return std::make_tuple(okp->output_id, okp->token_index, okp->data);
+  return {okp->output_id, okp->token_index, okp->data};
 }
 
 tx_out_index BlockchainLMDB::get_output_tx_and_index_from_global(const uint64_t& output_id) const
@@ -4036,7 +4036,7 @@ bool BlockchainLMDB::get_lpoutputs_set(const TokenId                       &toke
       }
 
       if (!used) {
-        outputs.push_back(std::make_tuple(ok->output_id, ok->token_index, ok->data));
+        outputs.push_back({ok->output_id, ok->token_index, ok->data});
         ++index;
       }
     }
@@ -4085,7 +4085,7 @@ void BlockchainLMDB::set_lp_output_spent(const TokenId &token_id, size_t index, 
   }
 }
 
-bool BlockchainLMDB::add_liqudity_pool(const cryptonote::liqudity_pool_data_t &lp_data)
+bool BlockchainLMDB::add_liqudity_pool(const cryptonote::liquidity_pool_data_t &lp_data)
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
@@ -4093,7 +4093,7 @@ bool BlockchainLMDB::add_liqudity_pool(const cryptonote::liqudity_pool_data_t &l
   mdb_txn_cursors *m_cursors = &m_wcursors;
   CURSOR(liquidity_pools);
 
-  liqudity_pool_data_t lpd = lp_data;
+  liquidity_pool_data_t lpd = lp_data;
 
   MDB_val data;
   data.mv_size = sizeof(lpd);
@@ -4165,7 +4165,7 @@ void BlockchainLMDB::remove_token_data(const cryptonote::TokenId &token_id)
   }
 }
 
-bool BlockchainLMDB::get_liquidity_pool(cryptonote::liqudity_pool_data_t &lp_data) const
+bool BlockchainLMDB::get_liquidity_pool(const TokenId &lptoken, liquidity_pool_data_t &lp_data) const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
@@ -4173,7 +4173,7 @@ bool BlockchainLMDB::get_liquidity_pool(cryptonote::liqudity_pool_data_t &lp_dat
   TXN_PREFIX_RDONLY();
   RCURSOR(liquidity_pools);
 
-  MDB_val_set(v, lp_data.lptoken);
+  MDB_val_set(v, lptoken);
 
   MDB_cursor_op op = MDB_GET_BOTH;
   int ret = mdb_cursor_get(m_cur_liquidity_pools, (MDB_val *)&zerokval, &v, op);
@@ -4186,11 +4186,49 @@ bool BlockchainLMDB::get_liquidity_pool(cryptonote::liqudity_pool_data_t &lp_dat
       throw1(DB_ERROR(lmdb_error("Failed to find token data: ", ret).c_str()));
     }
   }
-  lp_data = *(const liqudity_pool_data_t*)v.mv_data;
+  lp_data = *(const liquidity_pool_data_t*)v.mv_data;
   return true;
 }
 
-bool BlockchainLMDB::get_all_liquidity_pools(std::vector<liqudity_pool_data_t> &liquidity_pools) const
+bool BlockchainLMDB::get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const
+{
+  LOG_PRINT_L3("BlockchainLMDB::" << __func__);
+
+  liquidity_pool = {0, 0, 0, 0, 0, 0};
+
+  TokenId token1, token2;
+  if (!lpname_to_tokens(name, token1, token2)) {
+    return false;
+  }
+
+  return get_liquidity_pool(token1, token2, liquidity_pool);
+}
+
+bool BlockchainLMDB::get_liquidity_pool(const TokenId &token1,
+                                        const TokenId &token2,
+                                        liquidity_pool_data_t &liquidity_pool) const
+{
+  std::vector<liquidity_pool_data_t> lps;
+  try {
+    if (!get_all_liquidity_pools(lps)) {
+      return false;
+    }
+  }
+  catch (const std::exception &e) {
+    return false;
+  }
+
+  for (const auto &lp: lps) {
+    if (lp.token1 == token1 && lp.token2 == token2) {
+      liquidity_pool = lp;
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool BlockchainLMDB::get_all_liquidity_pools(std::vector<liquidity_pool_data_t> &liquidity_pools) const
 {
   LOG_PRINT_L3("BlockchainLMDB::" << __func__);
   check_open();
@@ -4215,7 +4253,7 @@ bool BlockchainLMDB::get_all_liquidity_pools(std::vector<liqudity_pool_data_t> &
       }
     }
 
-    liquidity_pools.push_back(*reinterpret_cast<const liqudity_pool_data_t*>(v.mv_data));
+    liquidity_pools.push_back(*reinterpret_cast<const liquidity_pool_data_t*>(v.mv_data));
   }
 
   return true;

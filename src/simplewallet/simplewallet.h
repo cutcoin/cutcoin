@@ -174,7 +174,7 @@ namespace cryptonote
     bool get_liquidity_pools(const std::vector<std::string> &args);
     bool buy(const std::vector<std::string> &args);
     bool sell(const std::vector<std::string> &args);
-    bool exchange_info(const std::vector<std::string> &args);
+    bool exchange_rate(const std::vector<std::string> &args);
     bool sweep_unmixable(const std::vector<std::string> &args);
     bool donate(const std::vector<std::string> &args);
     bool sign_transfer(const std::vector<std::string> &args);

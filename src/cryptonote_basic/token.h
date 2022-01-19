@@ -229,7 +229,7 @@ bool is_valid_token_supply(Amount supply)
 
 constexpr
 bool is_valid_lptoken_supply(Amount supply)
-  // Return 'true' if the specified 'supply' == MAX_TOKEN_SUPPLY.
+// Return 'true' if the specified 'supply' == MAX_TOKEN_SUPPLY.
 {
   return supply * COIN == MAX_TOKEN_SUPPLY;
 }

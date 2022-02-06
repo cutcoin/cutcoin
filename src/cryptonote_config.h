@@ -199,7 +199,7 @@ uint64_t const TOKEN_UNLOCK_TIME = CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
     uint16_t const RPC_DEFAULT_PORT = 25258;
     uint16_t const ZMQ_RPC_DEFAULT_PORT = 25259;
     boost::uuids::uuid const NETWORK_ID = { {
-        0x78, 0xc4, 0x4e, 0xd7, 0xdd, 0xff, 0x42, 0x69, 0xaf, 0xc2, 0x38, 0x19, 0xaa, 0x56, 0xc7, 0x70
+        0x78, 0xc4, 0x4e, 0xd7, 0xdd, 0xff, 0x42, 0x69, 0xaf, 0xc2, 0x39, 0x19, 0xaa, 0x56, 0xc7, 0x70
       } };
     std::string const GENESIS_TX = "023c01ff0001808090f89bf98647027dd8525c787c9647ca2e7744fc6a1176fc343152f4cacf70f501b0e41f2f69f02101c7346413d638a3754fd3d336bfec88a61a0f02f24cd4f9ed9014daf686971da900";
     uint32_t const GENESIS_NONCE = 43;

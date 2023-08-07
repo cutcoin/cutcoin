@@ -1,3 +1,7 @@
+### Release v 4.0.0
+* Add support for Mintable tokens and LP tokens.
+* Add functions that provide DEX features: create liquidity pools, add and take liquidity, exchange and cross-exchange operations.
+
 ### Release v 3.0.6
 * Fix bug related to creation of the tokens with hidden supply.
 * Add support for tokens with hidden supply in GUI wallet.

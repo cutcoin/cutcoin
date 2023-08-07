@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -39,11 +39,12 @@ endif()
 
 set(cryptonote_basic_sources
   account.cpp
-  account_utils.cpp
   cryptonote_basic_impl.cpp
   cryptonote_format_utils.cpp
+  dex.cpp
   difficulty.cpp
   hardfork.cpp
+  liquidity_pool.cpp
   miner.cpp
   token.cpp)
 
@@ -52,7 +53,6 @@ set(cryptonote_basic_headers)
 set(cryptonote_basic_private_headers
   account.h
   account_boost_serialization.h
-  account_utils.h
   amount.h
   connection_context.h
   cryptonote_basic.h
@@ -60,11 +60,14 @@ set(cryptonote_basic_private_headers
   cryptonote_boost_serialization.h
   cryptonote_format_utils.h
   cryptonote_stat_info.h
+  dex.h
   difficulty.h
   hardfork.h
+  liquidity_pool.h
   miner.h
   token.h
   tx_extra.h
+  tx_type.h
   verification_context.h)
 
 cutcoin_private_headers(cryptonote_basic

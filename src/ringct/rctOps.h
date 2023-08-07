@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -110,6 +110,7 @@ namespace rct {
     // make a pedersen commitment with given key
     key commit(xmr_amount amount, const key &mask);
     key gp_commit(xmr_amount amount, const key &mask, const key &omega);
+    inline key uni_commit(xmr_amount amount, const key &mask, const cryptonote::TokenId &token_id);
     // make a pedersen commitment with zero key
     key zeroCommit(xmr_amount amount);
     key gp_zeroCommit(xmr_amount amount, const key &omega);
@@ -196,6 +197,19 @@ namespace rct {
       // Return the ECDH point corresponding to the specified 'token_id'.
 
     rct::keyV tokenIdToPoint(const std::vector<cryptonote::TokenId> &token_ids);
-    // Return the vector of ECDH points, each of them corresponds to the element of vector 'token_ids'.
+      // Return the vector of ECDH points, each of them corresponds to the element of vector 'token_ids'.
+
+    std::tuple<crypto::secret_key, crypto::public_key> get_token_keys(cryptonote::TokenId       token_id,
+                                                                      const crypto::secret_key &svk,
+                                                                      const crypto::secret_key &ssk);
+      // Return token keys for the corresponding 'token_id', 'svk' and 'ssk'.
+
+    inline key uni_commit(xmr_amount amount, const key &mask, const cryptonote::TokenId &token_id) {
+        if (cryptonote::CUTCOIN_ID == token_id) {
+            return commit(amount, mask);
+        }
+
+        return gp_commit(amount, mask, tokenIdToPoint(token_id));
+    }
 }
 #endif  /* RCTOPS_H */

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -35,8 +35,9 @@
 #include "string_tools.h"
 using namespace epee;
 
-#include <unordered_set>
 #include "cryptonote_core.h"
+
+#include "blockchainutil.h"
 #include "common/command_line.h"
 #include "common/util.h"
 #include "common/updates.h"
@@ -45,6 +46,7 @@ using namespace epee;
 #include "common/command_line.h"
 #include "warnings.h"
 #include "crypto/crypto.h"
+#include "special_accounts/special_accounts.h"
 #include "cryptonote_config.h"
 #include "cryptonote_tx_utils.h"
 #include "misc_language.h"
@@ -57,6 +59,8 @@ using namespace epee;
 #include "common/notify.h"
 #include "mining/miningutil.h"
 #include "version.h"
+
+#include <unordered_set>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "cn"
@@ -299,6 +303,8 @@ namespace cryptonote
       const bool stagenet = command_line::get_arg(vm, arg_stagenet_on);
       m_nettype = testnet ? TESTNET : stagenet ? STAGENET : MAINNET;
     }
+
+    LpAccount::set_default_network_type(m_nettype);
 
     m_config_folder = command_line::get_arg(vm, arg_data_dir);
 
@@ -704,7 +710,7 @@ namespace cryptonote
     bad_semantics_txes_lock.unlock();
 
     uint8_t version = m_blockchain_storage.get_current_hard_fork_version();
-    const TxVersion max_tx_version = (version == HF_VERSION_ORIGINAL ? TxVersion::plain : TxVersion::tokens);
+    const TxVersion max_tx_version = get_tx_version(version);
     if (tx.version == TxVersion::none || tx.version > max_tx_version) {
       LOG_PRINT_L1("Transaction has version " << tx.version << " that is not allowed");
       tvc.m_verifivation_failed = true;
@@ -976,6 +982,41 @@ namespace cryptonote
       if(tvc[i].m_added_to_pool)
         MDEBUG("tx added: " << results[i].hash);
     }
+
+    for (const auto &txr: results) {
+      const transaction &tx = txr.tx;
+      if (!tx.type.is_plain()) {
+
+        std::vector<std::string> lps;
+
+        if (tx.type.is_create_lp() || tx.type.is_add_liquidity() || tx.type.is_take_liquidity()) {
+          tx_extra_lp_data lp_data{};
+          if (!get_lp_data(tx, lp_data)) {
+            LOG_PRINT_L2("Could not extract liquidity pool data from liquidity pool genesis transaction");
+            return false;
+          }
+
+          lps.push_back(tokens_to_lpname(lp_data.d_token1, lp_data.d_token2));
+        }
+        else if (tx.type.is_dex_buy() || tx.type.is_dex_sell() || tx.type.is_dex_cross()) {
+          tx_extra_exchange_data exchange_data{};
+          if (!get_exchange_data(tx, exchange_data)) {
+            LOG_PRINT_L2("Could not extract exchange data from buy transaction");
+            return false;
+          }
+
+          for (const auto &d: exchange_data.data) {
+            lps.push_back(tokens_to_lpname(d.d_token1, d.d_token2));
+          }
+        }
+
+        if (keeped_by_block) {
+          m_mempool.clean_dex_txs(lps);
+        }
+        break;
+      }
+    }
+
     return ok;
 
     CATCH_ENTRY_L0("core::handle_incoming_txs()", false);
@@ -1153,7 +1194,7 @@ namespace cryptonote
   bool core::check_tx_inputs_ring_members_diff(const transaction& tx) const
   {
     const uint8_t version = m_blockchain_storage.get_current_hard_fork_version();
-    if (version >= 6)
+    if (version >= HF_VERSION_MIN_MIXIN_4)
     {
       for(const auto& in: tx.vin)
       {
@@ -1271,12 +1312,22 @@ namespace cryptonote
   {
     return m_blockchain_storage.find_blockchain_supplement(req_start_block, qblock_ids, blocks, total_height, start_height, pruned, get_miner_tx_hash, max_count);
   }
-  //-----------------------------------------------------------------------------------------------
+
   bool core::get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res) const
   {
     return m_blockchain_storage.get_outs(req, res);
   }
-  //-----------------------------------------------------------------------------------------------
+
+  bool core::get_lpouts(const COMMAND_RPC_GET_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_LPOUTPUTS_BIN::response& res) const
+  {
+    return m_blockchain_storage.get_lpouts(req, res);
+  }
+
+  bool core::get_mixing_lpouts(const COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::response& res) const
+  {
+    return m_blockchain_storage.get_mixing_lpouts(req, res);
+  }
+
   bool core::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res) const
   {
     return m_blockchain_storage.get_tokens(req, res);

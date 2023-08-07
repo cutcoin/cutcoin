@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -123,6 +123,19 @@ struct output_data_t
   uint64_t           height;       //!< the height of the block which created the output
   rct::key           commitment;   //!< the output's amount commitment (for spend verification)
 };
+
+/**
+ * @brief a struct containing lp output metadata
+ */
+struct lpoutput_data_t
+{
+  crypto::public_key pubkey;       //!< the output's public key (for spend verification)
+  uint64_t           unlock_time;  //!< the output's unlock time (or height)
+  uint64_t           height;       //!< the height of the block which created the output
+  Amount             amount;       //!< output amount
+  rct::key           commitment;   //!< the output's amount commitment (for spend verification)
+  bool               spent;        //!< is spent output
+};
 #pragma pack(pop)
 
 #pragma pack(push, 1)
@@ -155,6 +168,25 @@ struct txpool_tx_meta_t
   uint8_t bf_padding: 7;
 
   uint8_t padding[76]; // till 192 bytes
+};
+
+struct liquidity_pool_data_t {
+  TokenId     lptoken;
+  TokenId     token1;
+  TokenId     token2;
+  Amount      lpamount;
+  Amount      amount1;
+  Amount      amount2;
+};
+
+struct token_data_t {
+    TokenId id;
+    TokenType type;
+    Amount supply;
+    uint64_t unit;
+    crypto::public_key pkey{crypto::NullKey::p()};
+    crypto::signature  signature;
+    crypto::hash tgtx_hash;
 };
 
 #define DBF_SAFE       1
@@ -453,7 +485,18 @@ private:
    * @param commitment the rct commitment to the output amount
    * @return amount output index
    */
-  virtual uint64_t add_output(const crypto::hash& tx_hash, const tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment) = 0;
+  virtual uint64_t add_output(const crypto::hash &tx_hash,
+                              const tx_out       &tx_output,
+                              const uint64_t     &local_index,
+                              const uint64_t      unlock_time,
+                              const rct::key     *commitment) = 0;
+
+  virtual uint64_t add_output_lpool(const crypto::hash &tx_hash,
+                                    const tx_out       &tx_output,
+                                    const uint64_t     &local_index,
+                                    const uint64_t      unlock_time,
+                                    const Amount        amount,
+                                    const rct::key     *commitment) = 0;
 
   /**
    * @brief store amount output indices for a tx's outputs
@@ -494,6 +537,30 @@ private:
    */
   virtual void remove_spent_key(const crypto::key_image& k_image) = 0;
 
+  /**
+   * @brief delete liquidity pool data
+   *
+   * @param lptoken_id lptoken id to delete corresponding pool data
+   * @return true on success
+   */
+  virtual void remove_liqudity_pool(const cryptonote::TokenId &lptoken_id) = 0;
+
+  /**
+   * @brief add token data
+   *
+   * @param token_data token data to add
+   * @return true on success
+   */
+  virtual bool add_token_data(const cryptonote::token_data_t &token_data) = 0;
+
+  /**
+   * @brief delete token data
+   *
+   * @param token_id token id to delete
+   * @return true on success
+   */
+  virtual void remove_token_data(const cryptonote::TokenId &token_id) = 0;
+
 
   /*********************************************************************
    * private concrete members
@@ -515,6 +582,8 @@ private:
    * @param tx_hash the hash of the transaction to be removed
    */
   void remove_transaction(const crypto::hash& tx_hash);
+
+  void set_lp_outputs_unspent(const transaction &tx);
 
   uint64_t num_calls = 0;  //!< a performance metric
   uint64_t time_blk_hash = 0;  //!< a performance metric
@@ -806,6 +875,14 @@ public:
                             , const uint64_t& coins_generated
                             , const std::vector<transaction>& txs
                             );
+
+  /**
+   * @brief add liquidity pool data
+   *
+   * @param lp_data pool data to add
+   * @return true on success
+   */
+  virtual bool add_liqudity_pool(const cryptonote::liquidity_pool_data_t &lp_data) = 0;
 
   /**
    * @brief checks if a block exists
@@ -1265,6 +1342,25 @@ public:
   virtual output_data_t get_output_key(const TokenId &token_id, const uint64_t& index) = 0;
 
   /**
+   * @brief get some of an output's data
+   *
+   * The subclass should return the public key, unlock time, and block height
+   * for liquidity pool output with the given 'token_id' and index, collected in a struct.
+   *
+   * If the output cannot be found, the subclass should throw OUTPUT_DNE.
+   *
+   * If any of these parts cannot be found, but some are, the subclass
+   * should throw DB_ERROR with a message stating as much.
+   *
+   * @param token_id the output 'token_id'
+   * @param index the output's index (indexed by 'token_id')
+   *
+   * @return the requested output data
+   */
+  virtual std::tuple<uint64_t, uint64_t, lpoutput_data_t> get_output_key_lpool(const TokenId  &token_id,
+                                                                               const uint64_t &index) = 0;
+
+  /**
    * @brief gets an output's tx hash and index
    *
    * The subclass should return the hash of the transaction which created the
@@ -1284,11 +1380,25 @@ public:
    * transaction.
    *
    * @param token_id an output 'token_id'
-   * @param index an output's amount-specific index
+   * @param index an output's token_id-specific index
    *
    * @return the tx hash and output index
    */
-  virtual tx_out_index get_output_tx_and_index(const TokenId &token_id, const uint64_t& index) const = 0;
+  virtual tx_out_index get_output_tx_and_index(const TokenId &token_id, const uint64_t &index) const = 0;
+
+  /**
+   * @brief gets an output's tx hash and index
+   *
+   * The subclass should return the hash of the transaction which created the
+   * output with the amount and index given, as well as its index in that
+   * transaction.
+   *
+   * @param token_id an output 'token_id'
+   * @param index an output's token_id-specific index
+   *
+   * @return the tx hash and output index
+   */
+  virtual tx_out_index get_output_tx_and_index_lpool(const TokenId& token_id, const uint64_t& index) const = 0;
 
   /**
    * @brief gets some outputs' tx hashes and indices
@@ -1301,21 +1411,44 @@ public:
    * @param offsets a list of token_id-specific output indices
    * @param indices return-by-reference a list of tx hashes and output indices (as pairs)
    */
-  virtual void get_output_tx_and_index(const TokenId &token_id, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const = 0;
+  virtual void get_output_tx_and_index(const TokenId &token_id,
+                                       const std::vector<uint64_t> &offsets,
+                                       std::vector<tx_out_index> &indices) const = 0;
 
   /**
    * @brief gets outputs' data
    *
    * This function is a mirror of
-   * get_output_data(const uint64_t& amount, const uint64_t& index)
+   * get_output_data(const TokenId &token_id, const uint64_t &index)
    * but for a list of outputs rather than just one.
    *
    * @param token_id an output 'token_id'
    * @param offsets a list of token_id-specific output indices
    * @param outputs return-by-reference a list of outputs' metadata
    */
-  virtual void get_output_key(const TokenId &token_id, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) = 0;
+  virtual void get_output_key(const TokenId &token_id,
+                              const std::vector<uint64_t> &offsets,
+                              std::vector<output_data_t> &outputs,
+                              bool allow_partial = false) = 0;
 
+  /**
+   * @brief gets outputs' data
+   *
+   * This function is a mirror of
+   * get_output_data_lpool(const TokenId &token_id, const uint64_t &index)
+   * but for a list of outputs rather than just one.
+   *
+   * @param token_id an output 'token_id'
+   * @param offsets a list of token_id-specific output indices
+   * @param outputs return-by-reference a list of outputs' metadata
+   * @param allow_partial allow partial search (offsets.size() may be not equal to outputs.size())
+   * @param ignore_spent if true spent outputs are not included in the results
+   */
+  virtual void get_output_key_lpool(const TokenId                 &token_id,
+                                    const std::vector<uint64_t>   &offsets,
+                                    std::vector<lpoutput_data_t>  &outputs,
+                                    bool                           allow_partial = false,
+                                    bool                           ignore_spent = true) = 0;
   /*
    * FIXME: Need to check with git blame and ask what this does to
    * document it
@@ -1409,6 +1542,59 @@ public:
   virtual blobdata get_txpool_tx_blob(const crypto::hash& txid) const = 0;
 
   /**
+   * @brief get liquidity pool data
+   *
+   * @param lp_data struct to fill (by lptoken_id)
+   * @return true on success
+   */
+  virtual bool get_liquidity_pool(const TokenId &lptoken, liquidity_pool_data_t &lp_data) const = 0;
+
+  /**
+   * @brief get liquidity pool
+   *
+   * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+   * 'lptoken', 'token1' and 'token2'.
+   *
+   * @param name liquidity pool name
+   * @param liquidity_pool liquidity pools structure.
+   *
+   * @return 'true' if the pool is found, otherwise 'false'.
+   */
+  virtual bool get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const = 0;
+
+  /**
+   * @brief get liquidity pool
+   *
+   * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+   * 'lptoken', 'token1' and 'token2'.
+   *
+   * @param token1 id of the pool ticker token
+   * @param token1 id of the pool underlying token
+   * @param liquidity_pool liquidity pools structure.
+   *
+   * @return 'true' if the pool is found, otherwise 'false'.
+   */
+  virtual bool get_liquidity_pool(const TokenId &token1,
+                                  const TokenId &token2,
+                                  liquidity_pool_data_t &liquidity_pool) const = 0;
+
+  /**
+   * @brief get all liquidity pools data
+   *
+   * @param liquidity_pools vector of liquidity pool data structures.
+   * @return true on success
+   */
+  virtual bool get_all_liquidity_pools(std::vector<liquidity_pool_data_t> &liquidity_pools) const = 0;
+
+  /**
+   * @brief get token data
+   *
+   * @param token_data struct to fill (by token_id)
+   * @return true on success
+   */
+  virtual bool get_token_data(token_data_t &token_data) const = 0;
+
+  /**
    * @brief runs a function over all txpool transactions
    *
    * The subclass should run the passed function for each txpool tx it has
@@ -1496,6 +1682,8 @@ public:
    */
   virtual bool for_all_outputs(std::function<bool(uint64_t amount, const crypto::hash &tx_hash, uint64_t height, size_t tx_idx)> f) const = 0;
   virtual bool for_all_outputs(TokenId token_id, const std::function<bool(uint64_t height)> &f) const = 0;
+  virtual bool for_all_token_outputs(TokenId token_id,
+                                     const std::function<bool (const cryptonote::transaction &tx)> &f) const = 0;
 
 
 
@@ -1541,8 +1729,15 @@ public:
    *
    * @return a set of amount/instances
    */
-  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
+  virtual std::map<cryptonote::TokenId, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
                                                                      const TokenId               &token_id,
+                                                                     const std::vector<uint64_t> &amounts,
+                                                                     bool                         unlocked,
+                                                                     uint64_t                     recent_cutoff,
+                                                                     uint64_t                     min_count) const = 0;
+
+  virtual std::map<cryptonote::TokenId, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram_lpool(
+                                                                     const cryptonote::TokenId   &token_id,
                                                                      const std::vector<uint64_t> &amounts,
                                                                      bool                         unlocked,
                                                                      uint64_t                     recent_cutoff,
@@ -1573,12 +1768,64 @@ public:
   virtual bool has_outputs_with_token_id(const TokenId &token_id) const = 0;
 
   /**
+   * @brief check if lp outputs with given token_id exist
+   *
+   * @param token_id token id to check
+   * @return true on success
+   */
+  virtual bool has_lpoutputs_with_token_id(const TokenId &token_id) const = 0;
+
+  /**
+   * @brief Return outputs of the specified 'token_id' with the 'summary amount' >= 'amount'
+   *
+   * @param token_id required token id
+   * @param amount summary amount
+   * @param outputs the returned value
+   * @return true on success
+   */
+  virtual bool get_lpoutputs(const TokenId &token_id,
+                             const Amount &amount,
+                             std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> &outputs) const = 0;
+
+  /**
+   * @brief Return 'outputs_count' of outputs of the specified 'token_id'
+   *
+   * @param token_id required token id
+   * @param outputs_count num of outputs
+   * @param outputs the returned value
+   * @return true on success
+   */
+  virtual bool get_lpoutputs_set(const TokenId                      &token_id,
+                                 size_t                              outputs_count,
+                                 std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> &outputs) const = 0;
+
+  /**
+   * @brief set liquidity pool token output spent flag
+   *
+   * Set spent flag for liquidity pool token output with the specified index
+   * and token_id to the specified spent value.
+   *
+   * @param token id of a liquidity pool token
+   * @param index of a liquidity pool token output
+   * @param spent flag
+   */
+  virtual void set_lp_output_spent(const TokenId &token_id, size_t index, bool spent) = 0;
+
+  /**
    * @brief return all tokens on the blockchain
    *
    * @param tokens returned token ids list
    * @return void
    */
   virtual void get_all_tokens(std::vector<TokenId> &tokens) const = 0;
+
+  /**
+   * @brief return all lp tokens on the blockchain
+   *
+   * @param tokens returned token ids list
+   * @return void
+   */
+  virtual void get_all_lptokens(std::vector<TokenId> &tokens) const = 0;
 
   /**
    * @brief is BlockchainDB in read-only mode?

@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -36,17 +36,21 @@ set(wallet_sources
   node_rpc_proxy.cpp
   ringdb.cpp
   wallet2.cpp
-  wallet_args.cpp)
+  wallet_args.cpp
+  exchange_util.cpp
+  gen.cpp)
 
 set(wallet_private_headers
   account_view.h
   confirmed_transfer_details.h
+  exchange_util.h
   multisig_tx_set.h
   node_rpc_proxy.h
   payment_details.h
   pending_tx.h
   ringdb.h
   transfer_details.h
+  tx.h
   tx_construction_data.h
   tx_creation_context.h
   unconfirmed_transfer_details.h
@@ -55,7 +59,8 @@ set(wallet_private_headers
   wallet_errors.h
   wallet_rpc_server.h
   wallet_rpc_server_commands_defs.h
-  wallet_rpc_server_error_codes.h)
+  wallet_rpc_server_error_codes.h
+  gen.h)
 
 cutcoin_private_headers(wallet
   ${wallet_private_headers})
@@ -68,6 +73,7 @@ target_link_libraries(wallet
     common
     cryptonote_core
     mnemonics
+    special_accounts
     ${LMDB_LIBRARY}
     ${Boost_CHRONO_LIBRARY}
     ${Boost_SERIALIZATION_LIBRARY}
@@ -126,6 +132,7 @@ if (BUILD_GUI_DEPS)
             cryptonote_core
             cryptonote_basic
             mnemonics
+            special_accounts
             common
             cncrypto
             device

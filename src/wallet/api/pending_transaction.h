@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -39,14 +39,15 @@
 namespace Monero {
 
 class WalletImpl;
+
 class PendingTransactionImpl : public PendingTransaction
 {
 public:
-    PendingTransactionImpl(WalletImpl &wallet);
-    ~PendingTransactionImpl();
+    explicit PendingTransactionImpl(WalletImpl &wallet);
+
     int status() const override;
     std::string errorString() const override;
-    bool commit(const std::string &filename = "", bool overwrite = false) override;
+    bool commit(const std::string &filename, bool overwrite) override;
     std::string tokenName() const override;
     uint64_t amount() const override;
     uint64_t dust() const override;
@@ -69,9 +70,9 @@ private:
     std::string m_errorString;
     std::vector<tools::pending_tx> m_pending_tx;
     std::unordered_set<crypto::public_key> m_signers;
+    cryptonote::TokenAmounts m_total_sent;
 };
 
-
-}
+}  // namespace Monero
 
 namespace Bitmonero = Monero;

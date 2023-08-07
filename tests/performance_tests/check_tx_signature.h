@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -64,9 +64,9 @@ public:
     m_alice.generate();
 
     std::vector<tx_destination_entry> destinations;
-    destinations.push_back(tx_destination_entry(0, this->m_source_amount - outputs + 1, m_alice.get_keys().m_account_address, false));
+    destinations.emplace_back(0, this->m_source_amount - outputs + 1, m_alice.get_keys().m_account_address, false, false, false, false);
     for (size_t n = 1; n < outputs; ++n)
-      destinations.push_back(tx_destination_entry(0, 1, m_alice.get_keys().m_account_address, false));
+      destinations.emplace_back(0, 1, m_alice.get_keys().m_account_address, false, false, false, false);
 
     crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
@@ -77,7 +77,7 @@ public:
     context.d_subaddresses        = subaddresses;
     context.d_sources             = this->m_sources;
     context.d_destinations        = destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_tx_key              = tx_key;
     context.d_additional_tx_keys  = additional_tx_keys;
     context.d_range_proof_type    = range_proof_type;
@@ -133,9 +133,9 @@ public:
     m_alice.generate();
 
     std::vector<tx_destination_entry> destinations;
-    destinations.push_back(tx_destination_entry(0, this->m_source_amount - outputs + 1, m_alice.get_keys().m_account_address, false));
+    destinations.emplace_back(0, this->m_source_amount - outputs + 1, m_alice.get_keys().m_account_address, false, false, false, false);
     for (size_t n = 1; n < outputs; ++n)
-      destinations.push_back(tx_destination_entry(0, 1, m_alice.get_keys().m_account_address, false));
+      destinations.emplace_back(0, 1, m_alice.get_keys().m_account_address, false, false, false, false);
 
     crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
@@ -147,7 +147,7 @@ public:
     context.d_subaddresses        = subaddresses;
     context.d_sources             = this->m_sources;
     context.d_destinations        = destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_tx_key              = tx_key;
     context.d_additional_tx_keys  = additional_tx_keys;
     context.d_range_proof_type    = rct::RangeProofPaddedBulletproof;
@@ -162,9 +162,9 @@ public:
     if (extra_outs)
     {
       destinations.clear();
-      destinations.push_back(tx_destination_entry(0, this->m_source_amount - extra_outs + 1, m_alice.get_keys().m_account_address, false));
+      destinations.emplace_back(0, this->m_source_amount - extra_outs + 1, m_alice.get_keys().m_account_address, false, false, false, false);
       for (size_t n = 1; n < extra_outs; ++n)
-        destinations.push_back(tx_destination_entry(0, 1, m_alice.get_keys().m_account_address, false));
+        destinations.emplace_back(0, 1, m_alice.get_keys().m_account_address, false, false, false, false);
 
       context.d_range_proof_type    = rct::RangeProofMultiOutputBulletproof;
       if (!construct_tx_and_get_tx_key(context, m_txes.back()))

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 //
 // All rights reserved.
@@ -39,7 +39,7 @@ class TokenInfoImpl : public TokenInfo
 public:
     TokenInfoImpl(WalletImpl * wallet);
     ~TokenInfoImpl();
-    void refresh(uint32_t accountIndex);
+    void refresh();
     std::vector<TokenInfoRow*> getAll() const;
 
 private:

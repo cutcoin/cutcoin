@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, CUT coin
+// Copyright (c) 2020-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -138,7 +138,7 @@ public:
     // their ordering, but it could become more murky if we add scores later.
 
   void separate_dust_indices(
-      std::unordered_map<uint32_t, std::vector<size_t> > &unused_transfers_indices_per_subaddress,
+      std::unordered_map<uint32_t, std::vector<size_t> > &unused_transfer_indices_per_subaddress,
       std::unordered_map<uint32_t, std::vector<size_t> > &unused_dust_indices_per_subaddress,
       const Subaddresses                                 &user_indices,
       const cryptonote::TokenId                           token_id,
@@ -149,6 +149,17 @@ public:
       const uint64_t                                     &blockchain_height) const;
     // Separate transfer indices with dust input from regular ones. Populate corresponding
     // 'unused_transfers_indices_per_subaddress' and 'unused_dust_indices_per_subaddress'.
+
+  void separate_and_shuffle(
+      std::vector<std::pair<uint32_t, std::vector<size_t> > > &unused_transfer_indices_per_subaddress,
+      std::vector<std::pair<uint32_t, std::vector<size_t> > > &unused_dust_indices_per_subaddress,
+      const Subaddresses                                      &user_indices,
+      const cryptonote::TokenId                                token_id,
+      const cryptonote::Amount                                 fractional_threshold,
+      std::pair<uint64_t, uint64_t>                            range,
+      bool                                                     ignore_fractional_outputs,
+      bool                                                     use_rct,
+      const uint64_t                                          &blockchain_height) const;
 
 private:
   //Manipulators

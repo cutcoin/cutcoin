@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -28,11 +28,13 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(simplewallet_sources
+  result.cpp
   simplewallet.cpp)
 
 set(simplewallet_headers)
 
 set(simplewallet_private_headers
+  result.h
   simplewallet.h)
 
 cutcoin_private_headers(simplewallet

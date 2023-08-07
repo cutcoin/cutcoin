@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -571,6 +571,20 @@ namespace cryptonote
       * @note see Blockchain::get_outs
       */
      bool get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res) const;
+
+     /**
+      * @copydoc Blockchain::get_lpouts
+      *
+      * @note see Blockchain::get_lpouts
+      */
+     bool get_lpouts(const COMMAND_RPC_GET_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_LPOUTPUTS_BIN::response& res) const;
+
+     /**
+      * @copydoc Blockchain::get_lpouts
+      *
+      * @note see Blockchain::get_lpouts
+      */
+     bool get_mixing_lpouts(const COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::response& res) const;
 
      /**
       * @copydoc Blockchain::get_tokens

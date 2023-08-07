@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -92,7 +92,6 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
   cryptonote::block blk_txes;
   std::vector<crypto::hash> starting_rct_tx_hashes;
   static const uint64_t input_amounts_available[] = {5000000000000, 30000000000000, 100000000000, 80000000000};
-  rct::keyV omega(n_txes, rct::H);
   for (size_t n = 0; n < n_txes; ++n)
   {
     TxSources sources;
@@ -135,7 +134,6 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
       return false;
     }
 
-    crypto::secret_key tx_key;
     std::vector<crypto::secret_key> additional_tx_keys;
     std::unordered_map<crypto::public_key, cryptonote::subaddress_index> subaddresses;
     subaddresses[miner_accounts[n].get_keys().m_account_address.m_spend_public_key] = {0,0};
@@ -146,8 +144,7 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
     context.d_subaddresses        = subaddresses;
     context.d_sources             = sources;
     context.d_destinations        = destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
-    context.d_tx_key              = tx_key;
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_additional_tx_keys  = additional_tx_keys;
     context.d_range_proof_type    = range_proof_type[n];
     bool r = construct_tx_and_get_tx_key(context, rct_txes.back());
@@ -166,13 +163,13 @@ bool gen_bp_tx_validation_base::generate_with(std::vector<test_event_entry>& eve
     for (int o = 0; amounts_paid[o] != (uint64_t)-1; ++o)
     {
       crypto::key_derivation derivation;
-      bool r = crypto::generate_key_derivation(destinations[o].addr.m_view_public_key, tx_key, derivation);
+      bool r = crypto::generate_key_derivation(destinations[o].addr.m_view_public_key, context.d_tx_key, derivation);
       CHECK_AND_ASSERT_MES(r, false, "Failed to generate key derivation");
       crypto::secret_key amount_key;
       crypto::derivation_to_scalar(derivation, o, amount_key);
       rct::key rct_tx_mask;
       if (rct_txes.back().rct_signatures.type == rct::RctType::RCTTypeSimple || rct_txes.back().rct_signatures.type == rct::RctType::RCTTypeBulletproof)
-        rct::decodeRctSimple(rct_txes.back().rct_signatures, rct::sk2rct(amount_key), omega, o, rct_tx_mask, hw::get_device("default"));
+        rct::decodeRctSimple(rct_txes.back().rct_signatures, rct::sk2rct(amount_key), rct::H, o, rct_tx_mask, hw::get_device("default"));
       else
         rct::decodeRct(rct_txes.back().rct_signatures, rct::sk2rct(amount_key), o, rct_tx_mask, hw::get_device("default"));
     }

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -31,14 +31,6 @@
 
 #pragma once
 
-#include <cstddef>
-#include <iostream>
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/lock_guard.hpp>
-#include <boost/optional.hpp>
-#include <type_traits>
-#include <vector>
-
 #include "common/pod-class.h"
 #include "common/util.h"
 #include "memwipe.h"
@@ -47,6 +39,15 @@
 #include "hex.h"
 #include "span.h"
 #include "hash.h"
+
+#include <boost/thread/mutex.hpp>
+#include <boost/thread/lock_guard.hpp>
+#include <boost/optional.hpp>
+
+#include <cstddef>
+#include <iostream>
+#include <type_traits>
+#include <vector>
 
 namespace crypto {
 

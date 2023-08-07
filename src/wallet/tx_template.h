@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, CUT coin
+// Copyright (c) 2020-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -29,11 +29,10 @@
 #ifndef CUTCOIN_TX_TEMPLATE_H
 #define CUTCOIN_TX_TEMPLATE_H
 
+#include "outs_entry.h"
 #include "pending_tx.h"
 
 namespace tools {
-
-typedef std::tuple<uint64_t, crypto::public_key, rct::key> get_outs_entry;
 
 struct TxTemplate {
   std::vector <size_t> selected_transfers;

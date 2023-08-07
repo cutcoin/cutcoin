@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -246,7 +246,9 @@ int main(int argc, char* argv[])
           {
             const cryptonote::txin_to_key &txin = boost::get<cryptonote::txin_to_key>(tx.vin[ring]);
             const uint64_t amount = txin.amount;
-            auto absolute_offsets = cryptonote::relative_output_offsets_to_absolute(txin.key_offsets);
+            auto absolute_offsets = txin.s_type == SourceType::wallet ?
+                                    cryptonote::relative_output_offsets_to_absolute(txin.key_offsets):
+                                    cryptonote::lp_relative_output_offsets_to_absolute(txin.key_offsets);
             for (uint64_t offset: absolute_offsets)
             {
               const output_data_t od = db->get_output_key(amount, offset);

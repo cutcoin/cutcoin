@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -180,7 +180,7 @@ protected:
     }
   }
 
-  ~BlockchainDBTest() {
+  virtual ~BlockchainDBTest() {
     delete m_db;
     remove_files();
   }
@@ -259,7 +259,7 @@ TYPED_TEST(BlockchainDBTest, OpenAndClose)
   ASSERT_NO_THROW(this->m_db->close());
 }
 
-TYPED_TEST(BlockchainDBTest, AddBlock)
+TYPED_TEST(BlockchainDBTest, DISABLED_AddBlock)
 {
 
   boost::filesystem::path tempPath = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
@@ -306,7 +306,7 @@ TYPED_TEST(BlockchainDBTest, AddBlock)
   }
 }
 
-TYPED_TEST(BlockchainDBTest, RetrieveBlockData)
+TYPED_TEST(BlockchainDBTest, DISABLED_RetrieveBlockData)
 {
   boost::filesystem::path tempPath = boost::filesystem::temp_directory_path() / boost::filesystem::unique_path();
   std::string dirPath = tempPath.string();

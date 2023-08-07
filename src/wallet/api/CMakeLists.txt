@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -34,13 +34,16 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 set(wallet_api_sources
   wallet.cpp
   wallet_manager.cpp
+  liquidity_pool_info.cpp
   transaction_info.cpp
   transaction_history.cpp
   pending_transaction.cpp
+  pending_dex_transaction.cpp
   utils.cpp
   address_book.cpp
   subaddress.cpp
   subaddress_account.cpp
+  token_balance.cpp
   token_info.cpp
   unsigned_transaction.cpp)
 
@@ -53,10 +56,12 @@ set(wallet_api_private_headers
   transaction_info.h
   transaction_history.h
   pending_transaction.h
+  pending_dex_transaction.h
   common_defines.h
   address_book.h
   subaddress.h
   subaddress_account.h
+  token_balance.h
   token_info.h
   unsigned_transaction.h)
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -217,9 +217,8 @@ namespace cryptonote
       return false;
     }
 
-    if (tx.is_token_genesis()) {
-      if (!m_blockchain.check_tgtx(tvc, tx))
-      {
+    if (tx.type.is_tgtx()) {
+      if (!m_blockchain.check_tgtx(tx)) {
         LOG_PRINT_L1("Token genesis transaction is incorrect");
         tvc.m_verifivation_failed = true;
         return false;
@@ -231,9 +230,122 @@ namespace cryptonote
         tvc.m_verifivation_failed = true;
         return false;
       }
-      if (token_genesis_in_mempool(token_data.d_id))
-      {
+
+      if (token_genesis_in_mempool(token_data.d_id)) {
         LOG_PRINT_L1("Token genesis transaction with same token_id already exists in mempool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (tx.type.has_flag_minting()) {
+        if (!m_blockchain.check_mntx(tx)) {
+          LOG_PRINT_L1("Token minting transaction is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+      else if (tx.type.has_flag_lp_token()) {
+        if (!m_blockchain.check_lp_tgtx(tx)) {
+          LOG_PRINT_L1("Genesis transaction for LP token is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+      else if (tx.type.has_flag_hidden_supply()) {
+        if (!m_blockchain.check_hs_tgtx(tx)) {
+          LOG_PRINT_L1("Genesis transaction for token with hidden supply is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+      else {
+        if (!m_blockchain.check_ps_tgtx(tx)) {
+          LOG_PRINT_L1("Genesis transaction for token with public supply is incorrect");
+          tvc.m_verifivation_failed = true;
+          return false;
+        }
+      }
+    }
+
+    if (tx.type.is_create_lp()) {
+      if (!m_blockchain.check_lp_gtx(tx, nullptr)) {
+        LOG_PRINT_L1("Liquidity pool genesis transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (!add_to_lp_set(tx)) {
+        LOG_PRINT_L1("Memory pool already contains transaction for the same liquidity pool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_add_liquidity()) {
+      if (!m_blockchain.check_lp_addtx(tx, nullptr)) {
+        LOG_PRINT_L1("Add liquidity to pool transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (!add_to_lp_set(tx)) {
+        LOG_PRINT_L1("Memory pool already contains transaction for the same liquidity pool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_take_liquidity()) {
+      if (!m_blockchain.check_lp_taketx(tx, nullptr)) {
+        LOG_PRINT_L1("Take liquidity to pool transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (!add_to_lp_set(tx)) {
+        LOG_PRINT_L1("Memory pool already contains transaction for the same liquidity pool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_dex_buy()) {
+      if (!m_blockchain.check_lp_buy_tx(tx, nullptr)) {
+        LOG_PRINT_L1("Dex buy transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (!add_to_lp_set(tx)) {
+        LOG_PRINT_L1("Memory pool already contains transaction for the same liquidity pool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_dex_sell()) {
+      if (!m_blockchain.check_lp_sell_tx(tx, nullptr)) {
+        LOG_PRINT_L1("Dex sell transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (!add_to_lp_set(tx)) {
+        LOG_PRINT_L1("Memory pool already contains transaction for the same liquidity pool");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+    }
+
+    if (tx.type.is_dex_cross()) {
+      if (!m_blockchain.check_lp_cross_tx(tx, nullptr)) {
+        LOG_PRINT_L1("Dex cross exchange transaction is incorrect");
+        tvc.m_verifivation_failed = true;
+        return false;
+      }
+
+      if (!add_to_lp_set(tx)) {
+        LOG_PRINT_L1("Memory pool already contains transaction for the same liquidity pool");
         tvc.m_verifivation_failed = true;
         return false;
       }
@@ -263,7 +375,7 @@ namespace cryptonote
         meta.last_failed_id = null_hash;
         meta.kept_by_block = kept_by_block;
         meta.receive_time = receive_time;
-        meta.last_relayed_time = time(NULL);
+        meta.last_relayed_time = time(nullptr);
         meta.relayed = relayed;
         meta.do_not_relay = do_not_relay;
         meta.double_spend_seen = have_tx_keyimges_as_spent(tx);
@@ -292,8 +404,8 @@ namespace cryptonote
         tvc.m_invalid_input = true;
         return false;
       }
-    }else
-    {
+    }
+    else {
       //update transactions container
       meta.weight = tx_weight;
       meta.kept_by_block = kept_by_block;
@@ -303,7 +415,7 @@ namespace cryptonote
       meta.last_failed_height = 0;
       meta.last_failed_id = null_hash;
       meta.receive_time = receive_time;
-      meta.last_relayed_time = time(NULL);
+      meta.last_relayed_time = time(nullptr);
       meta.relayed = relayed;
       meta.do_not_relay = do_not_relay;
       meta.double_spend_seen = false;
@@ -357,13 +469,27 @@ namespace cryptonote
     CRITICAL_REGION_LOCAL(m_transactions_lock);
     return m_txpool_weight;
   }
-  //---------------------------------------------------------------------------------
+
   void tx_memory_pool::set_txpool_max_weight(size_t bytes)
   {
     CRITICAL_REGION_LOCAL(m_transactions_lock);
     m_txpool_max_weight = bytes;
   }
-  //---------------------------------------------------------------------------------
+
+  void tx_memory_pool::clean_dex_txs(const std::vector<std::string> &liquidity_pools)
+  {
+    for (const auto &lp: liquidity_pools) {
+      if (m_tx_lp_pools.find(lp) != m_tx_lp_pools.end()) {
+        hash h = m_tx_lp_pools[lp];
+        transaction t;
+        size_t tx_weight;
+        uint64_t fee;
+        bool relayed, do_not_relay, double_spend_seen;
+        take_tx(h, t, tx_weight, fee, relayed, do_not_relay, double_spend_seen);
+      }
+    }
+  }
+
   void tx_memory_pool::prune(size_t bytes)
   {
     CRITICAL_REGION_LOCAL(m_transactions_lock);
@@ -508,6 +634,7 @@ namespace cryptonote
       m_blockchain.remove_txpool_tx(id);
       m_txpool_weight -= tx_weight;
       remove_transaction_keyimages(tx);
+      remove_from_lp_set(tx);
     }
     catch (const std::exception &e)
     {
@@ -1036,10 +1163,6 @@ namespace cryptonote
         txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
         return false;
       }
-      if (tx.is_token_genesis() && !m_blockchain.check_tgtx(tvc, tx)) {
-        LOG_PRINT_L2("tgtx is incorrect");
-        return false;
-      }
     }else
     {
       if(txd.max_used_block_height >= m_blockchain.get_current_blockchain_height())
@@ -1057,12 +1180,61 @@ namespace cryptonote
           txd.last_failed_id = m_blockchain.get_block_id_by_height(txd.last_failed_height);
           return false;
         }
-        if (tx.is_token_genesis() && !m_blockchain.check_tgtx(tvc, tx)) {
-          LOG_PRINT_L2("tgtx is incorrect");
-          return false;
-        }
       }
     }
+
+    if (tx.type.is_tgtx()) {
+      if (!m_blockchain.check_tgtx(tx)) {
+        LOG_PRINT_L2("tgtx is incorrect");
+        return false;
+      }
+
+      if (tx.type.has_flag_minting() && !m_blockchain.check_mntx(tx)) {
+        LOG_PRINT_L2("mntx is incorrect");
+        return false;
+      }
+
+      if (tx.type.has_flag_lp_token() && !m_blockchain.check_lp_tgtx(tx)) {
+        LOG_PRINT_L2("lp tgtx is incorrect");
+        return false;
+      }
+
+      if (tx.type.has_flag_hidden_supply() && !m_blockchain.check_hs_tgtx(tx)) {
+        LOG_PRINT_L2("hs tgtx is incorrect");
+        return false;
+      }
+    }
+
+    if (tx.type.is_create_lp() && !m_blockchain.check_lp_gtx(tx, nullptr)) {
+      LOG_PRINT_L2("lp gtx is incorrect");
+      return false;
+    }
+
+    if (tx.type.is_add_liquidity() && !m_blockchain.check_lp_addtx(tx, nullptr)) {
+      LOG_PRINT_L2("lp add tx is incorrect");
+      return false;
+    }
+
+    if (tx.type.is_take_liquidity() && !m_blockchain.check_lp_taketx(tx, nullptr)) {
+      LOG_PRINT_L2("lp take tx is incorrect");
+      return false;
+    }
+
+    if (tx.type.is_dex_buy() && !m_blockchain.check_lp_buy_tx(tx, nullptr)) {
+      LOG_PRINT_L2("lp buy tx is incorrect");
+      return false;
+    }
+
+    if (tx.type.is_dex_sell() && !m_blockchain.check_lp_sell_tx(tx, nullptr)) {
+      LOG_PRINT_L2("lp sell tx is incorrect");
+      return false;
+    }
+
+    if (tx.type.is_dex_cross() && !m_blockchain.check_lp_cross_tx(tx, nullptr)) {
+      LOG_PRINT_L2("lp cross tx is incorrect");
+      return false;
+    }
+
     //if we here, transaction seems valid, but, anyway, check for key_images collisions with blockchain, just to be sure
     if(m_blockchain.have_tx_keyimges_as_spent(lazy_tx()))
     {
@@ -1200,7 +1372,7 @@ namespace cryptonote
     uint64_t best_coinbase = 0, coinbase = 0;
     total_weight = reserve_weight;
     fee = 0;
-    bool token_genesis_block = false;
+    bool dex_tx_block = false;
 
     //baseline empty block
     get_block_reward(median_weight, total_weight, already_generated_coins, best_coinbase, version);
@@ -1286,13 +1458,12 @@ namespace cryptonote
         LOG_PRINT_L2("  key images already seen");
         continue;
       }
-      if (tx.is_token_genesis()) {
-        if (token_genesis_block)
-        {
-          LOG_PRINT_L2("  second token genesis not allowed");
+      if (!tx.type.is_plain()) {
+        if (dex_tx_block) {
+          LOG_PRINT_L2("  second DEX tx in a single block is not allowed");
           continue;
         }
-        else token_genesis_block = true;
+        else dex_tx_block = true;
       }
 
       bl.tx_hashes.push_back(sorted_it->second);
@@ -1404,6 +1575,7 @@ namespace cryptonote
           MFATAL("Failed to insert key images from txpool tx");
           return false;
         }
+        add_to_lp_set(tx);
         m_txs_by_fee_and_receive_time.emplace(std::pair<double, time_t>(meta.fee / (double)meta.weight, meta.receive_time), txid);
         m_txpool_weight += meta.weight;
         return true;
@@ -1433,7 +1605,62 @@ namespace cryptonote
     // Ignore deserialization error
     return true;
   }
+  //---------------------------------------------------------------------------------
+  bool tx_memory_pool::add_to_lp_set(const transaction& tx)
+  {
+    if (tx.type.is_create_lp() || tx.type.is_add_liquidity()
+        || tx.type.is_take_liquidity()) {
+      tx_extra_lp_data lp_data{};
+      get_lp_data(tx, lp_data);
+      auto lp_name = tokens_to_lpname(lp_data.d_token1, lp_data.d_token2);
+      if (m_tx_lp_pools.count(lp_name)) {
+        return false;
+      }
+      LOG_PRINT_L2("Add to lp set " << lp_name << " for tx " << tx.hash);
+      m_tx_lp_pools.emplace(std::move(lp_name), tx.hash);
+    }
+    else if (tx.type.is_dex_buy() || tx.type.is_dex_sell()
+        || tx.type.is_dex_cross()) {
+      tx_extra_exchange_data exchange_data{};
+      get_exchange_data(tx, exchange_data);
 
+      if (std::any_of(exchange_data.data.begin(), exchange_data.data.end(),
+                      [this](const ExchangeTransfer& e){
+                        return m_tx_lp_pools.count(tokens_to_lpname(e.d_token1, e.d_token2));
+                      })) {
+        return false;
+      }
+
+      for (const auto& e : exchange_data.data) {
+        LOG_PRINT_L2("Add to lp set " << tokens_to_lpname(e.d_token1, e.d_token2)
+          << " for tx " << tx.hash);
+        m_tx_lp_pools.emplace(tokens_to_lpname(e.d_token1, e.d_token2), tx.hash);
+      }
+    }
+    return true;
+  }
+  //---------------------------------------------------------------------------------
+  void tx_memory_pool::remove_from_lp_set(const transaction& tx)
+  {
+    if (tx.type.is_create_lp() || tx.type.is_add_liquidity()
+        || tx.type.is_take_liquidity()) {
+      tx_extra_lp_data lp_data{};
+      get_lp_data(tx, lp_data);
+      LOG_PRINT_L2("Remove from lp set " << tokens_to_lpname(lp_data.d_token1, lp_data.d_token2)
+        << " for tx " << tx.hash);
+      m_tx_lp_pools.erase(tokens_to_lpname(lp_data.d_token1, lp_data.d_token2));
+    }
+    else if (tx.type.is_dex_buy() || tx.type.is_dex_sell()
+        || tx.type.is_dex_cross()) {
+      tx_extra_exchange_data exchange_data{};
+      get_exchange_data(tx, exchange_data);
+      for (const auto& e : exchange_data.data) {
+        LOG_PRINT_L2("Remove from lp set " << tokens_to_lpname(e.d_token1, e.d_token2)
+          << " for tx " << tx.hash);
+        m_tx_lp_pools.erase(tokens_to_lpname(e.d_token1, e.d_token2));
+      }
+    }
+  }
   //---------------------------------------------------------------------------------
   bool tx_memory_pool::deinit()
   {

@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -78,7 +78,7 @@ set(
   unbound.cpp
   uri.cpp
   varint.cpp
-  ringct.cpp
+#  ringct.cpp
   output_selection.cpp
   vercmp.cpp
   ringdb.cpp

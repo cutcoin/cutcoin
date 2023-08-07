@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Copyright (c) 2018 The Monero Project
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # 
 # All rights reserved.
 # 

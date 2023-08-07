@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -93,9 +93,10 @@ private:
   PosMetrics                       d_pos_metrics;        // contain POS metrics
   std::string                      d_reward_wallet_address; // wallet address for rewards
   size_t                           d_print_counter;      // how many times POS metrics were printed
-  std::shared_ptr<plant::PlantCallbacks> d_plant_callbacks;
-  boost::mutex                    &d_idle_mutex;
-  boost::condition_variable       &d_idle_cond;
+  std::shared_ptr<plant::PlantCallbacks> d_plant_callbacks;  // plant events callback
+  boost::mutex                    &d_idle_mutex;         // shared wallet state
+  boost::condition_variable       &d_idle_cond;          // shared wallet state
+  std::mutex                       d_busy_mutex;         // protect stopping process consistence
 
 public:
   // Creators
@@ -159,23 +160,23 @@ private:
                          mining::StakeDetails            &stake_details);
     // Find the best output appropriate for mining at the current height.
 
-  bool get_pos_block_template(cryptonote::block                                        &block_template,
-                              std::vector<uint8_t>                                     &extra,
-                              crypto::hash                                             &prev_hash,
-                              crypto::hash                                             &prev_crypto_hash,
-                              crypto::hash                                             &merkle_root,
-                              std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-                              const mining::StakeDetails                               &stake_details,
-                              const tools::transfer_details                            &pos_output) const;
+  bool get_pos_block_template(cryptonote::block                               &block_template,
+                              std::vector<uint8_t>                            &extra,
+                              crypto::hash                                    &prev_hash,
+                              crypto::hash                                    &prev_crypto_hash,
+                              crypto::hash                                    &merkle_root,
+                              std::vector<std::vector<tools::get_outs_entry>> &outs,
+                              const mining::StakeDetails                      &stake_details,
+                              const tools::transfer_details                   &pos_output) const;
     // Return POS block template.
 
-  bool create_pos_tx(tools::pending_tx                                        &stake_tx,
-                     std::vector<uint8_t>                                     &extra,
-                     std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
-                     const tools::transfer_details                            &pos_output,
-                     const mining::StakeDetails                               &stake_details,
-                     const crypto::hash                                       &prev_crypto_hash,
-                     const crypto::hash                                       &merkle_root);
+  bool create_pos_tx(tools::pending_tx                               &stake_tx,
+                     std::vector<uint8_t>                            &extra,
+                     std::vector<std::vector<tools::get_outs_entry>> &outs,
+                     const tools::transfer_details                   &pos_output,
+                     const mining::StakeDetails                      &stake_details,
+                     const crypto::hash                              &prev_crypto_hash,
+                     const crypto::hash                              &merkle_root);
     // Build POS staking transaction that contains a single input and a single effective output.
 
   bool publish_pos_block(const cryptonote::block &block, const cryptonote::transaction &tx);

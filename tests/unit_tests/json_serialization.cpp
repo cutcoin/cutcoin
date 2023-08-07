@@ -3,6 +3,7 @@
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/dex.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/tx_source_entry.h"
 #include "serialization/json_object.h"
@@ -56,9 +57,19 @@ namespace
                 source_amount += input.value().amount;
                 auto const& key = boost::get<cryptonote::txout_to_key>(input.value().target);
 
-                actual_sources.push_back(
-                    {{}, 0, key_field.pub_key, {}, std::size_t(input.index()), input.value().amount, rct, rct::identity()}
-                );
+                cryptonote::tx_source_entry se;
+                se.outputs = {};
+                se.real_output = 0;
+                se.real_out_tx_key = key_field.pub_key;
+                se.real_out_additional_tx_keys = {};
+                se.real_output_in_tx_index = std::size_t(input.index());
+                se.amount = input.value().amount;
+                se.o_type = cryptonote::SourceType::wallet;
+                se.rct = rct;
+                se.mask = rct::identity();
+                se.multisig_kLRki = {};
+                se.token_id = cryptonote::CUTCOIN_ID;
+                actual_sources.emplace_back(se);
 
                 for (unsigned ring = 0; ring < 10; ++ring)
                     actual_sources.back().push_output(input.index(), key.key, input.value().amount);
@@ -67,7 +78,7 @@ namespace
 
         std::vector<cryptonote::tx_destination_entry> to;
         for (auto const& destination : destinations)
-            to.push_back({0, (source_amount / destinations.size()), destination, false});
+            to.emplace_back(0, (source_amount / destinations.size()), destination, false, false, false, false);
 
         cryptonote::transaction tx{};
 
@@ -82,7 +93,8 @@ namespace
         context.d_subaddresses        = subaddresses;
         context.d_sources             = actual_sources;
         context.d_destinations        = to;
-        context.d_change_addr         = boost::none;
+        context.d_change_destinations = to;
+//        context.d_change_addr         = boost::none;
         context.d_tx_key              = tx_key;
         context.d_additional_tx_keys  = extra_keys;
         context.d_range_proof_type    = rct::RangeProofBulletproof;

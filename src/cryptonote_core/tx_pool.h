@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -388,6 +388,13 @@ namespace cryptonote
      */
     void set_txpool_max_weight(size_t bytes);
 
+    /**
+     * @brief remove txs from the liquidity pool if they have conflicts with the specified 'liquidity_pools'
+     *
+     * @param liquidity_pools vector of the pools to be checked
+     */
+    void clean_dex_txs(const std::vector<std::string> &liquidity_pools);
+
 #define CURRENT_MEMPOOL_ARCHIVE_VER    11
 #define CURRENT_MEMPOOL_TX_DETAILS_ARCHIVE_VER    13
 
@@ -532,6 +539,27 @@ namespace cryptonote
      */
     void prune(size_t bytes = 0);
 
+    /**
+     * @brief add liquidity pools related to a transaction to set of liquidity pools
+     *
+     * Adds all liquidity pool names related to a transaction to the set of
+     * liquidity pool names for transactions in the memory pool. Return false
+     * if the transaction contains a liquidity pool that already contained by
+     * a transaction from the memory pool, otherwise return true.
+     *
+     * @param tx the transaction with liquidity pools to add
+     *
+     * @return true if the transaction doesn't contain liquidity pools from the set
+     */
+    bool add_to_lp_set(const transaction& tx);
+
+    /**
+     * @brief remove liquidity pools related to transaction from set of liquidity pools
+     *
+     * @param tx the transaction with liquidity pools to remove
+     */
+    void remove_from_lp_set(const transaction& tx);
+
     //TODO: confirm the below comments and investigate whether or not this
     //      is the desired behavior
     //! map key images to transactions which spent them
@@ -588,6 +616,8 @@ private:
     size_t m_txpool_weight;
 
     mutable std::unordered_map<crypto::hash, std::tuple<bool, tx_verification_context, uint64_t, crypto::hash>> m_input_cache;
+
+    std::map<std::string, crypto::hash> m_tx_lp_pools;  //!< liquidity pool names are contained by transactions in the memory pool
   };
 }
 

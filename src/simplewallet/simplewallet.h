@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -42,6 +42,7 @@
 #include "cryptonote_basic/account.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "plant/plant.h"
+#include "wallet/exchange_util.h"
 #include "wallet/wallet2.h"
 #include "console_handler.h"
 #include "wipeable_string.h"
@@ -93,6 +94,10 @@ namespace cryptonote
 
     //! \return Prompts user for password and verifies against local file. Logs on error and returns `none`
     boost::optional<tools::password_container> get_and_verify_password() const;
+
+    bool decrypt_keys();
+
+    void encrypt_keys();
 
     boost::optional<epee::wipeable_string> new_wallet(const boost::program_options::variables_map& vm, const crypto::secret_key& recovery_key,
         bool recover, bool two_random, const std::string &old_language);
@@ -164,7 +169,21 @@ namespace cryptonote
     bool sweep_below(const std::vector<std::string> &args);
     bool sweep_single(const std::vector<std::string> &args);
     bool create_token(const std::vector<std::string> &args);
-    bool get_tokens(const std::vector<std::string> &args);
+    bool create_lptoken(const std::vector<std::string> &args);
+    bool mint_token_supply(const std::vector<std::string> &args);
+    bool show_tokens(const std::vector<std::string> &args);
+    bool get_mintable_token_key(const std::vector<std::string> &args);
+    bool create_liquidity_pool(const std::vector<std::string> &args);
+    bool add_liquidity(const std::vector<std::string> &args);
+    bool take_liquidity(const std::vector<std::string> &args);
+    bool show_liquidity_pools(const std::vector<std::string> &args);
+    bool buy(const std::vector<std::string> &args);
+    bool sell(const std::vector<std::string> &args);
+    bool cross_exchange(const std::vector<std::string> &args);
+    bool stop_slippage_exchange(const std::vector<std::string> &args);
+    bool exchange_rate(const std::vector<std::string> &args);
+    void finished_slippage_transfer(const tools::ExchangeStatus &status);
+    void exchange_round_slippage_transfer(const tools::ExchangeStatus &status);
     bool sweep_unmixable(const std::vector<std::string> &args);
     bool donate(const std::vector<std::string> &args);
     bool sign_transfer(const std::vector<std::string> &args);
@@ -367,6 +386,7 @@ namespace cryptonote
     uint64_t m_restore_height;  // optional
     bool m_do_not_relay;
     bool m_use_english_language_names;
+    bool m_show_tx_info = true;  // Show transaction details on refresh
 
     epee::console_handlers_binder m_cmd_binder;
 

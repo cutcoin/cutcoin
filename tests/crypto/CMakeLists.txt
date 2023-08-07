@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -38,18 +38,18 @@ set(crypto_sources
 set(crypto_headers
   crypto-tests.h)
 
-add_executable(cncrypto-tests
+add_executable(crypto-tests
   ${crypto_sources}
   ${crypto_headers})
-target_link_libraries(cncrypto-tests
+target_link_libraries(crypto-tests
   PRIVATE
     common
     ${Boost_SYSTEM_LIBRARY}
     ${EXTRA_LIBRARIES})
-set_property(TARGET cncrypto-tests
+set_property(TARGET crypto-tests
   PROPERTY
     FOLDER "tests")
 
 add_test(
-  NAME    cncrypto
-  COMMAND cncrypto-tests "${CMAKE_CURRENT_SOURCE_DIR}/tests.txt")
+  NAME    crypto
+  COMMAND crypto-tests "${CMAKE_CURRENT_SOURCE_DIR}/tests.txt")

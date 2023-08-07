@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -88,7 +88,7 @@ bool HardFork::add_fork(uint8_t version, uint64_t height, uint8_t threshold, tim
   }
   if (threshold > 100)
     return false;
-  heights.push_back(Params(version, height, threshold, time));
+  heights.emplace_back(version, height, threshold, time);
   return true;
 }
 
@@ -340,7 +340,7 @@ HardFork::State HardFork::get_state(time_t t) const
 
 HardFork::State HardFork::get_state() const
 {
-  return get_state(time(NULL));
+  return get_state(time(nullptr));
 }
 
 uint8_t HardFork::get(uint64_t height) const

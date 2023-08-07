@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, CUT coin
+// Copyright (c) 2020-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -34,7 +34,11 @@ namespace cryptonote {
 
 TxVersion get_tx_version(size_t hard_fork_version)
 {
-  if (hard_fork_version >= HF_VERSION_TOKENS) {
+  if (hard_fork_version >= HF_VERSION_DEX) {
+    return TxVersion::dex;
+  }
+
+  if (hard_fork_version == HF_VERSION_TOKENS) {
     return TxVersion::tokens;
   }
   if (hard_fork_version >= HF_VERSION_DYNAMIC_FEE) {

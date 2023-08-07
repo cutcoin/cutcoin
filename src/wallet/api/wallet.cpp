@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -31,13 +31,16 @@
 
 
 #include "wallet.h"
+#include "pending_dex_transaction.h"
 #include "pending_transaction.h"
 #include "unsigned_transaction.h"
 #include "transaction_history.h"
 #include "address_book.h"
 #include "subaddress.h"
 #include "subaddress_account.h"
+#include "token_balance.h"
 #include "token_info.h"
+#include "liquidity_pool_info.h"
 #include "common_defines.h"
 #include "common/sharedlock.h"
 #include "common/util.h"
@@ -51,7 +54,7 @@
 
 #include <memory>
 #include <sstream>
-#include <unordered_map>
+#include <tuple>
 
 #ifdef WIN32
 #include <boost/locale.hpp>
@@ -125,6 +128,34 @@ namespace {
     void checkMultisigWalletNotReady(const std::shared_ptr<tools::wallet2> &wallet) {
         return checkMultisigWalletNotReady(wallet.get());
     }
+
+    std::string interpret_rpc_response(bool ok, const std::string& status)
+    {
+      std::string err;
+      if (ok) {
+        if (status == CORE_RPC_STATUS_BUSY) {
+          err = tr("Daemon is busy. Please try again later.");
+        }
+        else if (status != CORE_RPC_STATUS_OK) {
+          err = status;
+        }
+      }
+      else {
+        err = tr("Possibly lost connection to daemon");
+      }
+      return err;
+    }
+
+bool is_valid_pool(const pool_summary &pool)
+{
+  return pool.token1 != cryptonote::CUTCOIN_ID;
+}
+
+bool is_empty_pool(const pool_summary &pool)
+{
+  return pool.amount1 == 0 && pool.amount2 == 0;
+}
+
 }
 
 struct Wallet2CallbackImpl : public tools::i_wallet2_callback, plant::PlantCallbacks
@@ -379,6 +410,16 @@ uint64_t Wallet::maximumAllowedAmount()
     return std::numeric_limits<uint64_t>::max();
 }
 
+uint64_t Wallet::tokenGenesisAmount()
+{
+    return config::TOKEN_GENESIS_AMOUNT;
+}
+
+uint64_t Wallet::poolGenesisAmount()
+{
+  return config::POOL_GENESIS_AMOUNT;
+}
+
 void Wallet::init(const char *argv0, const char *default_log_base_name, const std::string &log_path, bool console) {
 #ifdef WIN32
     // Activate UTF-8 support for Boost filesystem classes on Windows
@@ -411,6 +452,7 @@ WalletImpl::WalletImpl(std::shared_ptr<epee::net_utils::http::http_simple_client
                        uint64_t kdf_rounds)
 : m_wallet(std::make_shared<tools::wallet2>(static_cast<cryptonote::network_type>(nettype), kdf_rounds, true))
 , m_status(Wallet::Status_Ok)
+, m_liquidityPoolInfo(new LiquidityPoolInfoImpl(this))
 , m_wallet2Callback(std::make_shared<Wallet2CallbackImpl>(this))
 , m_recoveringFromSeed(false)
 , m_recoveringFromDevice(false)
@@ -427,6 +469,7 @@ WalletImpl::WalletImpl(std::shared_ptr<epee::net_utils::http::http_simple_client
     m_addressBook.reset(new AddressBookImpl(this));
     m_subaddress.reset(new SubaddressImpl(this));
     m_subaddressAccount.reset(new SubaddressAccountImpl(this));
+    m_tokenBalance.reset(new TokenBalanceImpl(this));
     m_tokenInfo.reset(new TokenInfoImpl(this));
 
 
@@ -440,9 +483,8 @@ WalletImpl::WalletImpl(std::shared_ptr<epee::net_utils::http::http_simple_client
 
 WalletImpl::~WalletImpl()
 {
-
     LOG_PRINT_L1(__FUNCTION__);
-    m_wallet->callback(NULL);
+    m_wallet->callback(nullptr);
     // Pause refresh thread - prevents refresh from starting again
     pauseRefresh();
     // Close wallet - stores cache and stops ongoing refresh operation 
@@ -1105,7 +1147,7 @@ bool WalletImpl::submitTransaction(const string &fileName) {
     return false;
   }
   
-  if(!transaction->commit()) {
+  if(!transaction->commit("", false)) {
     setStatusError(transaction->m_errorString);
     return false;
   }
@@ -1444,7 +1486,7 @@ PendingTransaction *WalletImpl::createTransaction(const string &dst_addr, const 
                 cryptonote::tx_destination_entry de;
                 de.addr = info.address;
                 de.amount = *amount;
-                de.is_subaddress = info.is_subaddress;
+                de.set_subaddress(info.is_subaddress);
                 dsts.push_back(de);
                 transaction->m_pending_tx = m_wallet->create_transactions_2(dsts, fake_outs_count, 0 /* unlock_time */,
                                                                           adjusted_priority,
@@ -1464,6 +1506,15 @@ PendingTransaction *WalletImpl::createTransaction(const string &dst_addr, const 
             if (multisig().isMultisig) {
                 transaction->m_signers = m_wallet->make_multisig_tx_set(transaction->m_pending_tx).m_signers;
             }
+
+            uint64_t total_sent = 0;
+            for (auto& ptx : transaction->m_pending_tx) {
+              for (auto i: ptx.selected_transfers)
+                total_sent += m_wallet->get_transfer_details(i).amount();
+              total_sent -= ptx.change_dts[CUTCOIN_ID].amount + ptx.fee;
+            }
+            transaction->m_total_sent[CUTCOIN_ID] = total_sent;
+
         } catch (const tools::error::daemon_busy&) {
             // TODO: make it translatable with "tr"?
             setStatusError(tr("daemon is busy. Please try again later."));
@@ -1590,7 +1641,7 @@ PendingTransaction *WalletImpl::createTokenTransaction(const std::string        
 
   de.amount = *amount;
   de.addr = info.address;
-  de.is_subaddress = info.is_subaddress;
+  de.set_subaddress(info.is_subaddress);
 
   std::vector<uint8_t> extra;
   // if dst_addr is not an integrated address, parse payment_id
@@ -1640,6 +1691,21 @@ PendingTransaction *WalletImpl::createTokenTransaction(const std::string        
     if (multisig().isMultisig) {
       transaction->m_signers = m_wallet->make_multisig_tx_set(transaction->m_pending_tx).m_signers;
     }
+
+    for (const auto& ptx : transaction->m_pending_tx) {
+      for (const auto i: ptx.selected_transfers) {
+        const TokenId &tid = m_wallet->get_transfer_details(i).m_token_id;
+        if (!is_cutcoin(tid)) {
+          transaction->m_total_sent[tid] += m_wallet->get_transfer_details(i).amount();
+        }
+      }
+      for (const auto &c: ptx.change_dts) {
+        if (!is_cutcoin(c.first)) {
+          transaction->m_total_sent[c.first] -= c.second.amount;
+        }
+      }
+    }
+
   } catch (const tools::error::daemon_busy&) {
     // TODO: make it translatable with "tr"?
     setStatusError(tr("daemon is busy. Please try again later."));
@@ -1738,32 +1804,25 @@ PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string 
     return transaction;
   }
 
-  if (is_valid_token_supply(token_supply)) {
+  if (is_valid_token_coin_supply(token_supply)) {
     token_summary.d_token_supply = token_supply;
   } else {
     setStatusError(tr("Token supply is not in the allowed range"));
     return transaction;
   }
 
-  token_summary.d_type = static_cast<cryptonote::TokenType>(token_type);
+  token_summary.d_type = token_type;
   token_summary.d_unit = COIN;
 
   COMMAND_RPC_GET_TOKENS::request req = AUTO_VAL_INIT(req);
   req.prefix = token_name;
+  req.exact_match = true;
   COMMAND_RPC_GET_TOKENS::response res = AUTO_VAL_INIT(res);
 
-  std::string err;
-  if (m_wallet->invoke_http_bin("/get_tokens.bin", req, res))  {
-    if (res.status == CORE_RPC_STATUS_BUSY) {
-      setStatusError(tr("Daemon is busy. Please try again later."));
-      return transaction;
-    }
-    else if (res.status != CORE_RPC_STATUS_OK) {
-      setStatusError(res.status);
-      return transaction;
-    }
-  } else {
-    setStatusError(tr("Possibly lost connection to daemon."));
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    setStatusError(err);
     return transaction;
   }
 
@@ -1776,7 +1835,73 @@ PendingTransaction *WalletImpl::createTokenGenesisTransaction(const std::string 
 
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->token_genesis_transaction(subaddress_account, token_summary, transaction->m_pending_tx);
+    m_wallet->token_genesis_transaction(token_summary,
+                                        transaction->m_pending_tx,
+                                        token_summary.d_token_supply);
+
+    if (transaction->m_pending_tx.empty()) {
+      setStatusError(tr("Could not create token genesis transaction"));
+      return transaction;
+    }
+  }
+  catch (...) {
+    LOG_ERROR("Unknown error");
+    setStatusError(tr("Unknown error"));
+    return transaction;
+  }
+
+  return transaction;
+}
+
+PendingTransaction *WalletImpl::createLPTokenGenesisTransaction(const std::string &token_name)
+{
+  auto *transaction = new PendingTransactionImpl(*this);
+
+  clearStatus();
+
+  // Pause refresh thread while creating transaction
+  pauseRefresh();
+
+  auto state_cleaner = epee::misc_utils::create_scope_leave_handler([&, this]() {
+    statusWithErrorString(transaction->m_status, transaction->m_errorString);
+
+    // Resume refresh thread
+    startRefresh();
+  });
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    setStatusError(tr("This command is available after 11 fork"));
+    return transaction;
+  }
+
+  TokenSummary token_summary;
+
+  COMMAND_RPC_GET_TOKENS::request req{};
+  req.prefix = token_name;
+  req.exact_match = true;
+  COMMAND_RPC_GET_TOKENS::response res{};
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    setStatusError(err);
+    return transaction;
+  }
+
+
+  if (!res.tokens.empty()) {
+    setStatusError(tr("Aborted, token with the specified name already exists."));
+    return transaction;
+  }
+
+  token_summary.d_token_id = token_name_to_id(token_name);
+  token_summary.d_token_supply = MAX_TOKEN_SUPPLY / COIN;
+  token_summary.d_type = TokenType::lptoken;
+  token_summary.d_unit = COIN;
+
+  try {
+    m_wallet->token_genesis_transaction(token_summary,
+                                        transaction->m_pending_tx,
+                                        token_summary.d_token_supply);
 
     if (transaction->m_pending_tx.empty()) {
       setStatusError(tr("Could not create token genesis transaction"));
@@ -1899,10 +2024,21 @@ SubaddressAccount *WalletImpl::subaddressAccount()
     return m_subaddressAccount.get();
 }
 
+TokenBalance *WalletImpl::tokenBalance()
+{
+  return m_tokenBalance.get();
+}
+
 TokenInfo *WalletImpl::tokenInfo()
 {
     return m_tokenInfo.get();
 }
+
+LiquidityPoolInfo *WalletImpl::liquidityPoolInfo()
+{
+    return m_liquidityPoolInfo.get();
+}
+
 
 void WalletImpl::setListener(WalletListener *l)
 {
@@ -2680,6 +2816,588 @@ bool WalletImpl::stopStaking()
     return false;
 }
 
-} // namespace
+std::string WalletImpl::getMintableTokenKey(const std::string &token_name)
+{
+    clearStatus();
+
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = token_name;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(err);
+      return "";
+    }
+
+    if (res.tokens.empty()) {
+      setStatusError(tr("Token does not exist"));
+      return "";
+    }
+
+    const auto &ts = res.tokens[0];
+    if (!TokenType::is_mintable(ts.type)) {
+      setStatusError(tr("Token must have 'mintable' token type"));
+      return "";
+    }
+
+    crypto::secret_key sk = m_wallet->get_token_secret_key(token_name_to_id(token_name));
+    std::ostringstream oss;
+    oss << sk;
+
+    std::string key_str = oss.str();
+    return key_str.substr(1, key_str.length() - 2);
+}
+
+PendingTransaction *WalletImpl::createMintTokenSupplyTransaction(
+                                 const std::string &token_name,
+                                 std::uint64_t      token_supply,
+                                 const std::string &token_key,
+                                 uint32_t           subaddr_account)
+{
+  auto transaction = new PendingTransactionImpl(*this);
+
+  clearStatus();
+
+  // Pause refresh thread while creating transaction
+  pauseRefresh();
+
+  auto state_cleaner = epee::misc_utils::create_scope_leave_handler([&, this]() {
+    statusWithErrorString(transaction->m_status, transaction->m_errorString);
+
+    // Resume refresh thread
+    startRefresh();
+  });
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    setStatusError(tr("This command is available after 12 fork"));
+    return transaction;
+  }
+
+  TokenSummary token_summary;
+
+  if (validate_token_name(token_name)) {
+    token_summary.d_token_id = token_name_to_id(token_name);
+  } else {
+    setStatusError(tr("Token name doesn't meet the requirements: 1-8 capital letters or digits"));
+    return transaction;
+  }
+
+  if (is_valid_token_coin_supply(token_supply)) {
+    token_summary.d_token_supply = token_supply;
+  } else {
+    setStatusError(tr("Token supply is not in the allowed range"));
+    return transaction;
+  }
+
+  COMMAND_RPC_GET_TOKENS::request req{};
+  req.prefix = token_name;
+  req.exact_match = true;
+  COMMAND_RPC_GET_TOKENS::response res{};
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    setStatusError(err);
+    return transaction;
+  }
+
+  Amount new_token_supply = 0;
+  if (res.tokens.empty()) {
+    setStatusError(tr("Could not find a token with the specified name"));
+    return transaction;
+  }
+  else {
+    const auto &ts = res.tokens[0];
+    if (!TokenType::is_mintable(ts.type)) {
+      setStatusError(tr("Token must have 'mintable' token type"));
+      return transaction;
+    }
+    if (token_summary.d_token_supply <= ts.token_supply) {
+      setStatusError(tr("New token supply must be greater than the current one"));
+      return transaction;
+    }
+
+    new_token_supply = token_summary.d_token_supply - ts.token_supply;
+    token_summary.d_type = ts.type;
+    token_summary.d_unit = ts.unit;
+  }
+
+  if (!token_key.empty()) {
+    epee::wipeable_string token_key_string = token_key;
+    if (!token_key_string.hex_to_pod(unwrap(unwrap(token_summary.d_skey)))) {
+      setStatusError(tr("Failed to parse token secret key"));
+      return transaction;
+    }
+  } else {
+    token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
+  }
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->token_genesis_transaction(token_summary,
+                                        transaction->m_pending_tx,
+                                        new_token_supply);
+
+    if (transaction->m_pending_tx.empty()) {
+      setStatusError(tr("Could not create mint transaction"));
+      return transaction;
+    }
+  }
+  catch (...) {
+    LOG_ERROR("Unknown error");
+    setStatusError(tr("Unknown error"));
+    return transaction;
+  }
+
+  return transaction;
+}
+
+PendingDexTransaction *WalletImpl::createExchangeTokensTransaction(const std::string &operation_name,
+                                                                   const std::string &pool_name,
+                                                                   std::uint64_t      amount)
+{
+  auto transaction = new PendingDexTransactionImpl(*this);
+
+  clearStatus();
+
+  // Pause refresh thread while creating transaction
+  pauseRefresh();
+
+  auto state_cleaner = epee::misc_utils::create_scope_leave_handler([&, this]() {
+    statusWithErrorString(transaction->m_status, transaction->m_errorString);
+
+    // Resume refresh thread
+    startRefresh();
+  });
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    setStatusError(tr("This command is available after 12 fork"));
+    return transaction;
+  }
+
+  const uint32_t subaddress_account = 0;
+
+  cryptonote::CompositeTransfer ct;
+
+  LiquidityPool lp_summary{};
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = pool_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(err);
+      return transaction;
+    }
+
+    if (amount * COIN > res.liquidity_pool.amount1) {
+      setStatusError("Liquidity pool doesn't have enough tokens");
+      return transaction;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    lp_summary.d_token1    = lp.token1;
+    lp_summary.d_token2    = lp.token2;
+    lp_summary.d_ratio     = { lp.amount1, lp.amount2 };
+    lp_summary.d_lptoken   = lp.lp_token;
+    lp_summary.d_lp_amount = lp.lp_amount;
+  }
+
+  ct.d_side = (operation_name == "Buy") ? ExchangeSide::buy : ExchangeSide::sell;
+  ct.d_token1        = lp_summary.d_token1;
+  ct.d_token2        = lp_summary.d_token2;
+  ct.d_amount        = amount * COIN;
+  ct.d_pool_interest = config::DEX_FEE_PER_MILLE;
+
+  ExchangeTransfer summary{};
+  try {
+    m_wallet->exchange_transfer(subaddress_account, ct, transaction->m_pending_tx, summary);
+
+    if (transaction->m_pending_tx.empty()) {
+      setStatusError(tr("Could not create exchange transaction"));
+      return transaction;
+    }
+  }
+  catch (...) {
+    LOG_ERROR("Unknown error");
+    setStatusError(tr("Unknown error"));
+    return transaction;
+  }
+
+  transaction->setToken1(token_id_to_name(summary.d_token1));
+  transaction->setToken2(token_id_to_name(summary.d_token2));
+  transaction->setOldAmount1(summary.d_old_ratio.d_amount1);
+  transaction->setOldAmount2(summary.d_old_ratio.d_amount2);
+  transaction->setNewAmount1(summary.d_new_ratio.d_amount1);
+  transaction->setNewAmount2(summary.d_new_ratio.d_amount2);
+
+  return transaction;
+}
+
+PendingTransaction * WalletImpl::createLPGenesisTransaction(const std::string& token1,
+                                                            std::uint64_t      amount1,
+                                                            const std::string& token2,
+                                                            std::uint64_t      amount2,
+                                                            const std::string  lptoken,
+                                                            uint32_t           subaddr_account)
+{
+  auto transaction = new PendingTransactionImpl(*this);
+
+  clearStatus();
+
+  // Pause refresh thread while creating transaction
+  pauseRefresh();
+
+  auto state_cleaner = epee::misc_utils::create_scope_leave_handler([&, this]() {
+    statusWithErrorString(transaction->m_status, transaction->m_errorString);
+
+    // Resume refresh thread
+    startRefresh();
+  });
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    setStatusError(tr("This command is available after 11 fork"));
+    return transaction;
+  }
+
+  {
+    std::string lp_name = tokens_to_lpname(token1, token2);
+    if (!validate_lpname(lp_name)) {
+      setStatusError(tr("Incorrect liquidity pool name"));
+      return transaction;
+    }
+
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = lp_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(tr("failed to get liquidity pools: ") + err);
+      return transaction;
+    }
+
+    if (res.liquidity_pool.token1 != cryptonote::CUTCOIN_ID) {
+      setStatusError(tr("The specified liquidity pool already exists"));
+      return transaction;
+    }
+  }
+
+  {
+    COMMAND_RPC_GET_POOL_BY_LP_TOKEN::request req = AUTO_VAL_INIT(req);
+    req.lp_token = token_name_to_id(lptoken);
+    COMMAND_RPC_GET_POOL_BY_LP_TOKEN::response res = AUTO_VAL_INIT(res);
+    bool r = m_wallet->invoke_http_bin("/get_pool_by_lp_token.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(tr("failed to get liquidity pool by lptoken: ") + err);
+      return transaction;
+    }
+
+    if (res.liquidity_pool.token1 != cryptonote::CUTCOIN_ID) {
+      setStatusError(tr("The specified lptoken is already used"));
+      return transaction;
+    }
+  }
+
+  {
+    bool r = check_initial_pool_liquidity(amount1, amount2);
+    if (!r) {
+      setStatusError(tr("Aborted, 'token 1 liquidity' * 'token 2 liquidity' must be at least 1000"));
+      return transaction;
+    }
+  }
+
+  LiquidityPool lp_summary;
+  if (tokens_direct_order(token1, token2)) {
+    lp_summary.d_token1    = token_name_to_id(token1);
+    lp_summary.d_token2    = token_name_to_id(token2);
+    lp_summary.d_ratio     = { amount1, amount2 };
+  }
+  else {
+    lp_summary.d_token1    = token_name_to_id(token2);
+    lp_summary.d_token2    = token_name_to_id(token1);
+    lp_summary.d_ratio     = { amount2, amount1 };
+  }
+
+  lp_summary.d_lptoken   = token_name_to_id(lptoken);
+  lp_summary.d_lp_amount = get_lp_token_to_funds(lp_summary.d_ratio);
+
+  if (token1 != CUTCOIN_NAME) {
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = token1;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(tr("failed to get tokens: ") + err);
+      return transaction;
+    }
+
+    if (res.tokens.empty()) {
+      setStatusError(tr("Token doesn't exist: ") + token1);
+      return transaction;
+    }
+  }
+
+  if (token2 != CUTCOIN_NAME) {
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = token2;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(tr("failed to get tokens: ") + err);
+      return transaction;
+    }
+
+    if (res.tokens.empty()) {
+      setStatusError(tr("Token doesn't exist: ") + token2);
+      return transaction;
+    }
+  }
+
+  {
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = lptoken;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(tr("failed to get tokens: ") + err);
+      return transaction;
+    }
+
+    if (res.tokens.empty()) {
+      setStatusError(tr("Token doesn't exist: ") + lptoken);
+      return transaction;
+    }
+  }
+
+  try {
+    m_wallet->pool_genesis_transaction(subaddr_account,
+                                       lp_summary,
+                                       transaction->m_pending_tx);
+
+    if (transaction->m_pending_tx.empty()) {
+      setStatusError(tr("Could not create LP genesis transaction"));
+      return transaction;
+    }
+  }
+  catch (...) {
+    LOG_ERROR("Unknown error");
+    setStatusError(tr("Unknown error"));
+    return transaction;
+  }
+
+  return transaction;
+}
+
+PendingDexTransaction *WalletImpl::createAddLiquidityTransaction(const std::string &pool_name,
+                                                                 const std::string &token_name,
+                                                                 std::uint64_t      amount)
+{
+  auto transaction = new PendingDexTransactionImpl(*this);
+
+  clearStatus();
+
+  // Pause refresh thread while creating transaction
+  pauseRefresh();
+
+  auto state_cleaner = epee::misc_utils::create_scope_leave_handler([&, this]() {
+    statusWithErrorString(transaction->m_status, transaction->m_errorString);
+
+    // Resume refresh thread
+    startRefresh();
+  });
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    setStatusError(tr("This command is available after 12 fork"));
+    return transaction;
+  }
+
+  const uint32_t subaddress_account = 0;
+
+  LiquidityPool old_lp{}, new_lp{};
+  Amount deposit1, deposit2;
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = pool_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(err);
+      return transaction;
+    }
+
+    if (!is_valid_pool(res.liquidity_pool)) {
+      setStatusError(std::string("Could not find the specified liquidity pool"));
+      return transaction;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    old_lp.d_token1    = lp.token1;
+    old_lp.d_token2    = lp.token2;
+    old_lp.d_ratio     = { lp.amount1 ,lp.amount2 };
+    old_lp.d_lptoken   = lp.lp_token;
+    old_lp.d_lp_amount = lp.lp_amount;
+
+    if (is_empty_pool(res.liquidity_pool)) {
+      setStatusError(std::string("Liquidity pool is empty. Both tokens and they amounts should be specified"));
+      return transaction;
+    }
+
+    const TokenId tokenId = token_name_to_id(token_name);
+    if (tokenId != lp.token1 && tokenId != lp.token2) {
+      setStatusError(std::string("Specified token is not from liquidity pool pair"));
+      return transaction;
+    }
+
+    if (tokenId == lp.token1) {
+      deposit1 = amount * COIN;
+      deposit2 = underlying_amount_from_lp_pair(old_lp.d_ratio, amount * COIN);
+    }
+    else {
+      deposit1 = token_amount_from_lp_pair(old_lp.d_ratio, amount * COIN);
+      deposit2 = underlying_amount_from_lp_pair(old_lp.d_ratio, deposit1);
+    }
+
+    new_lp.d_token1    = lp.token1;
+    new_lp.d_token2    = lp.token2;
+    new_lp.d_ratio      = { old_lp.d_ratio.d_amount1 + deposit1, old_lp.d_ratio.d_amount2 + deposit2};
+    new_lp.d_lptoken   = lp.lp_token;
+    new_lp.d_lp_amount = get_lp_token_to_funds(new_lp.d_ratio);
+  }
+
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->pool_add_liquidity_transaction(subaddress_account, old_lp, new_lp, transaction->m_pending_tx);
+
+    if (transaction->m_pending_tx.empty()) {
+      setStatusError(tr("Could not create transaction for adding pool liquidity"));
+      return transaction;
+    }
+  }
+
+  catch (...) {
+    LOG_ERROR("Unknown error");
+    setStatusError(tr("Unknown error"));
+    return transaction;
+  }
+
+  transaction->setToken1(token_id_to_name(new_lp.d_token1));
+  transaction->setToken2(token_id_to_name(new_lp.d_token2));
+  transaction->setOldAmount1(old_lp.d_ratio.d_amount1);
+  transaction->setOldAmount2(old_lp.d_ratio.d_amount2);
+  transaction->setNewAmount1(new_lp.d_ratio.d_amount1);
+  transaction->setNewAmount2(new_lp.d_ratio.d_amount2);
+
+  return transaction;
+}
+
+PendingDexTransaction *WalletImpl::createTakeLiquidityTransaction(const std::string &pool_name,
+                                                                  const std::string &lptoken_name,
+                                                                  std::uint64_t      amount)
+{
+  auto transaction = new PendingDexTransactionImpl(*this);
+
+  clearStatus();
+
+  // Pause refresh thread while creating transaction
+  pauseRefresh();
+
+  auto state_cleaner = epee::misc_utils::create_scope_leave_handler([&, this]() {
+    statusWithErrorString(transaction->m_status, transaction->m_errorString);
+
+    // Resume refresh thread
+    startRefresh();
+  });
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_TOKENS)) {
+    setStatusError(tr("This command is available after 12 fork"));
+    return transaction;
+  }
+
+  const uint32_t subaddress_account = 0;
+
+  LiquidityPool old_lp{}, new_lp{};
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = pool_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      setStatusError(err);
+      return transaction;
+    }
+
+    if (!is_valid_pool(res.liquidity_pool)) {
+      setStatusError(std::string("Could not find the specified liquidity pool"));
+      return transaction;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    if (lp.lp_token != token_name_to_id(lptoken_name)) {
+      setStatusError(std::string("Invalid LP token"));
+      return transaction;
+    }
+
+    old_lp.d_token1    = lp.token1;
+    old_lp.d_token2    = lp.token2;
+    old_lp.d_ratio     = { lp.amount1, lp.amount2 };
+    old_lp.d_lptoken   = lp.lp_token;
+    old_lp.d_lp_amount = lp.lp_amount;
+
+    if (old_lp.d_lp_amount < amount * COIN) {
+      setStatusError(std::string(tr("LP token amount exceeds liquidity pool issued amount")));
+      return transaction;
+    }
+
+    const AmountRatio new_funds = get_funds_to_lp_token(old_lp.d_lp_amount,
+                                                        old_lp.d_lp_amount - amount * COIN,
+                                                        old_lp.d_ratio);
+
+    new_lp.d_token1    = lp.token1;
+    new_lp.d_token2    = lp.token2;
+    new_lp.d_ratio     = { new_funds.d_amount1, new_funds.d_amount2 };
+    new_lp.d_lptoken   = lp.lp_token;
+    new_lp.d_lp_amount = old_lp.d_lp_amount - amount * COIN;
+  }
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->pool_take_liquidity_transaction(subaddress_account, old_lp, new_lp, transaction->m_pending_tx);
+
+    if (transaction->m_pending_tx.empty()) {
+      setStatusError(tr("Could not create transaction for adding pool liquidity"));
+      return transaction;
+    }
+  }
+
+  catch (...) {
+    LOG_ERROR("Unknown error");
+    setStatusError(tr("Unknown error"));
+    return transaction;
+  }
+
+  transaction->setToken1(token_id_to_name(new_lp.d_token1));
+  transaction->setToken2(token_id_to_name(new_lp.d_token2));
+  transaction->setOldAmount1(old_lp.d_ratio.d_amount1);
+  transaction->setOldAmount2(old_lp.d_ratio.d_amount2);
+  transaction->setNewAmount1(new_lp.d_ratio.d_amount1);
+  transaction->setNewAmount2(new_lp.d_ratio.d_amount2);
+  
+  return transaction;
+}
+
+} // namespace Monero
 
 namespace Bitmonero = Monero;

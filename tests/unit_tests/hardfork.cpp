@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -64,7 +64,8 @@ public:
   virtual void block_txn_abort() {}
   virtual void drop_hard_fork_info() {}
   virtual bool block_exists(const crypto::hash& h, uint64_t *height) const { return false; }
-  virtual blobdata get_block_blob_from_height(const uint64_t& height) const { return cryptonote::t_serializable_object_to_blob(get_block_from_height(height)); }
+  virtual blobdata get_block_blob_from_height(const uint64_t& height) const {
+    return cryptonote::t_serializable_object_to_blob(get_block_from_height(height)); }
   virtual blobdata get_block_blob(const crypto::hash& h) const { return blobdata(); }
   virtual bool get_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const { return false; }
   virtual bool get_pruned_tx_blob(const crypto::hash& h, cryptonote::blobdata &tx) const { return false; }
@@ -72,15 +73,18 @@ public:
   virtual uint64_t get_block_height(const crypto::hash& h) const { return 0; }
   virtual block_header get_block_header(const crypto::hash& h) const { return block_header(); }
   virtual uint64_t get_block_timestamp(const uint64_t& height) const { return 0; }
-  virtual std::vector<uint64_t> get_block_cumulative_rct_outputs(const std::vector<uint64_t> &heights) const { return {}; }
+  virtual std::vector<uint64_t> get_block_cumulative_rct_outputs(const std::vector<uint64_t> &heights) const {
+    return {}; }
   virtual uint64_t get_top_block_timestamp() const { return 0; }
   virtual size_t get_block_weight(const uint64_t& height) const { return 128; }
   virtual difficulty_type get_block_cumulative_difficulty(const uint64_t& height) const { return 10; }
   virtual difficulty_type get_block_difficulty(const uint64_t& height) const { return 0; }
   virtual uint64_t get_block_already_generated_coins(const uint64_t& height) const { return 10000000000; }
   virtual crypto::hash get_block_hash_from_height(const uint64_t& height) const { return crypto::hash(); }
-  virtual std::vector<block> get_blocks_range(const uint64_t& h1, const uint64_t& h2) const { return std::vector<block>(); }
-  virtual std::vector<crypto::hash> get_hashes_range(const uint64_t& h1, const uint64_t& h2) const { return std::vector<crypto::hash>(); }
+  virtual std::vector<block> get_blocks_range(const uint64_t& h1, const uint64_t& h2) const {
+    return std::vector<block>(); }
+  virtual std::vector<crypto::hash> get_hashes_range(const uint64_t& h1, const uint64_t& h2) const {
+    return std::vector<crypto::hash>(); }
   virtual crypto::hash top_block_hash() const { return crypto::hash(); }
   virtual block get_top_block() const { return block(); }
   virtual uint64_t height() const { return blocks.size(); }
@@ -90,37 +94,94 @@ public:
   virtual transaction get_tx(const crypto::hash& h) const { return transaction(); }
   virtual bool get_tx(const crypto::hash& h, transaction &tx) const { return false; }
   virtual uint64_t get_tx_count() const { return 0; }
-  virtual std::vector<transaction> get_tx_list(const std::vector<crypto::hash>& hlist) const { return std::vector<transaction>(); }
+  virtual std::vector<transaction> get_tx_list(const std::vector<crypto::hash>& hlist) const {
+    return std::vector<transaction>(); }
   virtual uint64_t get_tx_block_height(const crypto::hash& h) const { return 0; }
   virtual uint64_t get_num_outputs(const uint64_t& amount) const { return 1; }
   virtual uint64_t get_indexing_base() const { return 0; }
-  virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index) { return output_data_t(); }
+  virtual output_data_t get_output_key(const uint64_t& amount, const uint64_t& index) { return {}; }
+  virtual std::tuple<uint64_t, uint64_t, lpoutput_data_t> get_output_key_lpool(const uint64_t& amount, const uint64_t& index) { return {}; }
   virtual tx_out_index get_output_tx_and_index_from_global(const uint64_t& index) const { return tx_out_index(); }
-  virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const { return tx_out_index(); }
-  virtual void get_output_tx_and_index(const uint64_t& amount, const std::vector<uint64_t> &offsets, std::vector<tx_out_index> &indices) const {}
-  virtual void get_output_key(const uint64_t &amount, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, bool allow_partial = false) {}
+  virtual tx_out_index get_output_tx_and_index(const uint64_t& amount, const uint64_t& index) const {
+    return tx_out_index(); }
+  virtual tx_out_index get_output_tx_and_index_lpool(const TokenId& token_id, const uint64_t& index) const {
+    return tx_out_index(); }
+  virtual void get_output_tx_and_index(const uint64_t& amount,
+                                       const std::vector<uint64_t> &offsets,
+                                       std::vector<tx_out_index> &indices) const {}
+  virtual void get_output_key(const uint64_t &amount,
+                              const std::vector<uint64_t> &offsets,
+                              std::vector<output_data_t> &outputs,
+                              bool allow_partial = false) {}
+  virtual void get_output_key_lpool(const TokenId                &token_id,
+                                    const std::vector<uint64_t>  &offsets,
+                                    std::vector<lpoutput_data_t> &outputs,
+                                    bool                          allow_partial = false,
+                                    bool                          ignore_spent = true) {}
   virtual bool can_thread_bulk_indices() const { return false; }
   virtual std::vector<uint64_t> get_tx_output_indices(const crypto::hash& h) const { return std::vector<uint64_t>(); }
-  virtual std::vector<uint64_t> get_tx_amount_output_indices(const uint64_t tx_index) const { return std::vector<uint64_t>(); }
+  virtual std::vector<uint64_t> get_tx_amount_output_indices(const uint64_t tx_index) const {
+    return std::vector<uint64_t>(); }
   virtual bool has_key_image(const crypto::key_image& img) const { return false; }
   virtual void remove_block() { blocks.pop_back(); }
-  virtual uint64_t add_transaction_data(const crypto::hash& blk_hash, const transaction& tx, const crypto::hash& tx_hash, const crypto::hash& tx_prunable_hash) {return 0;}
+  virtual uint64_t add_transaction_data(const crypto::hash& blk_hash,
+                                        const transaction& tx,
+                                        const crypto::hash& tx_hash,
+                                        const crypto::hash& tx_prunable_hash) {return 0;}
   virtual void remove_transaction_data(const crypto::hash& tx_hash, const transaction& tx) {}
-  virtual uint64_t add_output(const crypto::hash& tx_hash, const tx_out& tx_output, const uint64_t& local_index, const uint64_t unlock_time, const rct::key *commitment) {return 0;}
-  virtual void add_tx_amount_output_indices(const uint64_t tx_index, const std::vector<uint64_t>& amount_output_indices) {}
+  virtual uint64_t add_output(const crypto::hash& tx_hash,
+                              const tx_out& tx_output,
+                              const uint64_t& local_index,
+                              const uint64_t unlock_time,
+                              const rct::key *commitment) {return 0;}
+
+  virtual uint64_t add_output_lpool(const crypto::hash& tx_hash,
+                                    const tx_out& tx_output,
+                                    const uint64_t& local_index,
+                                    const uint64_t unlock_time,
+                                    const Amount        amount,
+                                    const rct::key *commitment) { return 0; }
+
+  virtual void add_tx_amount_output_indices(const uint64_t tx_index,
+                                            const std::vector<uint64_t>& amount_output_indices) {}
   virtual void add_spent_key(const crypto::key_image& k_image) {}
   virtual void remove_spent_key(const crypto::key_image& k_image) {}
 
   virtual bool for_all_key_images(std::function<bool(const crypto::key_image&)>) const { return true; }
-  virtual bool for_blocks_range(const uint64_t&, const uint64_t&, std::function<bool(uint64_t, const crypto::hash&, const cryptonote::block&)>) const { return true; }
-  virtual bool for_all_transactions(std::function<bool(const crypto::hash&, const cryptonote::transaction&)>, bool pruned) const { return true; }
+  virtual bool for_blocks_range(const uint64_t&,
+                                const uint64_t&,
+                                std::function<bool(uint64_t, const crypto::hash&, const cryptonote::block&)>) const {
+    return true; }
+  virtual bool for_all_transactions(std::function<bool(const crypto::hash&, const cryptonote::transaction&)>,
+                                    bool pruned) const { return true; }
   virtual bool for_all_outputs(std::function<bool(uint64_t amount, const crypto::hash &tx_hash, uint64_t height, size_t tx_idx)> f) const { return true; }
   virtual bool for_all_outputs(uint64_t amount, const std::function<bool(uint64_t height)> &f) const { return true; }
+  virtual bool for_all_token_outputs(TokenId token_id,
+                                     const std::function<bool (const cryptonote::transaction &tx)> &f) const { return true; }
   virtual bool is_read_only() const { return false; }
-  virtual std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const cryptonote::TokenId &token_id, const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count) const { return std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>>(); }
+  virtual std::map<cryptonote::TokenId, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(const cryptonote::TokenId &token_id, const std::vector<uint64_t> &amounts, bool unlocked, uint64_t recent_cutoff, uint64_t min_count) const { return std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>>(); }
+  virtual std::map<cryptonote::TokenId, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram_lpool(
+                                                            const cryptonote::TokenId   &token_id,
+                                                            const std::vector<uint64_t> &amounts,
+                                                            bool                         unlocked,
+                                                            uint64_t                     recent_cutoff,
+                                                            uint64_t                     min_count) const {return {}; }
   virtual bool get_output_distribution(const cryptonote::TokenId &token_id, uint64_t from_height, uint64_t to_height, std::vector<uint64_t> &distribution, uint64_t &base) const { return false; }
-  virtual bool has_outputs_with_token_id(const cryptonote::TokenId &token_id) const { return true; };
-  virtual void get_all_tokens(std::vector<TokenId> &tokens) const {};
+  virtual bool has_outputs_with_token_id(const cryptonote::TokenId &token_id) const { return true; }
+  virtual bool has_lpoutputs_with_token_id(const TokenId &token_id) const { return true; }
+
+  virtual bool get_lpoutputs(const TokenId &token_id,
+                             const Amount &amount,
+                             std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> &outputs) const { return true; }
+
+  virtual bool get_lpoutputs_set(const TokenId                      &token_id,
+                                 size_t                              outputs_count,
+                                 std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> &outputs) const { return true; }
+
+  virtual void set_lp_output_spent(const TokenId &token_id, size_t index, bool state) {}
+
+  virtual void get_all_tokens(std::vector<TokenId> &tokens) const {}
+  virtual void get_all_lptokens(std::vector<TokenId> &tokens) const {}
 
   virtual void add_txpool_tx(const transaction &tx, const txpool_tx_meta_t& details) {}
   virtual void update_txpool_tx(const crypto::hash &txid, const txpool_tx_meta_t& details) {}
@@ -133,6 +194,15 @@ public:
   virtual cryptonote::blobdata get_txpool_tx_blob(const crypto::hash& txid) const { return ""; }
   virtual bool for_all_txpool_txes(std::function<bool(const crypto::hash&, const txpool_tx_meta_t&, const cryptonote::blobdata*)>, bool include_blob = false, bool include_unrelayed_txes = false) const { return false; }
 
+  virtual bool add_liqudity_pool(const cryptonote::liquidity_pool_data_t &lp_data) { return true; }
+  virtual bool get_liquidity_pool(const cryptonote::TokenId &lptoken, cryptonote::liquidity_pool_data_t &lp_data) const { return true; }
+  virtual bool get_liquidity_pool(const std::string &token_name, cryptonote::liquidity_pool_data_t &lp_data) const { return true; }
+  virtual bool get_liquidity_pool(const cryptonote::TokenId &token1, const cryptonote::TokenId &token2, cryptonote::liquidity_pool_data_t &lp_data) const { return true; }
+  virtual bool get_all_liquidity_pools(std::vector<liquidity_pool_data_t> &liquidity_pools) const { return true; }
+  virtual void remove_liqudity_pool(const cryptonote::TokenId &lptoken_id) {}
+  virtual bool add_token_data(const cryptonote::token_data_t &token_data) { return true; }
+  virtual void remove_token_data(const cryptonote::TokenId &token_id) {}
+  virtual bool get_token_data(cryptonote::token_data_t &token_data) const { return true; }
   virtual void add_block( const block& blk
                         , size_t block_weight
                         , const difficulty_type& cumulative_difficulty

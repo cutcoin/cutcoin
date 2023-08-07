@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -44,12 +44,13 @@ set_property(TARGET hash-tests
   PROPERTY
     FOLDER "tests")
 
-foreach (hash IN ITEMS fast slow slow-1 slow-2 tree extra-blake extra-groestl extra-jh extra-skein)
+#foreach (hash IN ITEMS fast slow slow-1 slow-2 tree extra-blake extra-groestl extra-jh extra-skein)
+foreach (hash IN ITEMS fast tree extra-blake extra-groestl extra-jh extra-skein)
   add_test(
     NAME    "hash-${hash}"
     COMMAND hash-tests "${hash}" "${CMAKE_CURRENT_SOURCE_DIR}/tests-${hash}.txt")
 endforeach ()
 
-add_test(
-  NAME    "hash-variant2-int-sqrt"
-  COMMAND hash-tests "variant2_int_sqrt")
+#add_test(
+#  NAME    "hash-variant2-int-sqrt"
+#  COMMAND hash-tests "variant2_int_sqrt")

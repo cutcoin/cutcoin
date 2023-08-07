@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -26,13 +26,26 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#include "cryptonote_basic/token.h"
+
 #include "gtest/gtest.h"
 
-#include "cryptonote_basic/token.h"
+#include <stdexcept>
 
 using namespace cryptonote;
 
-TEST(token, double_conversion)
+TEST(token, breathing)
+{
+  const std::string token_name{};
+  try {
+    token_name_to_id(token_name);
+    EXPECT_TRUE(false);
+  } catch (std::runtime_error &e) {
+    EXPECT_TRUE(true);
+  }
+}
+
+TEST(token, round_conversion)
 {
     {
         const std::string token_name = "SHITCOIN";
@@ -53,7 +66,7 @@ TEST(token, name_to_id)
 {
     const std::string token_name = "A";
     TokenId a = token_name_to_id(token_name);
-    TokenId b = 65ull << 56;
+    TokenId b = 65ull << 56ull;
     EXPECT_EQ(a, b);
 }
 
@@ -85,11 +98,51 @@ TEST(token, id_to_name_0xff_end)
 
 TEST(token, cutcoin_name)
 {
-    EXPECT_TRUE("SHITCOIN");
+    EXPECT_TRUE(validate_token_name("SHITCOIN"));
     EXPECT_FALSE(validate_token_name(""));
     EXPECT_FALSE(validate_token_name("CUTCOINLONG"));
     EXPECT_FALSE(validate_token_name("cut_coin"));
     EXPECT_FALSE(validate_token_name("CUT"));
     EXPECT_FALSE(validate_token_name("CUTCOIN"));
     EXPECT_FALSE(validate_token_name("CUTC0IN"));
+}
+
+TEST(token, lp_round_conversion)
+{
+  {
+    const std::string token_name = "lpSHITCOIN";
+    TokenId a = token_name_to_id(token_name);
+    std::string b = token_id_to_name(a);
+    EXPECT_EQ(b, token_name);
+  }
+
+  {
+    const std::string token_name = "lpHITCOIN";
+    TokenId a = token_name_to_id(token_name);
+    std::string b = token_id_to_name(a);
+    EXPECT_EQ(b, token_name);
+  }
+}
+
+TEST(token, lp_name_to_id)
+{
+  const std::string token_name = "lpA";
+  TokenId a = token_name_to_id(token_name);
+  TokenId b = (65ull | 0x80ull) << 56ull;
+  EXPECT_EQ(a, b);
+}
+
+TEST(token, validate_lptoken_name)
+{
+  EXPECT_TRUE(validate_lptoken_name("lpSHITCOIN"));
+  EXPECT_FALSE(validate_lptoken_name("SHITCOIN"));
+  EXPECT_FALSE(validate_lptoken_name(""));
+  EXPECT_FALSE(validate_lptoken_name("lp"));
+  EXPECT_TRUE(validate_lptoken_name("lpA"));
+  EXPECT_FALSE(validate_lptoken_name("lpa"));
+  EXPECT_FALSE(validate_lptoken_name("lpCUTCOINLONG"));
+  EXPECT_FALSE(validate_lptoken_name("lpcut_coin"));
+  EXPECT_FALSE(validate_lptoken_name("lpCUT"));
+  EXPECT_FALSE(validate_lptoken_name("lpCUTCOIN"));
+  EXPECT_FALSE(validate_lptoken_name("lpCUTC0IN"));
 }

@@ -607,7 +607,7 @@ inline std::string GetPrefixUntilComma(const char* str) {
   return comma == NULL ? str : std::string(str, comma);
 }
 
-// Splits a given string on a given delimiter, populating a given
+// Splits a given string on a given lp_delimiter, populating a given
 // vector with the fields.
 void SplitString(const ::std::string& str, char delimiter,
                  ::std::vector< ::std::string>* dest);

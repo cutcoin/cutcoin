@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -96,12 +96,22 @@ namespace tools
         MAP_JON_RPC_WE("transfer_token",     on_transfer_token,     wallet_rpc::COMMAND_RPC_TRANSFER_TOKEN)
         MAP_JON_RPC_WE("token_balance",      on_get_token_balance,  wallet_rpc::COMMAND_RPC_GET_TOKEN_BALANCE)
         MAP_JON_RPC_WE("get_tokens",         on_get_tokens,         wallet_rpc::COMMAND_RPC_GET_TOKENS)
+        MAP_JON_RPC_WE("create_lptoken",     on_create_lptoken,     wallet_rpc::COMMAND_RPC_CREATE_LPTOKEN)
+        MAP_JON_RPC_WE("create_liquidity_pool", on_create_liquidity_pool, wallet_rpc::COMMAND_RPC_CREATE_LIQUIDITY_POOL)
+        MAP_JON_RPC_WE("add_liquidity",      on_add_liquidity,      wallet_rpc::COMMAND_RPC_ADD_LIQUIDITY)
+        MAP_JON_RPC_WE("take_liquidity",     on_take_liquidity,     wallet_rpc::COMMAND_RPC_TAKE_LIQUIDITY)
+        MAP_JON_RPC_WE("get_liquidity_pools", on_get_liquidity_pools, wallet_rpc::COMMAND_RPC_GET_LIQUIDITY_POOLS)
+        MAP_JON_RPC_WE("buy",                on_buy,                wallet_rpc::COMMAND_RPC_BUY)
+        MAP_JON_RPC_WE("sell",               on_sell,               wallet_rpc::COMMAND_RPC_SELL)
+        MAP_JON_RPC_WE("cross_exchange",     on_cross_exchange,     wallet_rpc::COMMAND_RPC_CROSS_EXCHANGE)
+        MAP_JON_RPC_WE("mint_token_supply",  on_mint_token_supply,  wallet_rpc::COMMAND_RPC_MINT_TOKEN_SUPPLY)
+        MAP_JON_RPC_WE("get_mintable_token_key", on_get_mintable_token_key, wallet_rpc::COMMAND_RPC_GET_MINTABLE_TOKEN_KEY)
         MAP_JON_RPC_WE("relay_tx",           on_relay_tx,           wallet_rpc::COMMAND_RPC_RELAY_TX)
         MAP_JON_RPC_WE("store",              on_store,              wallet_rpc::COMMAND_RPC_STORE)
         MAP_JON_RPC_WE("get_payments",       on_get_payments,       wallet_rpc::COMMAND_RPC_GET_PAYMENTS)
         MAP_JON_RPC_WE("get_bulk_payments",  on_get_bulk_payments,  wallet_rpc::COMMAND_RPC_GET_BULK_PAYMENTS)
         MAP_JON_RPC_WE("incoming_transfers", on_incoming_transfers, wallet_rpc::COMMAND_RPC_INCOMING_TRANSFERS)
-        MAP_JON_RPC_WE("query_key",         on_query_key,         wallet_rpc::COMMAND_RPC_QUERY_KEY)
+        MAP_JON_RPC_WE("query_key",          on_query_key,          wallet_rpc::COMMAND_RPC_QUERY_KEY)
         MAP_JON_RPC_WE("make_integrated_address", on_make_integrated_address, wallet_rpc::COMMAND_RPC_MAKE_INTEGRATED_ADDRESS)
         MAP_JON_RPC_WE("split_integrated_address", on_split_integrated_address, wallet_rpc::COMMAND_RPC_SPLIT_INTEGRATED_ADDRESS)
         MAP_JON_RPC_WE("stop_wallet",        on_stop_wallet,        wallet_rpc::COMMAND_RPC_STOP_WALLET)
@@ -178,6 +188,16 @@ namespace tools
       bool on_transfer_token(const wallet_rpc::COMMAND_RPC_TRANSFER_TOKEN::request& req, wallet_rpc::COMMAND_RPC_TRANSFER_TOKEN::response& res, epee::json_rpc::error& er);
       bool on_get_token_balance(const wallet_rpc::COMMAND_RPC_GET_TOKEN_BALANCE::request& req, wallet_rpc::COMMAND_RPC_GET_TOKEN_BALANCE::response& res, epee::json_rpc::error& er);
       bool on_get_tokens(const wallet_rpc::COMMAND_RPC_GET_TOKENS::request& req, wallet_rpc::COMMAND_RPC_GET_TOKENS::response& res, epee::json_rpc::error& er);
+      bool on_create_lptoken(const wallet_rpc::COMMAND_RPC_CREATE_LPTOKEN::request& req, wallet_rpc::COMMAND_RPC_CREATE_LPTOKEN::response& res, epee::json_rpc::error& er);
+      bool on_create_liquidity_pool(const wallet_rpc::COMMAND_RPC_CREATE_LIQUIDITY_POOL::request& req, wallet_rpc::COMMAND_RPC_CREATE_LIQUIDITY_POOL::response& res, epee::json_rpc::error& er);
+      bool on_add_liquidity(const wallet_rpc::COMMAND_RPC_ADD_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_ADD_LIQUIDITY::response& res, epee::json_rpc::error& er);
+      bool on_take_liquidity(const wallet_rpc::COMMAND_RPC_TAKE_LIQUIDITY::request& req, wallet_rpc::COMMAND_RPC_TAKE_LIQUIDITY::response& res, epee::json_rpc::error& er);
+      bool on_get_liquidity_pools(const wallet_rpc::COMMAND_RPC_GET_LIQUIDITY_POOLS::request& req, wallet_rpc::COMMAND_RPC_GET_LIQUIDITY_POOLS::response& res, epee::json_rpc::error& er);
+      bool on_buy(const wallet_rpc::COMMAND_RPC_BUY::request& req, wallet_rpc::COMMAND_RPC_BUY::response& res, epee::json_rpc::error& er);
+      bool on_sell(const wallet_rpc::COMMAND_RPC_SELL::request& req, wallet_rpc::COMMAND_RPC_SELL::response& res, epee::json_rpc::error& er);
+      bool on_cross_exchange(const wallet_rpc::COMMAND_RPC_CROSS_EXCHANGE::request &req, wallet_rpc::COMMAND_RPC_CROSS_EXCHANGE::response &res, epee::json_rpc::error &er);
+      bool on_mint_token_supply(const wallet_rpc::COMMAND_RPC_MINT_TOKEN_SUPPLY::request& req, wallet_rpc::COMMAND_RPC_MINT_TOKEN_SUPPLY::response& res, epee::json_rpc::error& er);
+      bool on_get_mintable_token_key(const wallet_rpc::COMMAND_RPC_GET_MINTABLE_TOKEN_KEY::request& req, wallet_rpc::COMMAND_RPC_GET_MINTABLE_TOKEN_KEY::response& res, epee::json_rpc::error& er);
       bool on_relay_tx(const wallet_rpc::COMMAND_RPC_RELAY_TX::request& req, wallet_rpc::COMMAND_RPC_RELAY_TX::response& res, epee::json_rpc::error& er);
       bool on_make_integrated_address(const wallet_rpc::COMMAND_RPC_MAKE_INTEGRATED_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_MAKE_INTEGRATED_ADDRESS::response& res, epee::json_rpc::error& er);
       bool on_split_integrated_address(const wallet_rpc::COMMAND_RPC_SPLIT_INTEGRATED_ADDRESS::request& req, wallet_rpc::COMMAND_RPC_SPLIT_INTEGRATED_ADDRESS::response& res, epee::json_rpc::error& er);

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -46,225 +46,202 @@ using namespace std;
 
 namespace Monero {
 
-PendingTransaction::~PendingTransaction() {}
-
 
 PendingTransactionImpl::PendingTransactionImpl(WalletImpl &wallet)
-    : m_wallet(wallet)
-{
+  : m_wallet(wallet) {
   m_status = Status_Ok;
 }
 
-PendingTransactionImpl::~PendingTransactionImpl()
-{
-
+int PendingTransactionImpl::status() const {
+  return m_status;
 }
 
-int PendingTransactionImpl::status() const
-{
-    return m_status;
+std::string PendingTransactionImpl::errorString() const {
+  return m_errorString;
 }
 
-string PendingTransactionImpl::errorString() const
-{
-    return m_errorString;
+std::vector<std::string> PendingTransactionImpl::txid() const {
+  std::vector<std::string> txid;
+  for (const auto &pt: m_pending_tx)
+    txid.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(pt.tx)));
+  return txid;
 }
 
-std::vector<std::string> PendingTransactionImpl::txid() const
-{
-    std::vector<std::string> txid;
-    for (const auto &pt: m_pending_tx)
-        txid.push_back(epee::string_tools::pod_to_hex(cryptonote::get_transaction_hash(pt.tx)));
-    return txid;
-}
+bool PendingTransactionImpl::commit(const std::string &filename, bool overwrite) {
 
-bool PendingTransactionImpl::commit(const std::string &filename, bool overwrite)
-{
+  LOG_PRINT_L3("m_pending_tx size: " << m_pending_tx.size());
 
-    LOG_PRINT_L3("m_pending_tx size: " << m_pending_tx.size());
-
-    try {
-      // Save tx to file
-      if (!filename.empty()) {
-        boost::system::error_code ignore;
-        bool tx_file_exists = boost::filesystem::exists(filename, ignore);
-        if(tx_file_exists && !overwrite){
-          m_errorString = string(tr("Attempting to save transaction to file, but specified file(s) exist. Exiting to not risk overwriting. File:")) + filename;
-          m_status = Status_Error;
-          LOG_ERROR(m_errorString);
-          return false;
-        }
-        bool r = m_wallet.m_wallet->save_tx(m_pending_tx, filename);
-        if (!r) {
-          m_errorString = tr("Failed to write transaction(s) to file");
-          m_status = Status_Error;
-        } else {
-          m_status = Status_Ok;
-        }
-      }
-      // Commit tx
-      else {
-        auto multisigState = m_wallet.multisig();
-        if (multisigState.isMultisig && m_signers.size() < multisigState.threshold) {
-            throw runtime_error("Not enough signers to send multisig transaction");
-        }
-
-        m_wallet.pauseRefresh();
-        while (!m_pending_tx.empty()) {
-            auto & ptx = m_pending_tx.back();
-            m_wallet.m_wallet->commit_tx(ptx);
-            // if no exception, remove element from vector
-            m_pending_tx.pop_back();
-        } // TODO: extract method;
-      }
-    } catch (const tools::error::daemon_busy&) {
-        // TODO: make it translatable with "tr"?
-        m_errorString = tr("daemon is busy. Please try again later.");
+  try {
+    // Save tx to file
+    if (!filename.empty()) {
+      boost::system::error_code ignore;
+      bool tx_file_exists = boost::filesystem::exists(filename, ignore);
+      if (tx_file_exists && !overwrite) {
+        m_errorString = std::string(tr(
+                                 "Attempting to save transaction to file, but specified file(s) exist. Exiting to not risk overwriting. File:")) +
+                        filename;
         m_status = Status_Error;
-    } catch (const tools::error::no_connection_to_daemon&) {
-        m_errorString = tr("no connection to daemon. Please make sure daemon is running.");
-        m_status = Status_Error;
-    } catch (const tools::error::tx_rejected& e) {
-        std::ostringstream writer(m_errorString);
-        writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) <<  e.status();
-        std::string reason = e.reason();
-        m_status = Status_Error;
-        m_errorString = writer.str();
-        if (!reason.empty())
-          m_errorString  += string(tr(". Reason: ")) + reason;
-    } catch (const std::exception &e) {
-        m_errorString = string(tr("Unknown exception: ")) + e.what();
-        m_status = Status_Error;
-    } catch (...) {
-        m_errorString = tr("Unhandled exception");
         LOG_ERROR(m_errorString);
+        return false;
+      }
+      bool r = m_wallet.m_wallet->save_tx(m_pending_tx, filename);
+      if (!r) {
+        m_errorString = tr("Failed to write transaction(s) to file");
         m_status = Status_Error;
+      } else {
+        m_status = Status_Ok;
+      }
     }
+      // Commit tx
+    else {
+      auto multisigState = m_wallet.multisig();
+      if (multisigState.isMultisig && m_signers.size() < multisigState.threshold) {
+        throw std::runtime_error("Not enough signers to send multisig transaction");
+      }
 
-    m_wallet.startRefresh();
-    return m_status == Status_Ok;
-}
-
-std::string PendingTransactionImpl::tokenName() const
-{
-    std::string result = "";
-    for (const auto &ptx : m_pending_tx)   {
-        for (const auto i: ptx.selected_transfers) {
-            const cryptonote::TokenId &tid = m_wallet.m_wallet->get_transfer_details(i).m_token_id;
-            if (!cryptonote::is_cutcoin(tid)) {
-              result = cryptonote::token_id_to_name(tid);
-              break;
-            }
-        }
+      m_wallet.pauseRefresh();
+      while (!m_pending_tx.empty()) {
+        auto &ptx = m_pending_tx.back();
+        m_wallet.m_wallet->commit_tx(ptx);
+        // if no exception, remove element from vector
+        m_pending_tx.pop_back();
+      } // TODO: extract method;
     }
-    return result;
+  } catch (const tools::error::daemon_busy &) {
+    // TODO: make it translatable with "tr"?
+    m_errorString = tr("daemon is busy. Please try again later.");
+    m_status = Status_Error;
+  } catch (const tools::error::no_connection_to_daemon &) {
+    m_errorString = tr("no connection to daemon. Please make sure daemon is running.");
+    m_status = Status_Error;
+  } catch (const tools::error::tx_rejected &e) {
+    std::ostringstream writer(m_errorString);
+    writer << (boost::format(tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx()))
+           << e.status();
+    std::string reason = e.reason();
+    m_status = Status_Error;
+    m_errorString = writer.str();
+    if (!reason.empty())
+      m_errorString += std::string(tr(". Reason: ")) + reason;
+  } catch (const std::exception &e) {
+    m_errorString = std::string(tr("Unknown exception: ")) + e.what();
+    m_status = Status_Error;
+  } catch (...) {
+    m_errorString = tr("Unhandled exception");
+    LOG_ERROR(m_errorString);
+    m_status = Status_Error;
+  }
+
+  m_wallet.startRefresh();
+  return m_status == Status_Ok;
 }
 
-uint64_t PendingTransactionImpl::amount() const
-{
-    uint64_t token_id = cryptonote::token_name_to_id(this->tokenName());
-    uint64_t result = 0;
-    for (const auto &ptx : m_pending_tx)   {
-        for (const auto &dest : ptx.dests) {
-            if (dest.token_id == token_id) {
-                result += dest.amount;
-            }
-        }
+std::string PendingTransactionImpl::tokenName() const {
+  std::string result = cryptonote::CUTCOIN_NAME;
+  for (const auto &ptx : m_pending_tx) {
+    for (const auto i: ptx.selected_transfers) {
+      const cryptonote::TokenId &tid = m_wallet.m_wallet->get_transfer_details(i).m_token_id;
+      if (!cryptonote::is_cutcoin(tid)) {
+        result = cryptonote::token_id_to_name(tid);
+        break;
+      }
     }
-    return result;
+  }
+  return result;
 }
 
-uint64_t PendingTransactionImpl::dust() const
-{
-    uint64_t result = 0;
-    for (const auto & ptx : m_pending_tx) {
-        result += ptx.dust;
-    }
-    return result;
+uint64_t PendingTransactionImpl::amount() const {
+  uint64_t token_id = cryptonote::token_name_to_id(this->tokenName());
+  return m_total_sent.count(token_id) ? m_total_sent.at(token_id) : 0;
 }
 
-uint64_t PendingTransactionImpl::fee() const
-{
-    uint64_t result = 0;
-    for (const auto &ptx : m_pending_tx) {
-        result += ptx.fee;
-    }
-    return result;
+uint64_t PendingTransactionImpl::dust() const {
+  uint64_t result = 0;
+  for (const auto &ptx : m_pending_tx) {
+    result += ptx.dust;
+  }
+  return result;
 }
 
-uint64_t PendingTransactionImpl::txCount() const
-{
-    return m_pending_tx.size();
+uint64_t PendingTransactionImpl::fee() const {
+  uint64_t result = 0;
+  for (const auto &ptx : m_pending_tx) {
+    result += ptx.fee;
+  }
+  return result;
 }
 
-std::vector<uint32_t> PendingTransactionImpl::subaddrAccount() const
-{
-    std::vector<uint32_t> result;
-    for (const auto& ptx : m_pending_tx)
-        result.push_back(ptx.construction_data.subaddr_account);
-    return result;
+uint64_t PendingTransactionImpl::txCount() const {
+  return m_pending_tx.size();
 }
 
-std::vector<std::set<uint32_t>> PendingTransactionImpl::subaddrIndices() const
-{
-    std::vector<std::set<uint32_t>> result;
-    for (const auto& ptx : m_pending_tx)
-        result.push_back(ptx.construction_data.subaddr_indices);
-    return result;
+std::vector<uint32_t> PendingTransactionImpl::subaddrAccount() const {
+  std::vector<uint32_t> result;
+  for (const auto &ptx : m_pending_tx)
+    result.push_back(ptx.construction_data.subaddr_account);
+  return result;
+}
+
+std::vector<std::set<uint32_t>> PendingTransactionImpl::subaddrIndices() const {
+  std::vector<std::set<uint32_t>> result;
+  for (const auto &ptx : m_pending_tx)
+    result.push_back(ptx.construction_data.subaddr_indices);
+  return result;
 }
 
 std::string PendingTransactionImpl::multisigSignData() {
-    try {
-        if (!m_wallet.multisig().isMultisig) {
-            throw std::runtime_error("wallet is not multisig");
-        }
-
-        tools::multisig_tx_set txSet;
-        txSet.m_ptx = m_pending_tx;
-        txSet.m_signers = m_signers;
-        auto cipher = m_wallet.m_wallet->save_multisig_tx(txSet);
-
-        return epee::string_tools::buff_to_hex_nodelimer(cipher);
-    } catch (const std::exception& e) {
-        m_status = Status_Error;
-        m_errorString = std::string(tr("Couldn't multisig sign data: ")) + e.what();
+  try {
+    if (!m_wallet.multisig().isMultisig) {
+      throw std::runtime_error("wallet is not multisig");
     }
 
-    return std::string();
+    tools::multisig_tx_set txSet;
+    txSet.m_ptx = m_pending_tx;
+    txSet.m_signers = m_signers;
+    auto cipher = m_wallet.m_wallet->save_multisig_tx(txSet);
+
+    return epee::string_tools::buff_to_hex_nodelimer(cipher);
+  } catch (const std::exception &e) {
+    m_status = Status_Error;
+    m_errorString = std::string(tr("Couldn't multisig sign data: ")) + e.what();
+  }
+
+  return std::string();
 }
 
 void PendingTransactionImpl::signMultisigTx() {
-    try {
-        std::vector<crypto::hash> ignore;
+  try {
+    std::vector<crypto::hash> ignore;
 
-        tools::multisig_tx_set txSet;
-        txSet.m_ptx = m_pending_tx;
-        txSet.m_signers = m_signers;
+    tools::multisig_tx_set txSet;
+    txSet.m_ptx = m_pending_tx;
+    txSet.m_signers = m_signers;
 
-        if (!m_wallet.m_wallet->sign_multisig_tx(txSet, ignore)) {
-            throw std::runtime_error("couldn't sign multisig transaction");
-        }
-
-        std::swap(m_pending_tx, txSet.m_ptx);
-        std::swap(m_signers, txSet.m_signers);
-    } catch (const std::exception& e) {
-        m_status = Status_Error;
-        m_errorString = std::string(tr("Couldn't sign multisig transaction: ")) + e.what();
+    if (!m_wallet.m_wallet->sign_multisig_tx(txSet, ignore)) {
+      throw std::runtime_error("couldn't sign multisig transaction");
     }
+
+    std::swap(m_pending_tx, txSet.m_ptx);
+    std::swap(m_signers, txSet.m_signers);
+  } catch (const std::exception &e) {
+    m_status = Status_Error;
+    m_errorString = std::string(tr("Couldn't sign multisig transaction: ")) + e.what();
+  }
 }
 
 std::vector<std::string> PendingTransactionImpl::signersKeys() const {
-    std::vector<std::string> keys;
-    keys.reserve(m_signers.size());
+  std::vector<std::string> keys;
+  keys.reserve(m_signers.size());
 
-    for (const auto& signer: m_signers) {
-        keys.emplace_back(tools::base58::encode(cryptonote::t_serializable_object_to_blob(signer)));
-    }
+  for (const auto &signer: m_signers) {
+    keys.emplace_back(tools::base58::encode(cryptonote::t_serializable_object_to_blob(signer)));
+  }
 
-    return keys;
+  return keys;
 }
 
-}
+
+}  // namespace Monero
 
 namespace Bitmonero = Monero;
 

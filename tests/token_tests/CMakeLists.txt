@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 #
 # All rights reserved.
 #
@@ -27,19 +27,26 @@
 # THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 set(token_tests_sources
-  token.cpp)
+  chaingen.cpp
+  dex.cpp
+  token.cpp
+  unlimited_supply_token.cpp)
 
 set(token_tests_headers
-    )
+  chaingen.h)
 
 add_executable(token_tests
   ${token_tests_sources}
   ${token_tests_headers})
 
 target_link_libraries(token_tests
-  PRIVATE
+  PUBLIC
+    cncrypto
     cryptonote_basic
+    cryptonote_core
     version
+  PRIVATE
+    ${EXTRA_LIBRARIES}
     ${GTEST_LIBRARIES}
     ${CMAKE_THREAD_LIBS_INIT})
 

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2016-2018, The Monero Project
 // 
 // All rights reserved.
@@ -82,7 +82,15 @@ void ZmqServer::serve()
         zmq::message_t reply(response.size());
         memcpy((void *) reply.data(), response.c_str(), response.size());
 
+#ifdef ZMQ_CPP11
+#if ZMQ_VERSION >= ZMQ_MAKE_VERSION(4, 3, 1)
+        rep_socket->send(reply, zmq::send_flags::none);
+#else
         rep_socket->send(reply);
+#endif
+#else
+        rep_socket->se  nd(reply);
+#endif
         MDEBUG(std::string("Sent RPC reply: \"") + response + "\"");
 
       }

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -308,6 +308,10 @@ u128_t& u128_t::operator--() {
   return *this;
 }
 
+u128_t operator |(const u128_t &a, const u128_t &b)
+{
+  return {a.val[0] | b.val[0], a.val[1] | b.val[1]};
+}
 
 u128_t operator +(const u128_t &a, const u128_t &b) {
   return safe_add(a, b);
@@ -466,9 +470,8 @@ void div128by64(const u128_t &num, uint64_t den, u128_t &quotient, uint64_t &rem
     h=num.val[1];
   }
   l=num.val[0];
-  quotient.val[0]=long_div(h, l, den);
+  long_div64(h, l, den, quotient.val[0], remainder);
   quotient.val[1]=qh;
-  remainder=h;
 }
 
 // based on https://github.com/hcs0/Hackers-Delight/blob/master/divDouble.c.txt
@@ -492,4 +495,24 @@ void div128by128(const u128_t &num, const u128_t &den, u128_t &quotient, u128_t 
     div128by64(num, den.val[0], quotient, remainder.val[0]);
   }
 }
+
+u128_t sqrt(const u128_t &num)
+{
+  u128_t t{num};
+  u128_t m{0x0000000000000000ull, 0x4000000000000000ull};
+  u128_t y{0x0000000000000000ull, 0x0000000000000000ull};
+  u128_t b;
+
+  while(m != 0) {
+    b = y | m;
+    y = y >> 1;
+    if (t >= b) {
+      t = t - b;
+      y = y | m;
+    }
+    m = m >> 2;
+  }
+  return y;
 }
+
+}  // namespace num

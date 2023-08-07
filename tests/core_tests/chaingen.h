@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -616,8 +616,7 @@ inline bool do_replay_file(const std::string& filename)
   cryptonote::block BLK_NAME;                                                         \
   {                                                                                   \
     cryptonote::block blk_last = PREV_BLOCK;                                          \
-    for (size_t i = 0; i < COUNT; ++i)                                                \
-    {                                                                                 \
+    for (size_t i = 0; i < (size_t)COUNT; ++i) {                                      \
       MAKE_NEXT_BLOCK(VEC_EVENTS, blk, blk_last, MINER_ACC);                          \
       blk_last = blk;                                                                 \
     }                                                                                 \
@@ -686,9 +685,9 @@ inline bool do_replay_file(const std::string& filename)
     try                                                                                                    \
     {                                                                                                      \
       genclass g;                                                                                          \
-      generated = g.generate(events);;                                                                     \
+      generated = g.generate(events);                                                                      \
     }                                                                                                      \
-    catch (const std::exception& ex)                                                                       \
+    catch (const std::exception &ex)                                                                       \
     {                                                                                                      \
       MERROR(#genclass << " generation failed: what=" << ex.what());                                       \
     }                                                                                                      \

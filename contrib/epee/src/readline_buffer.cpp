@@ -1,3 +1,5 @@
+// Copyright (c) 2018-2022, CUT coin
+
 #include "readline_buffer.h"
 #include <readline/readline.h>
 #include <readline/history.h>

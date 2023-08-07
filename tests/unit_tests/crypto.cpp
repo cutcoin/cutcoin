@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2017-2018, The Monero Project
 //
 // All rights reserved.
@@ -61,6 +61,21 @@ namespace
     std::stringstream out;
     out << "BEGIN" << value << "END";  
     return out.str() == "BEGIN<" + std::string{expected, sizeof(T) * 2} + ">END";
+  }
+
+  template<>
+  bool is_formatted<crypto::secret_key>()
+  {
+    crypto::secret_key value{};
+
+    static_assert(alignof(crypto::secret_key) == 1, "T must have 1 byte alignment");
+    static_assert(sizeof(crypto::secret_key) <= sizeof(source), "T is too large for source");
+    static_assert(sizeof(crypto::secret_key) * 2 <= sizeof(expected), "T is too large for destination");
+    std::memcpy(std::addressof(value.data), source, sizeof(crypto::secret_key));
+
+    std::stringstream out;
+    out << "BEGIN" << value << "END";
+    return out.str() == "BEGIN<" + std::string{expected, sizeof(crypto::secret_key) * 2} + ">END";
   }
 }
 

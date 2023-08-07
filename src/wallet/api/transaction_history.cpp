@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -191,7 +191,7 @@ void TransactionHistoryImpl::refresh()
 
         // single output transaction might contain multiple transfers
         for (const auto &d: pd.m_dests) {
-            ti->m_transfers.push_back({d.amount, d.token_id, get_account_address_as_str(m_wallet->m_wallet->nettype(), d.is_subaddress, d.addr)});
+            ti->m_transfers.push_back({d.amount, d.token_id, get_account_address_as_str(m_wallet->m_wallet->nettype(), d.is_subaddress(), d.addr)});
         }
         m_history.push_back(ti);
     }

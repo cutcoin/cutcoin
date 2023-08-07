@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -227,7 +227,9 @@ int main(int argc, char* argv[])
       if (opt_rct_only && txin.amount != 0)
         continue;
 
-      const std::vector<uint64_t> absolute = cryptonote::relative_output_offsets_to_absolute(txin.key_offsets);
+      const std::vector<uint64_t> absolute = txin.s_type == SourceType::wallet ?
+                                             cryptonote::relative_output_offsets_to_absolute(txin.key_offsets):
+                                             cryptonote::lp_relative_output_offsets_to_absolute(txin.key_offsets);
       for (size_t n = 0; n < txin.key_offsets.size(); ++n)
       {
         output_data od(txin.amount, absolute[n], coinbase, height);

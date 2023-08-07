@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -169,10 +169,10 @@ bool gen_uint_overflow_2::generate(std::vector<test_event_entry>& events) const
 
   std::vector<cryptonote::tx_destination_entry> destinations;
   const account_public_address& bob_addr = bob_account.get_keys().m_account_address;
-  destinations.push_back(tx_destination_entry(0, MONEY_SUPPLY, bob_addr, false));
-  destinations.push_back(tx_destination_entry(0, MONEY_SUPPLY - 1, bob_addr, false));
+  destinations.emplace_back(0, MONEY_SUPPLY, bob_addr, false, false, false, false);
+  destinations.emplace_back(0, MONEY_SUPPLY - 1, bob_addr, false, false, false, false);
   // sources.front().amount = destinations[0].amount + destinations[2].amount + destinations[3].amount + TESTS_DEFAULT_FEE
-  destinations.push_back(tx_destination_entry(0, sources.front().amount - MONEY_SUPPLY - MONEY_SUPPLY + 1 - TESTS_DEFAULT_FEE, bob_addr, false));
+  destinations.emplace_back(0, sources.front().amount - MONEY_SUPPLY - MONEY_SUPPLY + 1 - TESTS_DEFAULT_FEE, bob_addr, false, false, false, false);
 
   cryptonote::transaction tx_1;
   if (!construct_tx(miner_account.get_keys(), sources, destinations, boost::none, std::vector<uint8_t>(), tx_1, 0))

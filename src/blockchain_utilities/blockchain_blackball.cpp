@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -1202,7 +1202,9 @@ int main(int argc, char* argv[])
         if (opt_rct_only && txin.amount != 0)
           continue;
 
-        const std::vector<uint64_t> absolute = cryptonote::relative_output_offsets_to_absolute(txin.key_offsets);
+        const std::vector<uint64_t> absolute = txin.s_type == SourceType::wallet ?
+                                               cryptonote::relative_output_offsets_to_absolute(txin.key_offsets):
+                                               cryptonote::lp_relative_output_offsets_to_absolute(txin.key_offsets);
         if (n == 0)
           for (uint64_t out: absolute)
             add_key_image(txn, output_data(txin.amount, out), txin.k_image);
@@ -1264,7 +1266,9 @@ int main(int argc, char* argv[])
             MDEBUG("Rings are different");
             std::cout << "\r" << start_idx << "/" << n_txes << "         \r" << std::flush;
             const std::vector<uint64_t> r0 = cryptonote::relative_output_offsets_to_absolute(relative_ring);
-            const std::vector<uint64_t> r1 = cryptonote::relative_output_offsets_to_absolute(txin.key_offsets);
+            const std::vector<uint64_t> r1 = txin.s_type == SourceType::wallet ?
+                                             cryptonote::relative_output_offsets_to_absolute(txin.key_offsets):
+                                             cryptonote::lp_relative_output_offsets_to_absolute(txin.key_offsets);
             std::vector<uint64_t> common;
             for (uint64_t out: r0)
             {

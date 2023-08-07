@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -47,9 +47,12 @@
 #include "common/scoped_message_writer.h"
 #include "common/util.h"
 #include "crypto/crypto.h"  // for crypto::secret_key definition
+#include "special_accounts/special_accounts.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/liquidity_pool.h"
 #include "cryptonote_basic/token.h"
 #include "cryptonote_protocol/cryptonote_protocol_handler.h"
+#include "result.h"
 #include "mnemonics/electrum-words.h"
 #include "multisig/multisig.h"
 #include "plant/logging.h"
@@ -124,416 +127,435 @@ enum TransferType {
   TransferLocked,
 };
 
-namespace
+namespace {
+
+const std::array<const char* const, 5> allowed_priority_strings = {{"default", "unimportant", "normal", "elevated", "priority"}};
+const auto arg_wallet_file = wallet_args::arg_wallet_file();
+const command_line::arg_descriptor<std::string> arg_generate_new_wallet = {"generate-new-wallet", sw::tr("Generate new wallet and save it to <arg>"), ""};
+const command_line::arg_descriptor<std::string> arg_generate_from_device = {"generate-from-device", sw::tr("Generate new wallet from device and save it to <arg>"), ""};
+const command_line::arg_descriptor<std::string> arg_generate_from_view_key = {"generate-from-view-key", sw::tr("Generate incoming-only wallet from view key"), ""};
+const command_line::arg_descriptor<std::string> arg_generate_from_spend_key = {"generate-from-spend-key", sw::tr("Generate deterministic wallet from spend key"), ""};
+const command_line::arg_descriptor<std::string> arg_generate_from_keys = {"generate-from-keys", sw::tr("Generate wallet from private keys"), ""};
+const command_line::arg_descriptor<std::string> arg_generate_from_multisig_keys = {"generate-from-multisig-keys", sw::tr("Generate a master wallet from multisig wallet keys"), ""};
+const auto arg_generate_from_json = wallet_args::arg_generate_from_json();
+const command_line::arg_descriptor<std::string> arg_mnemonic_language = {"mnemonic-language", sw::tr("Language for mnemonic"), ""};
+const command_line::arg_descriptor<std::string> arg_electrum_seed = {"electrum-seed", sw::tr("Specify Electrum seed for wallet recovery/creation"), ""};
+const command_line::arg_descriptor<bool> arg_restore_deterministic_wallet = {"restore-deterministic-wallet", sw::tr("Recover wallet using Electrum-style mnemonic seed"), false};
+const command_line::arg_descriptor<bool> arg_restore_multisig_wallet = {"restore-multisig-wallet", sw::tr("Recover multisig wallet using Electrum-style mnemonic seed"), false};
+const command_line::arg_descriptor<bool> arg_non_deterministic = {"non-deterministic", sw::tr("Generate non-deterministic view and spend keys"), false};
+const command_line::arg_descriptor<bool> arg_allow_mismatched_daemon_version = {"allow-mismatched-daemon-version", sw::tr("Allow communicating with a daemon that uses a different RPC version"), false};
+const command_line::arg_descriptor<uint64_t> arg_restore_height = {"restore-height", sw::tr("Restore from specific blockchain height"), 0};
+const command_line::arg_descriptor<bool> arg_do_not_relay = {"do-not-relay", sw::tr("The newly created transaction will not be relayed to the cutcoin network"), false};
+const command_line::arg_descriptor<bool> arg_create_address_file = {"create-address-file", sw::tr("Create an address file for new wallets"), false};
+const command_line::arg_descriptor<std::string> arg_subaddress_lookahead = {"subaddress-lookahead", tools::wallet2::tr("Set subaddress lookahead sizes to <major>:<minor>"), ""};
+const command_line::arg_descriptor<bool> arg_use_english_language_names = {"use-english-language-names", sw::tr("Display English language names"), false};
+const command_line::arg_descriptor<bool> arg_no_tx_info = {"no-tx-info", sw::tr("Doesn't show transaction info on refresh"), false};
+
+const command_line::arg_descriptor< std::vector<std::string> > arg_command = {"command", ""};
+
+std::string input_line(const std::string& prompt)
 {
-  const std::array<const char* const, 5> allowed_priority_strings = {{"default", "unimportant", "normal", "elevated", "priority"}};
-  const auto arg_wallet_file = wallet_args::arg_wallet_file();
-  const command_line::arg_descriptor<std::string> arg_generate_new_wallet = {"generate-new-wallet", sw::tr("Generate new wallet and save it to <arg>"), ""};
-  const command_line::arg_descriptor<std::string> arg_generate_from_device = {"generate-from-device", sw::tr("Generate new wallet from device and save it to <arg>"), ""};
-  const command_line::arg_descriptor<std::string> arg_generate_from_view_key = {"generate-from-view-key", sw::tr("Generate incoming-only wallet from view key"), ""};
-  const command_line::arg_descriptor<std::string> arg_generate_from_spend_key = {"generate-from-spend-key", sw::tr("Generate deterministic wallet from spend key"), ""};
-  const command_line::arg_descriptor<std::string> arg_generate_from_keys = {"generate-from-keys", sw::tr("Generate wallet from private keys"), ""};
-  const command_line::arg_descriptor<std::string> arg_generate_from_multisig_keys = {"generate-from-multisig-keys", sw::tr("Generate a master wallet from multisig wallet keys"), ""};
-  const auto arg_generate_from_json = wallet_args::arg_generate_from_json();
-  const command_line::arg_descriptor<std::string> arg_mnemonic_language = {"mnemonic-language", sw::tr("Language for mnemonic"), ""};
-  const command_line::arg_descriptor<std::string> arg_electrum_seed = {"electrum-seed", sw::tr("Specify Electrum seed for wallet recovery/creation"), ""};
-  const command_line::arg_descriptor<bool> arg_restore_deterministic_wallet = {"restore-deterministic-wallet", sw::tr("Recover wallet using Electrum-style mnemonic seed"), false};
-  const command_line::arg_descriptor<bool> arg_restore_multisig_wallet = {"restore-multisig-wallet", sw::tr("Recover multisig wallet using Electrum-style mnemonic seed"), false};
-  const command_line::arg_descriptor<bool> arg_non_deterministic = {"non-deterministic", sw::tr("Generate non-deterministic view and spend keys"), false};
-  const command_line::arg_descriptor<bool> arg_allow_mismatched_daemon_version = {"allow-mismatched-daemon-version", sw::tr("Allow communicating with a daemon that uses a different RPC version"), false};
-  const command_line::arg_descriptor<uint64_t> arg_restore_height = {"restore-height", sw::tr("Restore from specific blockchain height"), 0};
-  const command_line::arg_descriptor<bool> arg_do_not_relay = {"do-not-relay", sw::tr("The newly created transaction will not be relayed to the cutcoin network"), false};
-  const command_line::arg_descriptor<bool> arg_create_address_file = {"create-address-file", sw::tr("Create an address file for new wallets"), false};
-  const command_line::arg_descriptor<std::string> arg_subaddress_lookahead = {"subaddress-lookahead", tools::wallet2::tr("Set subaddress lookahead sizes to <major>:<minor>"), ""};
-  const command_line::arg_descriptor<bool> arg_use_english_language_names = {"use-english-language-names", sw::tr("Display English language names"), false};
-
-  const command_line::arg_descriptor< std::vector<std::string> > arg_command = {"command", ""};
-
-  std::string input_line(const std::string& prompt)
-  {
 #ifdef HAVE_READLINE
-    rdln::suspend_readline pause_readline;
+  rdln::suspend_readline pause_readline;
 #endif
-    std::cout << prompt;
+  std::cout << prompt;
 
-    std::string buf;
+  std::string buf;
 #ifdef _WIN32
-    buf = tools::input_line_win();
+  buf = tools::input_line_win();
 #else
-    std::getline(std::cin, buf);
+  std::getline(std::cin, buf);
 #endif
 
-    return epee::string_tools::trim(buf);
-  }
+  return epee::string_tools::trim(buf);
+}
 
-  epee::wipeable_string input_secure_line(const std::string& prompt)
-  {
+epee::wipeable_string input_secure_line(const std::string& prompt)
+{
 #ifdef HAVE_READLINE
-    rdln::suspend_readline pause_readline;
+  rdln::suspend_readline pause_readline;
 #endif
-    auto pwd_container = tools::password_container::prompt(false, prompt.c_str(), false);
-    if (!pwd_container)
-    {
-      MERROR("Failed to read secure line");
-      return "";
-    }
-
-    epee::wipeable_string buf = pwd_container->password();
-
-    buf.trim();
-    return buf;
+  auto pwd_container = tools::password_container::prompt(false, prompt.c_str(), false);
+  if (!pwd_container)
+  {
+    MERROR("Failed to read secure line");
+    return "";
   }
 
-  boost::optional<tools::password_container> password_prompter(const char *prompt, bool verify)
-  {
+  epee::wipeable_string buf = pwd_container->password();
+
+  buf.trim();
+  return buf;
+}
+
+boost::optional<tools::password_container> password_prompter(const char *prompt, bool verify)
+{
 #ifdef HAVE_READLINE
-    rdln::suspend_readline pause_readline;
+  rdln::suspend_readline pause_readline;
 #endif
-    auto pwd_container = tools::password_container::prompt(verify, prompt);
-    if (!pwd_container)
-    {
-      tools::fail_msg_writer() << sw::tr("failed to read wallet password");
-    }
-    return pwd_container;
-  }
-
-  boost::optional<tools::password_container> default_password_prompter(bool verify)
+  auto pwd_container = tools::password_container::prompt(verify, prompt);
+  if (!pwd_container)
   {
-    return password_prompter(verify ? sw::tr("Enter a new password for the wallet") : sw::tr("Wallet password"), verify);
+    tools::fail_msg_writer() << sw::tr("failed to read wallet password");
   }
+  return pwd_container;
+}
 
-  inline std::string interpret_rpc_response(bool ok, const std::string& status)
+boost::optional<tools::password_container> default_password_prompter(bool verify)
+{
+  return password_prompter(verify ? sw::tr("Enter a new password for the wallet") : sw::tr("Wallet password"), verify);
+}
+
+inline std::string interpret_rpc_response(bool ok, const std::string& status)
+{
+  std::string err;
+  if (ok)
   {
-    std::string err;
-    if (ok)
+    if (status == CORE_RPC_STATUS_BUSY)
     {
-      if (status == CORE_RPC_STATUS_BUSY)
-      {
-        err = sw::tr("daemon is busy. Please try again later.");
-      }
-      else if (status != CORE_RPC_STATUS_OK)
-      {
-        err = status;
-      }
+      err = sw::tr("daemon is busy. Please try again later.");
     }
-    else
+    else if (status != CORE_RPC_STATUS_OK)
     {
-      err = sw::tr("possibly lost connection to daemon");
-    }
-    return err;
-  }
-
-  tools::scoped_message_writer success_msg_writer(bool color = false)
-  {
-    return tools::scoped_message_writer(color ? console_color_green : console_color_default, false, std::string(), el::Level::Info);
-  }
-
-  tools::scoped_message_writer message_writer(epee::console_colors color = epee::console_color_default, bool bright = false)
-  {
-    return tools::scoped_message_writer(color, bright);
-  }
-
-  tools::scoped_message_writer fail_msg_writer()
-  {
-    return tools::scoped_message_writer(console_color_red, true, sw::tr("Error: "), el::Level::Error);
-  }
-
-  bool parse_bool(const std::string& s, bool& result)
-  {
-    if (s == "1" || command_line::is_yes(s))
-    {
-      result = true;
-      return true;
-    }
-    if (s == "0" || command_line::is_no(s))
-    {
-      result = false;
-      return true;
-    }
-
-    boost::algorithm::is_iequal ignore_case{};
-    if (boost::algorithm::equals("true", s, ignore_case) || boost::algorithm::equals(simple_wallet::tr("true"), s, ignore_case))
-    {
-      result = true;
-      return true;
-    }
-    if (boost::algorithm::equals("false", s, ignore_case) || boost::algorithm::equals(simple_wallet::tr("false"), s, ignore_case))
-    {
-      result = false;
-      return true;
-    }
-
-    return false;
-  }
-
-  template <typename F>
-  bool parse_bool_and_use(const std::string& s, F func)
-  {
-    bool r;
-    if (parse_bool(s, r))
-    {
-      func(r);
-      return true;
-    }
-    else
-    {
-      fail_msg_writer() << sw::tr("invalid argument: must be either 0/1, true/false, y/n, yes/no");
-      return false;
+      err = status;
     }
   }
-
-  const struct
+  else
   {
-    const char *name;
-    tools::wallet2::RefreshType refresh_type;
-  } refresh_type_names[] =
-  {
-    { "full", tools::wallet2::RefreshFull },
-    { "optimize-coinbase", tools::wallet2::RefreshOptimizeCoinbase },
-    { "optimized-coinbase", tools::wallet2::RefreshOptimizeCoinbase },
-    { "no-coinbase", tools::wallet2::RefreshNoCoinbase },
-    { "default", tools::wallet2::RefreshDefault },
-  };
-
-  bool parse_refresh_type(const std::string &s, tools::wallet2::RefreshType &refresh_type)
-  {
-    for (size_t n = 0; n < sizeof(refresh_type_names) / sizeof(refresh_type_names[0]); ++n)
-    {
-      if (s == refresh_type_names[n].name)
-      {
-        refresh_type = refresh_type_names[n].refresh_type;
-        return true;
-      }
-    }
-    fail_msg_writer() << cryptonote::simple_wallet::tr("failed to parse refresh type");
-    return false;
+    err = sw::tr("possibly lost connection to daemon");
   }
+  return err;
+}
 
-  std::string get_refresh_type_name(tools::wallet2::RefreshType type)
+tools::scoped_message_writer success_msg_writer(bool color = false)
+{
+  return tools::scoped_message_writer(color ? console_color_green : console_color_default, false, std::string(), el::Level::Info);
+}
+
+tools::scoped_message_writer message_writer(epee::console_colors color = epee::console_color_default, bool bright = false)
+{
+  return tools::scoped_message_writer(color, bright);
+}
+
+tools::scoped_message_writer fail_msg_writer()
+{
+  return tools::scoped_message_writer(console_color_red, true, sw::tr("Error: "), el::Level::Error);
+}
+
+bool parse_bool(const std::string& s, bool& result)
+{
+  if (s == "1" || command_line::is_yes(s))
   {
-    for (size_t n = 0; n < sizeof(refresh_type_names) / sizeof(refresh_type_names[0]); ++n)
-    {
-      if (type == refresh_type_names[n].refresh_type)
-        return refresh_type_names[n].name;
-    }
-    return "invalid";
+    result = true;
+    return true;
   }
-
-  std::string get_version_string(uint32_t version)
+  if (s == "0" || command_line::is_no(s))
   {
-    return boost::lexical_cast<std::string>(version >> 16) + "." + boost::lexical_cast<std::string>(version & 0xffff);
-  }
-
-  std::string oa_prompter(const std::string &url, const std::vector<std::string> &addresses, bool dnssec_valid)
-  {
-    if (addresses.empty())
-      return {};
-    // prompt user for confirmation.
-    // inform user of DNSSEC validation status as well.
-    std::string dnssec_str;
-    if (dnssec_valid)
-    {
-      dnssec_str = sw::tr("DNSSEC validation passed");
-    }
-    else
-    {
-      dnssec_str = sw::tr("WARNING: DNSSEC validation was unsuccessful, this address may not be correct!");
-    }
-    std::stringstream prompt;
-    prompt << sw::tr("For URL: ") << url
-           << ", " << dnssec_str << std::endl
-           << sw::tr(" Cutcoin Address = ") << addresses[0]
-           << std::endl
-           << sw::tr("Is this OK? (Y/n) ")
-    ;
-    // prompt the user for confirmation given the dns query and dnssec status
-    std::string confirm_dns_ok = input_line(prompt.str());
-    if (std::cin.eof())
-    {
-      return {};
-    }
-    if (!command_line::is_yes(confirm_dns_ok))
-    {
-      std::cout << sw::tr("you have cancelled the transfer request") << std::endl;
-      return {};
-    }
-    return addresses[0];
-  }
-
-  bool parse_subaddress_indices(const std::string& arg, std::set<uint32_t>& subaddr_indices)
-  {
-    subaddr_indices.clear();
-
-    if (arg.substr(0, 6) != "index=")
-      return false;
-    std::string subaddr_indices_str_unsplit = arg.substr(6, arg.size() - 6);
-    std::vector<std::string> subaddr_indices_str;
-    boost::split(subaddr_indices_str, subaddr_indices_str_unsplit, boost::is_any_of(","));
-
-    for (const auto& subaddr_index_str : subaddr_indices_str)
-    {
-      uint32_t subaddr_index;
-      if(!epee::string_tools::get_xtype_from_string(subaddr_index, subaddr_index_str))
-      {
-        fail_msg_writer() << sw::tr("failed to parse index: ") << subaddr_index_str;
-        subaddr_indices.clear();
-        return false;
-      }
-      subaddr_indices.insert(subaddr_index);
-    }
+    result = false;
     return true;
   }
 
-  boost::optional<std::pair<uint32_t, uint32_t>> parse_subaddress_lookahead(const std::string& str)
+  boost::algorithm::is_iequal ignore_case{};
+  if (boost::algorithm::equals("true", s, ignore_case) || boost::algorithm::equals(simple_wallet::tr("true"), s, ignore_case))
   {
-    auto r = tools::parse_subaddress_lookahead(str);
-    if (!r)
-      fail_msg_writer() << sw::tr("invalid format for subaddress lookahead; must be <major>:<minor>");
-    return r;
+    result = true;
+    return true;
   }
-
-  void handle_transfer_exception(const std::exception_ptr &e, bool trusted_daemon)
+  if (boost::algorithm::equals("false", s, ignore_case) || boost::algorithm::equals(simple_wallet::tr("false"), s, ignore_case))
   {
-    bool warn_of_possible_attack = !trusted_daemon;
-    try
-    {
-      std::rethrow_exception(e);
-    }
-    catch (const tools::error::daemon_busy&)
-    {
-      fail_msg_writer() << sw::tr("daemon is busy. Please try again later.");
-    }
-    catch (const tools::error::no_connection_to_daemon&)
-    {
-      fail_msg_writer() << sw::tr("no connection to daemon. Please make sure daemon is running.");
-    }
-    catch (const tools::error::wallet_rpc_error& e)
-    {
-      LOG_ERROR("RPC error: " << e.to_string());
-      fail_msg_writer() << sw::tr("RPC error: ") << e.what();
-    }
-    catch (const tools::error::get_outs_error &e)
-    {
-      fail_msg_writer() << sw::tr("failed to get random outputs to mix: ") << e.what();
-    }
-    catch (const tools::error::not_enough_unlocked_money& e)
-    {
-      LOG_PRINT_L0(boost::format("not enough money to transfer, available only %s, sent amount %s") %
-        print_money(e.available()) %
-        print_money(e.tx_amount()));
-      fail_msg_writer() << sw::tr("Not enough money in unlocked balance");
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::not_enough_money& e)
-    {
-      LOG_PRINT_L0(boost::format("not enough money to transfer, available only %s, sent amount %s") %
-        print_money(e.available()) %
-        print_money(e.tx_amount()));
-      fail_msg_writer() << sw::tr("Not enough money in unlocked balance");
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::tx_not_possible& e)
-    {
-      LOG_PRINT_L0(boost::format("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)") %
-        print_money(e.available()) %
-        print_money(e.tx_amount() + e.fee())  %
-        print_money(e.tx_amount()) %
-        print_money(e.fee()));
-      fail_msg_writer() << sw::tr("Failed to find a way to create transactions. This is usually due to dust which is so small it cannot pay for itself in fees, or trying to send more money than the unlocked balance, or not leaving enough for fees");
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::not_enough_outs_to_mix& e)
-    {
-      auto writer = fail_msg_writer();
-      writer << sw::tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
-      for (std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs())
-      {
-        writer << "\n" << sw::tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << sw::tr("found outputs to use") << " = " << outs_for_amount.second;
-      }
-      writer << sw::tr("Please use sweep_unmixable.");
-    }
-    catch (const tools::error::tx_not_constructed&)
-    {
-      fail_msg_writer() << sw::tr("transaction was not constructed");
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::tx_rejected& e)
-    {
-      fail_msg_writer() << (boost::format(sw::tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
-      std::string reason = e.reason();
-      if (!reason.empty())
-        fail_msg_writer() << sw::tr("Reason: ") << reason;
-    }
-    catch (const tools::error::tx_sum_overflow& e)
-    {
-      fail_msg_writer() << e.what();
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::zero_destination&)
-    {
-      fail_msg_writer() << sw::tr("one of destinations is zero");
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::tx_too_big& e)
-    {
-      fail_msg_writer() << sw::tr("failed to find a suitable way to split transactions");
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::transfer_error& e)
-    {
-      LOG_ERROR("unknown transfer error: " << e.to_string());
-      fail_msg_writer() << sw::tr("unknown transfer error: ") << e.what();
-    }
-    catch (const tools::error::multisig_export_needed& e)
-    {
-      LOG_ERROR("Multisig error: " << e.to_string());
-      fail_msg_writer() << sw::tr("Multisig error: ") << e.what();
-      warn_of_possible_attack = false;
-    }
-    catch (const tools::error::wallet_internal_error& e)
-    {
-      LOG_ERROR("internal error: " << e.to_string());
-      fail_msg_writer() << sw::tr("internal error: ") << e.what();
-    }
-    catch (const std::exception& e)
-    {
-      LOG_ERROR("unexpected error: " << e.what());
-      fail_msg_writer() << sw::tr("unexpected error: ") << e.what();
-    }
-
-    if (warn_of_possible_attack)
-      fail_msg_writer() << sw::tr("There was an error, which could mean the node may be trying to get you to retry creating a transaction, and zero in on which outputs you own. Or it could be a bona fide error. It may be prudent to disconnect from this node, and not try to send a transaction immediately. Alternatively, connect to another node so the original node cannot correlate information.");
-  }
-
-  bool check_file_overwrite(const std::string &filename)
-  {
-    boost::system::error_code errcode;
-    if (boost::filesystem::exists(filename, errcode))
-    {
-      if (boost::ends_with(filename, ".keys"))
-      {
-        fail_msg_writer() << boost::format(sw::tr("File %s likely stores wallet private keys! Use a different file name.")) % filename;
-        return false;
-      }
-      return command_line::is_yes(input_line((boost::format(sw::tr("File %s already exists. Are you sure to overwrite it? (Y/Yes/N/No): ")) % filename).str()));
-    }
+    result = false;
     return true;
   }
 
-  void print_secret_key(const crypto::secret_key &k)
+  return false;
+}
+
+template <typename F>
+bool parse_bool_and_use(const std::string& s, F func)
+{
+  bool r;
+  if (parse_bool(s, r))
   {
-    static constexpr const char hex[] = u8"0123456789abcdef";
-    const uint8_t *ptr = (const uint8_t*)k.data;
-    for (size_t i = 0, sz = sizeof(k); i < sz; ++i)
-    {
-      putchar(hex[*ptr >> 4]);
-      putchar(hex[*ptr & 15]);
-      ++ptr;
-    }
+    func(r);
+    return true;
+  }
+  else
+  {
+    fail_msg_writer() << sw::tr("invalid argument: must be either 0/1, true/false, y/n, yes/no");
+    return false;
   }
 }
 
-bool parse_priority(const std::string &arg, uint32_t &priority)
+const struct
+{
+  const char *name;
+  tools::wallet2::RefreshType refresh_type;
+} refresh_type_names[] =
+{
+  { "full", tools::wallet2::RefreshFull },
+  { "optimize-coinbase", tools::wallet2::RefreshOptimizeCoinbase },
+  { "optimized-coinbase", tools::wallet2::RefreshOptimizeCoinbase },
+  { "no-coinbase", tools::wallet2::RefreshNoCoinbase },
+  { "default", tools::wallet2::RefreshDefault },
+};
+
+bool parse_refresh_type(const std::string &s, tools::wallet2::RefreshType &refresh_type)
+{
+  for (size_t n = 0; n < sizeof(refresh_type_names) / sizeof(refresh_type_names[0]); ++n)
+  {
+    if (s == refresh_type_names[n].name)
+    {
+      refresh_type = refresh_type_names[n].refresh_type;
+      return true;
+    }
+  }
+  fail_msg_writer() << cryptonote::simple_wallet::tr("failed to parse refresh type");
+  return false;
+}
+
+std::string get_refresh_type_name(tools::wallet2::RefreshType type)
+{
+  for (size_t n = 0; n < sizeof(refresh_type_names) / sizeof(refresh_type_names[0]); ++n)
+  {
+    if (type == refresh_type_names[n].refresh_type)
+      return refresh_type_names[n].name;
+  }
+  return "invalid";
+}
+
+std::string get_version_string(uint32_t version)
+{
+  return boost::lexical_cast<std::string>(version >> 16) + "." + boost::lexical_cast<std::string>(version & 0xffff);
+}
+
+std::string oa_prompter(const std::string &url, const std::vector<std::string> &addresses, bool dnssec_valid)
+{
+  if (addresses.empty())
+    return {};
+  // prompt user for confirmation.
+  // inform user of DNSSEC validation status as well.
+  std::string dnssec_str;
+  if (dnssec_valid)
+  {
+    dnssec_str = sw::tr("DNSSEC validation passed");
+  }
+  else
+  {
+    dnssec_str = sw::tr("WARNING: DNSSEC validation was unsuccessful, this address may not be correct!");
+  }
+  std::stringstream prompt;
+  prompt << sw::tr("For URL: ") << url
+         << ", " << dnssec_str << std::endl
+         << sw::tr(" Cutcoin Address = ") << addresses[0]
+         << std::endl
+         << sw::tr("Is this OK? (Y/n) ")
+  ;
+  // prompt the user for confirmation given the dns query and dnssec status
+  std::string confirm_dns_ok = input_line(prompt.str());
+  if (std::cin.eof())
+  {
+    return {};
+  }
+  if (!command_line::is_yes(confirm_dns_ok))
+  {
+    std::cout << sw::tr("you have cancelled the transfer request") << std::endl;
+    return {};
+  }
+  return addresses[0];
+}
+
+bool parse_subaddress_indices(const std::string& arg, std::set<uint32_t>& subaddr_indices)
+{
+  subaddr_indices.clear();
+
+  if (arg.substr(0, 6) != "index=")
+    return false;
+  std::string subaddr_indices_str_unsplit = arg.substr(6, arg.size() - 6);
+  std::vector<std::string> subaddr_indices_str;
+  boost::split(subaddr_indices_str, subaddr_indices_str_unsplit, boost::is_any_of(","));
+
+  for (const auto& subaddr_index_str : subaddr_indices_str)
+  {
+    uint32_t subaddr_index;
+    if(!epee::string_tools::get_xtype_from_string(subaddr_index, subaddr_index_str))
+    {
+      fail_msg_writer() << sw::tr("failed to parse index: ") << subaddr_index_str;
+      subaddr_indices.clear();
+      return false;
+    }
+    subaddr_indices.insert(subaddr_index);
+  }
+  return true;
+}
+
+boost::optional<std::pair<uint32_t, uint32_t>> parse_subaddress_lookahead(const std::string& str)
+{
+  auto r = tools::parse_subaddress_lookahead(str);
+  if (!r)
+    fail_msg_writer() << sw::tr("invalid format for subaddress lookahead; must be <major>:<minor>");
+  return r;
+}
+
+void handle_transfer_exception(const std::exception_ptr &e, bool trusted_daemon)
+{
+  bool warn_of_possible_attack = !trusted_daemon;
+  try
+  {
+    std::rethrow_exception(e);
+  }
+  catch (const tools::error::daemon_busy&)
+  {
+    fail_msg_writer() << sw::tr("daemon is busy. Please try again later.");
+  }
+  catch (const tools::error::no_connection_to_daemon&)
+  {
+    fail_msg_writer() << sw::tr("no connection to daemon. Please make sure daemon is running.");
+  }
+  catch (const tools::error::wallet_rpc_error& e)
+  {
+    LOG_ERROR("RPC error: " << e.to_string());
+    fail_msg_writer() << sw::tr("RPC error: ") << e.what();
+  }
+  catch (const tools::error::get_outs_error &e)
+  {
+    fail_msg_writer() << sw::tr("failed to get random outputs to mix: ") << e.what();
+  }
+  catch (const tools::error::not_enough_unlocked_money& e)
+  {
+    LOG_PRINT_L0(boost::format("not enough money to transfer, available only %s, sent amount %s") %
+      print_money(e.available()) %
+      print_money(e.tx_amount()));
+    fail_msg_writer() << sw::tr("Not enough money in unlocked balance");
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::not_enough_money& e)
+  {
+    LOG_PRINT_L0(boost::format("not enough money to transfer, available only %s, sent amount %s") %
+      print_money(e.available()) %
+      print_money(e.tx_amount()));
+    fail_msg_writer() << sw::tr("Not enough money in unlocked balance");
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::tx_not_possible& e)
+  {
+    LOG_PRINT_L0(boost::format("not enough money to transfer, available only %s, transaction amount %s = %s + %s (fee)") %
+      print_money(e.available()) %
+      print_money(e.tx_amount() + e.fee())  %
+      print_money(e.tx_amount()) %
+      print_money(e.fee()));
+    fail_msg_writer() << sw::tr("Failed to find a way to create transactions. This is usually due to dust which is so small it cannot pay for itself in fees, or trying to send more money than the unlocked balance, or not leaving enough for fees");
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::not_enough_outs_to_mix& e)
+  {
+    auto writer = fail_msg_writer();
+    writer << sw::tr("not enough outputs for specified ring size") << " = " << (e.mixin_count() + 1) << ":";
+    for (std::pair<uint64_t, uint64_t> outs_for_amount : e.scanty_outs())
+    {
+      writer << "\n" << sw::tr("output amount") << " = " << print_money(outs_for_amount.first) << ", " << sw::tr("found outputs to use") << " = " << outs_for_amount.second;
+    }
+    writer << sw::tr("Please use sweep_unmixable.");
+  }
+  catch (const tools::error::tx_not_constructed&)
+  {
+    fail_msg_writer() << sw::tr("transaction was not constructed");
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::tx_rejected& e)
+  {
+    fail_msg_writer() << (boost::format(sw::tr("transaction %s was rejected by daemon with status: ")) % get_transaction_hash(e.tx())) << e.status();
+    std::string reason = e.reason();
+    if (!reason.empty())
+      fail_msg_writer() << sw::tr("Reason: ") << reason;
+  }
+  catch (const tools::error::tx_sum_overflow& e)
+  {
+    fail_msg_writer() << e.what();
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::zero_destination&)
+  {
+    fail_msg_writer() << sw::tr("one of destinations is zero");
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::tx_too_big& e)
+  {
+    fail_msg_writer() << sw::tr("failed to find a suitable way to split transactions");
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::transfer_error& e)
+  {
+    LOG_ERROR("unknown transfer error: " << e.to_string());
+    fail_msg_writer() << sw::tr("unknown transfer error: ") << e.what();
+  }
+  catch (const tools::error::multisig_export_needed& e)
+  {
+    LOG_ERROR("Multisig error: " << e.to_string());
+    fail_msg_writer() << sw::tr("Multisig error: ") << e.what();
+    warn_of_possible_attack = false;
+  }
+  catch (const tools::error::src_permutation_failed& e)
+  {
+    LOG_ERROR("internal error: " << e.to_string());
+    fail_msg_writer() << sw::tr("internal error: ") << e.what();
+    message_writer(console_color_red)
+      << "Possible reason is not enough unspent outputs to create transaction." << std::endl
+      << "Check unspent outputs by 'unspent_outputs' command." << std::endl
+      << "If you have only one output split the output by transferring coins to yourself.";
+  }
+  catch (const tools::error::wallet_internal_error& e)
+  {
+    LOG_ERROR("internal error: " << e.to_string());
+    fail_msg_writer() << sw::tr("internal error: ") << e.what();
+  }
+  catch (const std::exception& e)
+  {
+    LOG_ERROR("unexpected error: " << e.what());
+    fail_msg_writer() << sw::tr("unexpected error: ") << e.what();
+  }
+
+  if (warn_of_possible_attack)
+    fail_msg_writer() << sw::tr("There was an error, which could mean the node may be trying to get you to retry creating a transaction, and zero in on which outputs you own. Or it could be a bona fide error. It may be prudent to disconnect from this node, and not try to send a transaction immediately. Alternatively, connect to another node so the original node cannot correlate information.");
+}
+
+bool check_file_overwrite(const std::string &filename)
+{
+  boost::system::error_code errcode;
+  if (boost::filesystem::exists(filename, errcode))
+  {
+    if (boost::ends_with(filename, ".keys"))
+    {
+      fail_msg_writer() << boost::format(sw::tr("File %s likely stores wallet private keys! Use a different file name.")) % filename;
+      return false;
+    }
+    return command_line::is_yes(input_line((boost::format(sw::tr("File %s already exists. Are you sure to overwrite it? (Y/Yes/N/No): ")) % filename).str()));
+  }
+  return true;
+}
+
+void print_secret_key(const crypto::secret_key &k)
+{
+  static constexpr const char hex[] = u8"0123456789abcdef";
+  const uint8_t *ptr = (const uint8_t*)k.data;
+  for (size_t i = 0, sz = sizeof(k); i < sz; ++i)
+  {
+    putchar(hex[*ptr >> 4]);
+    putchar(hex[*ptr & 15]);
+    ++ptr;
+  }
+}
+
+bool is_valid_pool(const pool_summary &pool)
+{
+  return pool.token1 != cryptonote::CUTCOIN_ID;
+}
+
+bool is_empty_pool(const pool_summary &pool)
+{
+  return pool.amount1 == 0 && pool.amount2 == 0;
+}
+
+cryptonote::Result parse_priority(const std::string &arg, uint32_t &priority)
 {
   auto priority_pos = std::find(
     allowed_priority_strings.begin(),
@@ -541,32 +563,144 @@ bool parse_priority(const std::string &arg, uint32_t &priority)
     arg);
   if(priority_pos != allowed_priority_strings.end()) {
     priority = std::distance(allowed_priority_strings.begin(), priority_pos);
-    return true;
+    return cryptonote::Result();
   }
-  return false;
+  return cryptonote::Result("Wrong priority specifier");
 }
 
-bool parse_token_name(const std::string &arg, std::string &token_name) {
-  if (cryptonote::validate_token_name(arg)) {
+cryptonote::Result parse_token_name(const std::string &arg, std::string &token_name, bool cutcoin_allowed = false) {
+  if (cutcoin_allowed && arg == cryptonote::CUTCOIN_NAME) {
     token_name = arg;
-    return true;
+    return cryptonote::Result();
+  }
+  else if (cryptonote::validate_token_name(arg)) {
+    token_name = arg;
+    return cryptonote::Result();
+  }
+  else {
+    token_name = "";
+    return cryptonote::Result("Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits");
+  }
+}
+
+cryptonote::Result parse_lp_token_name(const std::string &arg, std::string &token_name) {
+  if (cryptonote::validate_lptoken_name(arg)) {
+    token_name = arg;
+    return cryptonote::Result();
   } else {
     token_name = "";
-    return false;
+    return cryptonote::Result("Parameter 'token_name' doesn't meet the requirements: 'lp' + 1-8 capital letters or digits");
   }
 }
 
-bool parse_token_supply(const std::string &arg, cryptonote::TokenUnit &token_supply) {
-  try {
-    token_supply = std::stoul(arg);
-    if (is_valid_token_supply(token_supply)) {
-      return true;
-    }
-  } catch (std::invalid_argument &e) {
-  } catch (std::out_of_range &e) {
+cryptonote::Result parse_token_supply(const std::string &arg, cryptonote::Amount &token_supply) {
+  if (arg.empty()) {
+    return cryptonote::Result("Empty value for token supply");
   }
-  return false;
+
+  try {
+    auto input_supply = std::stol(arg);
+    if (input_supply < 0) {
+      return cryptonote::Result("Negative token supply is not allowed");
+    }
+    token_supply = static_cast<cryptonote::Amount>(input_supply);
+    if (is_valid_token_coin_supply(token_supply)) {
+      return cryptonote::Result();
+    }
+  }
+  catch (std::invalid_argument &e) {
+  }
+  catch (std::out_of_range &e) {
+  }
+  return cryptonote::Result((boost::format(tr(
+    "Could not parse 'token_supply' parameter. It should be a number in the range %u .. %u."))
+                             % (MIN_TOKEN_SUPPLY / COIN)
+                             % (MAX_TOKEN_SUPPLY / COIN)).str());
 }
+
+cryptonote::Result parse_token_amount(const std::string &arg, std::string &token_name, Amount &amount) {
+  if (arg.empty()) {
+    return cryptonote::Result("Empty value for token amount");
+  }
+
+  const std::string sub_string = arg.substr(0, arg.find('='));
+  cryptonote::Result res = parse_token_name(sub_string, token_name, true);
+  if (!res) {
+    return res;
+  }
+
+  if(!cryptonote::parse_amount(amount, arg.substr(arg.find('=') + 1))) {
+    return cryptonote::Result("Could not parse token amount");
+  }
+
+  if(0 == amount) {
+    return cryptonote::Result("Zero token amount is not allowed");
+  }
+
+  if(!is_valid_token_supply(amount)) {
+    return cryptonote::Result("Invalid token amount");
+  }
+
+  return cryptonote::Result();
+}
+
+cryptonote::Result parse_lp_token_amount(const std::string &arg, std::string &token_name, cryptonote::Amount &amount) {
+  if (arg.empty()) {
+    return cryptonote::Result("Empty value for lptoken amount");
+  }
+
+  cryptonote::Result res = parse_lp_token_name(arg.substr(0, arg.find('=')), token_name);
+  if (!res) {
+    return res;
+  }
+
+  if (!cryptonote::parse_amount(amount, arg.substr(arg.find('=') + 1))) {
+    return cryptonote::Result("Could not parse token amount");
+  }
+
+  if(0 == amount) {
+    return cryptonote::Result("Zero token amount is not allowed");
+  }
+
+  if(!is_valid_token_supply(amount)) {
+    return cryptonote::Result("Invalid token amount");
+  }
+
+  return cryptonote::Result();
+}
+
+cryptonote::Result parse_lp_name(const std::string &arg, std::string &lp_name) {
+  if (arg.empty()) {
+    return cryptonote::Result("Empty string for liquidity pool name");
+  }
+
+  if (!validate_lpname(arg)) {
+    return cryptonote::Result("Invalid liquidity pool name");
+  }
+
+  lp_name = arg;
+  return cryptonote::Result();
+}
+
+cryptonote::Result parse_slippage(const std::string &arg, double &slippage)
+{
+  std::string::size_type stop_index;
+  slippage = std::stod(arg, &stop_index);
+  if (stop_index == 0) {
+    return cryptonote::Result("Could not parse slippage value");
+  }
+
+  if (!validate_slippage(slippage)) {
+    return cryptonote::Result((boost::format(tr(
+      "Slippage is out of valid range. The value should be between %.2f%% and %.2f%%"))
+        % cryptonote::MIN_SLIPPAGE
+        % cryptonote::MAX_SLIPPAGE).str());
+  }
+  return cryptonote::Result();
+}
+
+}  // anonymous namespace
+
 
 std::string join_priority_strings(const char *delimiter)
 {
@@ -2336,7 +2470,7 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("token_balance",
                            std::bind(&simple_wallet::show_token_balance, this, std::placeholders::_1),
                            tr("token_balance [<token_name>] [detail]"),
-                           tr("Show the wallet's token(s) balance of the currently selected account."));
+                           tr("Show the token(s) balance in the currently selected account."));
   m_cmd_binder.set_handler("incoming_transfers",
                            std::bind(&simple_wallet::show_incoming_transfers, this, std::placeholders::_1),
                            tr("incoming_transfers [available|unavailable] [verbose] [index=<N1>[,<N2>[,...]]]"),
@@ -2379,11 +2513,59 @@ simple_wallet::simple_wallet()
   m_cmd_binder.set_handler("create_token",
                            std::bind(&simple_wallet::create_token, this, std::placeholders::_1),
                            tr("create_token <token_name> <token_supply> [token_type]"),
-                           tr("Create tokens with the specified 'token_name' and 'token_supply'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees. Supported token types are 'hidden' for tokens with the hidden supply and 'public' for tokens with publicly visible supply. The default type is 'explicit'."));
-  m_cmd_binder.set_handler("get_tokens",
-                           std::bind(&simple_wallet::get_tokens, this, std::placeholders::_1),
-                           tr("get_tokens [<token_name_prefix>]"),
-                           tr("List already created tokens. Can be filtered by starting part."));
+                           tr("Create token with the specified 'token_name' and 'token_supply'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees. Supported token types are 'hidden' for tokens with the hidden supply, 'public' for tokens with publicly visible supply and 'mintable' for tokens with unlimited supply. The default type is 'public'."));
+  m_cmd_binder.set_handler("create_lptoken",
+                           std::bind(&simple_wallet::create_lptoken, this, std::placeholders::_1),
+                           tr("create_lptoken <token_name>"),
+                           tr("Create liquidity pool token with the specified 'token_name'. The wallet balance in Cutcoins must be at least equal to 'TOKEN_GENESIS_AMOUNT' value + possible transaction fees."));
+  m_cmd_binder.set_handler("mint_token_supply",
+                           std::bind(&simple_wallet::mint_token_supply, this, std::placeholders::_1),
+                           tr("mint_token_supply <token_name> <new_token_supply> [token_secret_key]"),
+                           tr("Mint additional token supply for the token with the specified 'token_name'. This token must be mintable and created in the current wallet (or 'token_secret_key' must be specified). 'new_token_supply' must be greater or equal to the current token supply and not exceed the maximal token supply."));
+  m_cmd_binder.set_handler("show_tokens",
+                           std::bind(&simple_wallet::show_tokens, this, std::placeholders::_1),
+                           tr("show_tokens [<token_name_prefix>] [exact_match]"),
+                           tr("List tokens that have the names starting from the optional 'prefix'"));
+  m_cmd_binder.set_handler("get_mintable_token_key",
+                           std::bind(&simple_wallet::get_mintable_token_key, this, std::placeholders::_1),
+                           tr("get_mintable_token_key <token_name>"),
+                           tr("Print secret key for the token with 'token_name'."));
+  m_cmd_binder.set_handler("create_liquidity_pool",
+                           std::bind(&simple_wallet::create_liquidity_pool, this, std::placeholders::_1),
+                           tr("create_liquidity_pool <name1=N1> <name2=N2> <lp_token_name>"),
+                           tr("Create liquidity pool for the specified pair of tokens(first_token_name, second_token_name) with the specified liquidity token. The wallet balance in Cutcoins must be at least equal to 'POOL_GENESIS_AMOUNT' value + possible transaction fees."));
+  m_cmd_binder.set_handler("add_liquidity",
+                           std::bind(&simple_wallet::add_liquidity, this, std::placeholders::_1),
+                           tr("add_liquidity <lp_name> <token_name1=N1> [<token_name2=N2>]"),
+                           tr("Add liquidity to the pool with the specified 'lp_name'. You must specify one of the tokens from the pool pair and its amount. If the pool has zero amount for both tokens the second token and its amount should be specified also."));
+  m_cmd_binder.set_handler("take_liquidity",
+                           std::bind(&simple_wallet::take_liquidity, this, std::placeholders::_1),
+                           tr("take_liquidity <lp_name> <lptoken_name=N>"),
+                           tr("Take liquidity from the pool with the specified 'lp_name'. You must specify one of the tokens from the pool pair and its amount."));
+  m_cmd_binder.set_handler("show_liquidity_pools",
+                           std::bind(&simple_wallet::show_liquidity_pools, this, std::placeholders::_1),
+                           tr("show_liquidity_pools [prefix] [exact_match]"),
+                           tr("List liquidity pools that have the names starting from the optional 'prefix'."));
+  m_cmd_binder.set_handler("buy",
+                           std::bind(&simple_wallet::buy, this, std::placeholders::_1),
+                           tr("buy <token_pair_name> <N> [slippage]"),
+                           tr("Buy the specified amount of the first token in the liquidity pool pair. Example: as the result of 'buy T1/cutcoin 1' command, you receive 1 T1 token from 'T1/cutcoin' pool using the current ratio. Optional parameter 'slippage' can be used to specify the possible exchange rate range (possible values are 1.0% - 5.0%)."));
+  m_cmd_binder.set_handler("sell",
+                           std::bind(&simple_wallet::sell, this, std::placeholders::_1),
+                           tr("sell <token_pair_name> <N> [slippage]"),
+                           tr("Sell the specified amount of the first token in the liquidity pool pair. Example: as the result of 'buy T1/cutcoin 1' command, you send 1 T1 token from 'T1/cutcoin' pool using the current ratio. Optional parameter 'slippage' can be used to specify the possible exchange rate range (possible values are 1.0% - 5.0%)."));
+  m_cmd_binder.set_handler("cross_exchange",
+                           std::bind(&simple_wallet::cross_exchange, this, std::placeholders::_1),
+                           tr("cross_exchange <token_name1> <token_name2> <N>"),
+                           tr("Exchange token 1 and token 2 so that you receive <N> amount of token 1 using one or several liquidity pools. Example: as the result of 'cross_exchange T1 cutcoin 1' command, you receive 1 T1 token."));
+  m_cmd_binder.set_handler("stop_slippage_exchange",
+                           std::bind(&simple_wallet::stop_slippage_exchange, this, std::placeholders::_1),
+                           tr("stop_slippage_exchange"),
+                           tr("Stop current buy/sell with slippage operation."));
+  m_cmd_binder.set_handler("exchange_rate",
+                           std::bind(&simple_wallet::exchange_rate, this, std::placeholders::_1),
+                           tr("exchange_rate <token_to_sell> <token_to_buy> <amount>"),
+                           tr("Print effective exchange rate for the pair of tokens, the required liquidity pools to make exchange, and the final amount of tokens that you receive. First argument is the token to sell, second argument is the token to buy, third argument is optional amount of the first token."));
   m_cmd_binder.set_handler("donate",
                            std::bind(&simple_wallet::donate, this, std::placeholders::_1),
                            tr("donate [index=<N1>[,<N2>,...]] [<priority>] [<ring_size>] <amount> [<payment_id>]"),
@@ -3538,6 +3720,7 @@ bool simple_wallet::handle_command_line(const boost::program_options::variables_
   m_do_not_relay                  = command_line::get_arg(vm, arg_do_not_relay);
   m_subaddress_lookahead          = command_line::get_arg(vm, arg_subaddress_lookahead);
   m_use_english_language_names    = command_line::get_arg(vm, arg_use_english_language_names);
+  m_show_tx_info                  = !command_line::get_arg(vm, arg_no_tx_info);
   m_restoring                     = !m_generate_from_view_key.empty() ||
                                     !m_generate_from_spend_key.empty() ||
                                     !m_generate_from_keys.empty() ||
@@ -3631,6 +3814,42 @@ boost::optional<tools::password_container> simple_wallet::get_and_verify_passwor
   return pwd_container;
 }
 //----------------------------------------------------------------------------------------------------
+bool simple_wallet::decrypt_keys()
+{
+  if (m_wallet->ask_password() == tools::wallet2::AskPasswordNever) {
+    return true;
+  }
+
+  m_pwd_container = get_and_verify_password();
+  if (!m_pwd_container) {
+    fail_msg_writer() << tr("Could not get a password");
+    return false;
+  }
+
+  m_ask_password_type = m_wallet->ask_password();
+  m_wallet->ask_password(tools::wallet2::AskPasswordNever);
+
+  if (m_ask_password_type == tools::wallet2::AskPasswordToDecrypt) {
+    m_wallet->decrypt_keys(m_pwd_container->password());
+  }
+
+  return true;
+}
+//----------------------------------------------------------------------------------------------------
+void simple_wallet::encrypt_keys()
+{
+  auto old_ask_password = m_wallet->ask_password();
+  m_wallet->ask_password(m_ask_password_type);
+
+  if (old_ask_password != tools::wallet2::AskPasswordToDecrypt &&
+       m_ask_password_type == tools::wallet2::AskPasswordToDecrypt) {
+    m_wallet->encrypt_keys(m_pwd_container->password());
+  }
+
+  m_pwd_container = boost::none;
+  m_ask_password_type = tools::wallet2::AskPasswordToDecrypt;
+}
+//----------------------------------------------------------------------------------------------------
 boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::program_options::variables_map& vm,
   const crypto::secret_key& recovery_key, bool recover, bool two_random, const std::string &old_language)
 {
@@ -3722,7 +3941,7 @@ boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::pr
   }
   success_msg_writer() << "**********************************************************************";
 
-  return std::move(password);
+  return password;
 }
 //----------------------------------------------------------------------------------------------------
 boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::program_options::variables_map& vm,
@@ -3769,7 +3988,7 @@ boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::pr
   }
 
 
-  return std::move(password);
+  return password;
 }
 
 //----------------------------------------------------------------------------------------------------
@@ -3807,7 +4026,7 @@ boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::pr
     return {};
   }
 
-  return std::move(password);
+  return password;
 }
 //----------------------------------------------------------------------------------------------------
 boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::program_options::variables_map& vm,
@@ -3860,7 +4079,7 @@ boost::optional<epee::wipeable_string> simple_wallet::new_wallet(const boost::pr
     return {};
   }
 
-  return std::move(password);
+  return password;
 }
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::open_wallet(const boost::program_options::variables_map& vm)
@@ -3977,6 +4196,10 @@ bool simple_wallet::close_wallet()
     m_idle_thread.join();
   }
 
+  if (m_plant) {
+    m_plant->stop_mining();
+  }
+
   bool r = m_wallet->deinit();
   if (!r)
   {
@@ -4064,7 +4287,8 @@ bool simple_wallet::start_staking(const std::vector<std::string> &args)
   auto local_args = args;
   if(local_args.size() > 3)
   {
-    fail_msg_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
+    fail_msg_writer() << tr("Too many arguments");
+    message_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
     return true;
   }
 
@@ -4075,11 +4299,13 @@ bool simple_wallet::start_staking(const std::vector<std::string> &args)
     if (local_args[0] == "verbose") {
       verbose = true;
       local_args.erase(local_args.begin());
-    } else if(local_args[0] == "wallet") {
+    }
+    else if(local_args[0] == "wallet") {
       local_args.erase(local_args.begin());
 
       if(local_args.empty()) {
-        fail_msg_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
+        fail_msg_writer() << tr("Reward wallet address is missing");
+        message_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
         return true;
       }
 
@@ -4089,7 +4315,7 @@ bool simple_wallet::start_staking(const std::vector<std::string> &args)
       cryptonote::address_parse_info info;
       if (!cryptonote::get_account_address_from_str_or_url(info, m_wallet->nettype(), reward_wallet_address, oa_prompter)) {
         fail_msg_writer() << tr("failed to parse reward wallet address");
-        fail_msg_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
+        message_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
         return true;
       }
 
@@ -4097,6 +4323,11 @@ bool simple_wallet::start_staking(const std::vector<std::string> &args)
         fail_msg_writer() << tr("Integrated address is not allowed as a reward address");
         return true;
       }
+    }
+    else {
+      fail_msg_writer() << boost::format(tr("Unexpected parameter: %s")) % local_args[0];
+      message_writer() << tr("usage: start_staking [verbose] [wallet <address>]");
+      return true;
     }
   }
 
@@ -4107,17 +4338,8 @@ bool simple_wallet::start_staking(const std::vector<std::string> &args)
     return true;
   }
 
-  m_pwd_container = get_and_verify_password();
-  if (!m_pwd_container) {
-    fail_msg_writer() << tr("Could not get a password");
+  if (!decrypt_keys()) {
     return true;
-  }
-
-  m_ask_password_type = m_wallet->ask_password();
-  m_wallet->ask_password(tools::wallet2::AskPasswordNever);
-
-  if (m_ask_password_type == tools::wallet2::AskPasswordToDecrypt) {
-    m_wallet->decrypt_keys(m_pwd_container->password());
   }
 
   m_plant->start_mining(reward_wallet_address);
@@ -4126,6 +4348,11 @@ bool simple_wallet::start_staking(const std::vector<std::string> &args)
 //----------------------------------------------------------------------------------------------------
 bool simple_wallet::stop_staking(const std::vector<std::string>& args)
 {
+  if (!m_plant->is_mining()) {
+    message_writer() << tr("POS staking is stopped");
+    return true;
+  }
+
   if (!try_connect_to_daemon())
     return true;
 
@@ -4143,14 +4370,10 @@ bool simple_wallet::stop_staking(const std::vector<std::string>& args)
 
     m_plant->stop_mining();
 
-    m_wallet->ask_password(m_ask_password_type);
-
-    if (m_ask_password_type == tools::wallet2::AskPasswordToDecrypt) {
-      m_wallet->encrypt_keys(m_pwd_container->password());
+    if (!m_wallet->is_slippage_transfer_in_progress()) {
+      encrypt_keys();
     }
 
-    m_pwd_container = boost::none;
-    m_ask_password_type = tools::wallet2::AskPasswordToDecrypt;
     return true;
   }
 
@@ -4256,13 +4479,15 @@ void simple_wallet::on_money_received(uint64_t                            height
                                       uint64_t                            amount,
                                       const cryptonote::subaddress_index &subaddr_index)
 {
-  message_writer(console_color_green, false)
-      << "\r"
-      << tr("Height ") << std::setw(7)  << height << ", "
-      << tr("txid ")                    << txid << ", "
-                       << std::setw(8)  << cryptonote::token_id_to_name(token_id) << " "
-                       << std::setw(20) << print_money(amount) << ", "
-      << tr("idx ")                     << subaddr_index;
+  if (m_show_tx_info) {
+    message_writer(console_color_green, false)
+        << "\r"
+        << tr("Height ") << std::setw(7)  << height << ", "
+        << tr("txid ")                    << txid << ", "
+                         << std::setw(8)  << cryptonote::token_id_to_name(token_id) << " "
+                         << std::setw(20) << print_money(amount) << ", "
+        << tr("idx ")                     << subaddr_index;
+  }
 
   const uint64_t warn_height = m_wallet->nettype() == TESTNET ? 1000000 : m_wallet->nettype() == STAGENET ? 50000 : 1650000;
   if (height >= warn_height)
@@ -4301,13 +4526,15 @@ void simple_wallet::on_money_spent(uint64_t                            height,
                                    const cryptonote::transaction      &spend_tx,
                                    const cryptonote::subaddress_index &subaddr_index)
 {
-  message_writer(console_color_magenta, false)
-      << "\r"
-      << tr("Height ") << std::setw(7)  << height << ", "
-      << tr("txid ")                    << txid << ", "
-                       << std::setw(8)  << cryptonote::token_id_to_name(token_id) << " "
-                       << std::setw(20) << print_money(amount) << ", "
-      << tr("idx ")                     << subaddr_index;
+  if (m_show_tx_info) {
+    message_writer(console_color_magenta, false)
+        << "\r"
+        << tr("Height ") << std::setw(7)  << height << ", "
+        << tr("txid ")                    << txid << ", "
+                         << std::setw(8)  << cryptonote::token_id_to_name(token_id) << " "
+                         << std::setw(20) << print_money(amount) << ", "
+        << tr("idx ")                     << subaddr_index;
+  }
 
   if (m_auto_refresh_refreshing)
     m_cmd_binder.print_prompt();
@@ -4524,13 +4751,17 @@ bool simple_wallet::show_token_balance(const std::vector<std::string>& args)
   if (!local_args.empty()) {
     if (local_args[0] != "detail") {
       std::string token_name;
-      if (!parse_token_name(local_args[0], token_name))
+
       {
-        fail_msg_writer() << tr("Incorrect token name");
-        return true;
+        auto res = parse_token_name(local_args[0], token_name);
+        if (!res) {
+          fail_msg_writer() << res;
+          return true;
+        }
+        token_id = token_name_to_id(token_name);
+        local_args.erase(local_args.begin());
       }
-      token_id = token_name_to_id(token_name);
-      local_args.erase(local_args.begin());
+
       if (!local_args.empty()) {
         if (local_args[0] != "detail") {
         fail_msg_writer() << tr("usage: balance [<token_name>] [detail]");
@@ -4856,7 +5087,7 @@ bool simple_wallet::print_ring_members(const tools::pending_tx_v &ptx_vector, st
         continue;
       const cryptonote::txin_to_key& in_key = boost::get<cryptonote::txin_to_key>(tx.vin[i]);
       const tools::transfer_details &td = m_wallet->get_transfer_details(construction_data.selected_transfers[i]);
-      const cryptonote::tx_source_entry *sptr = NULL;
+      const cryptonote::tx_source_entry *sptr = nullptr;
       for (const auto &src: construction_data.sources)
         if (src.outputs[src.real_output].second.dest == td.get_public_key())
           sptr = &src;
@@ -4869,16 +5100,18 @@ bool simple_wallet::print_ring_members(const tools::pending_tx_v &ptx_vector, st
 
       ostr << boost::format(tr("\nInput %llu/%llu: amount=%s")) % (i + 1) % tx.vin.size() % print_money(source.amount);
       // convert relative offsets of ring member keys into absolute offsets (indices) associated with the amount
-      std::vector<uint64_t> absolute_offsets = cryptonote::relative_output_offsets_to_absolute(in_key.key_offsets);
+      std::vector<uint64_t> absolute_offsets = in_key.s_type == SourceType::wallet ?
+                                               cryptonote::relative_output_offsets_to_absolute(in_key.key_offsets):
+                                               cryptonote::lp_relative_output_offsets_to_absolute(in_key.key_offsets);
       // get block heights from which those ring member keys originated
-      COMMAND_RPC_GET_OUTPUTS_BIN::request req = AUTO_VAL_INIT(req);
+      COMMAND_RPC_GET_OUTPUTS_BIN::request req{};
       req.outputs.resize(absolute_offsets.size());
       for (size_t j = 0; j < absolute_offsets.size(); ++j)
       {
         req.outputs[j].token_id = in_key.token_id;
         req.outputs[j].index = absolute_offsets[j];
       }
-      COMMAND_RPC_GET_OUTPUTS_BIN::response res = AUTO_VAL_INIT(res);
+      COMMAND_RPC_GET_OUTPUTS_BIN::response res{};
       bool r = m_wallet->invoke_http_bin("/get_outs.bin", req, res);
       err = interpret_rpc_response(r, res.status);
       if (!err.empty())
@@ -4900,7 +5133,7 @@ bool simple_wallet::print_ring_members(const tools::pending_tx_v &ptx_vector, st
         ostr << tr(j == source.real_output ? " *" : " ") << res.outs[j].height;
       spent_key_height[i] = res.outs[source.real_output].height;
       spent_key_txid  [i] = res.outs[source.real_output].txid;
-      // visualize the distribution, using the code by moneroexamples onion-monero-viewer
+      // visualize the distribution, using the code by moneroexamples onion-cutcoin-viewer
       const uint64_t resolution = 79;
       std::string ring_str(resolution, '_');
       for (size_t j = 0; j < absolute_offsets.size(); ++j)
@@ -4935,7 +5168,7 @@ bool simple_wallet::print_ring_members(const tools::pending_tx_v &ptx_vector, st
   }
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::string> &args_)
 {
 //  "transfer [index=<N1>[,<N2>,...]] [<priority>] [<ring_size>] <address> <amount> [<payment_id>]"
@@ -5092,14 +5325,14 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
       if(!ok || 0 == de.amount)
       {
         fail_msg_writer() << tr("amount is wrong: ") << local_args[i] << ' ' << local_args[i + 1] <<
-          ", " << tr("expected number from 0 to ") << print_money(std::numeric_limits<uint64_t>::max());
+          ", " << tr("expected number from 1 to ") << print_money(std::numeric_limits<uint64_t>::max());
         return true;
       }
       i += 2;
     }
     else
     {
-      if (boost::starts_with(local_args[i], "monero:"))
+      if (boost::starts_with(local_args[i], "cutcoin:"))
         fail_msg_writer() << tr("Invalid last argument: ") << local_args.back() << ": " << error;
       else
         fail_msg_writer() << tr("Invalid last argument: ") << local_args.back();
@@ -5112,7 +5345,7 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
       return true;
     }
     de.addr = info.address;
-    de.is_subaddress = info.is_subaddress;
+    de.set_subaddress(info.is_subaddress);
     num_subaddresses += info.is_subaddress;
 
     if (info.has_payment_id || !payment_id_uri.empty())
@@ -5373,7 +5606,7 @@ bool simple_wallet::transfer_main(int transfer_type, const std::vector<std::stri
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::transfer_token_main(const std::vector<std::string> &args)
 {
   //  "transfer_token <token_id> <address> <amount>"
@@ -5403,10 +5636,12 @@ bool simple_wallet::transfer_token_main(const std::vector<std::string> &args)
   tx_destination_entry de;
 
   std::string token_name;
-  if(!parse_token_name(local_args[0], token_name)) {
-    fail_msg_writer() << (boost::format(tr(
-      "Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits"))).str();
-    return true;
+  {
+    auto res = parse_token_name(local_args[0], token_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
   }
 
   de.token_id = token_name_to_id(token_name);
@@ -5457,7 +5692,7 @@ bool simple_wallet::transfer_token_main(const std::vector<std::string> &args)
 
     if(!parse_amount(de.amount, local_args[2]) || 0 == de.amount) {
       fail_msg_writer() << tr("Amount is wrong: ") << local_args[1] << ' ' << local_args[2] << ", "
-                        << tr("expected number from 0 to ") << print_money(std::numeric_limits<uint64_t>::max());
+                        << tr("expected number from 1 to ") << print_money(std::numeric_limits<uint64_t>::max());
       return true;
     }
   } else {
@@ -5466,7 +5701,7 @@ bool simple_wallet::transfer_token_main(const std::vector<std::string> &args)
   }
 
   de.addr = info.address;
-  de.is_subaddress = info.is_subaddress;
+  de.set_subaddress(info.is_subaddress);
   num_subaddresses += info.is_subaddress;
 
   if (info.has_payment_id || !payment_id_uri.empty()) {
@@ -6301,7 +6536,7 @@ bool simple_wallet::sweep_single(const std::vector<std::string> &args_)
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::create_token(const std::vector<std::string> &args)
 {
   using namespace cryptonote;
@@ -6327,49 +6562,72 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
     return true;
   }
   std::string token_name;
-  if(parse_token_name(local_args[0], token_name)) {
+  {
+    auto res = parse_token_name(local_args[0], token_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
     local_args.erase(local_args.begin());
-  } else {
-    fail_msg_writer() << (boost::format(tr(
-      "Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits"))).str();
-    return true;
   }
 
   token_summary.d_token_id = token_name_to_id(token_name);
 
-  if (local_args.empty()) {
-    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_supply'"))).str();
-    return true;
-  }
-  if(parse_token_supply(local_args[0], token_summary.d_token_supply)) {
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_supply'"))).str();
+      return true;
+    }
+    auto res = parse_token_supply(local_args[0], token_summary.d_token_supply);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
     local_args.erase(local_args.begin());
-  } else {
-    fail_msg_writer() << (boost::format(tr(
-        "Could not parse 'token_supply' parameter. It should be a number in the range %u .. %u."))
-          % MIN_TOKEN_SUPPLY
-          % MAX_TOKEN_SUPPLY).str();
-    return true;
   }
 
   TokenType token_type = TokenType::public_supply;
   if (!local_args.empty()) {
     if (local_args[0] == "hidden") {
-      if (m_wallet->get_blockchain_current_height() < 571000) {
-          fail_msg_writer() << tr("Tokens with private supply can be created after 571000 blocks");
-          return true;
-        }
       token_type = TokenType::hidden_supply;
+    } else if (local_args[0] == "mintable") {
+      token_type = TokenType::mintable_supply;
     } else if (local_args[0] == "public") {
     } else {
       fail_msg_writer() << tr(
-        "Could not parse 'token_type' parameter. It should be 'public' (the default value) or 'hidden'");
+        "Could not parse 'token_type' parameter. It should be 'public' (the default value), 'hidden' or 'mintable'.");
+      return true;
     }
     local_args.erase(local_args.begin());
   }
 
-  token_summary.d_type = token_type;
+  if (token_type.is_mintable()) {
+    if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+      message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+      return true;
+    }
+  }
 
+  token_summary.d_type = token_type;
   token_summary.d_unit = COIN;
+
+  COMMAND_RPC_GET_TOKENS::request req{};
+  req.prefix = token_name;
+  req.exact_match = true;
+  COMMAND_RPC_GET_TOKENS::response res{};
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    fail_msg_writer() << tr("failed to get tokens: ") << err;
+    return true;
+  }
+
+  if (!res.tokens.empty()) {
+    fail_msg_writer() << tr("Aborted, token with the specified name already exists.");
+    return true;
+  }
 
   std::string accepted = input_line((boost::format(tr(
       "You request the creation of a new token '%s' with %d units supply. "
@@ -6386,9 +6644,76 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
     return true;
   }
 
-  COMMAND_RPC_GET_TOKENS::request req = AUTO_VAL_INIT(req);
+  if (token_summary.d_type.is_mintable()) {
+    token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
+  }
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->token_genesis_transaction(token_summary, ptx_vector, token_summary.d_token_supply);
+
+    if (ptx_vector.empty()) {
+      fail_msg_writer() << tr("Could not create token genesis transaction");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    if (token_summary.d_type.is_mintable()) {
+      crypto::secret_key sk = m_wallet->get_token_secret_key(token_summary.d_token_id);
+      success_msg_writer(true) << tr("Mintable token successfully created. "
+                                     "Please save this secret key if you need to mint additional supply "
+                                     "for this token in a different wallet: ") << sk;
+    }
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::create_lptoken(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "create_lptoken <token_name>"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  std::vector<std::string> local_args = args;
+  TokenSummary token_summary;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
+    return true;
+  }
+  std::string token_name;
+  {
+    auto res = parse_lp_token_name(local_args[0], token_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  }
+
+  COMMAND_RPC_GET_TOKENS::request req{};
   req.prefix = token_name;
-  COMMAND_RPC_GET_TOKENS::response res = AUTO_VAL_INIT(res);
+  req.exact_match = true;
+  COMMAND_RPC_GET_TOKENS::response res{};
   bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
   std::string err = interpret_rpc_response(r, res.status);
   if (!err.empty()) {
@@ -6396,19 +6721,1608 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
     return true;
   }
 
-  for (const auto &ts : res.tokens) {
-    if (token_name == token_id_to_name(ts.token_id)) {
-      fail_msg_writer() << tr("Aborted, token with the specified name already exists.");
-      return true;
-    }
+  if (!res.tokens.empty()) {
+    fail_msg_writer() << tr("Aborted, token with the specified name already exists.");
+    return true;
+  }
+
+  token_summary.d_token_id = token_name_to_id(token_name);
+  token_summary.d_token_supply = MAX_TOKEN_SUPPLY / COIN;
+  token_summary.d_type = TokenType::lptoken;
+  token_summary.d_unit = COIN;
+
+  std::string accepted = input_line((boost::format(tr(
+    "You request the creation of a new lptoken '%s'."
+    "If you proceed, %d cutcoins will be written off permanently from the current account. "
+    "Is this okay?  (Y/Yes/N/No): "))
+                                     % token_name
+                                     % (config::TOKEN_GENESIS_AMOUNT / COIN)).str());
+  if (std::cin.eof()) {
+    return true;
+  }
+  if (!command_line::is_yes(accepted)) {
+    fail_msg_writer() << tr("Transaction cancelled.");
+    return true;
   }
 
   try {
     tools::pending_tx_v ptx_vector{};
-    m_wallet->token_genesis_transaction(m_current_subaddress_account, token_summary, ptx_vector);
+    m_wallet->token_genesis_transaction(token_summary, ptx_vector, token_summary.d_token_supply);
 
     if (ptx_vector.empty()) {
       fail_msg_writer() << tr("Could not create token genesis transaction");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("LP token successfully created.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::create_liquidity_pool(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "create_liquidity_pool <name1=N1> <name2=N2> <lp_token_name>"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'name1'"))).str();
+    return true;
+  }
+
+  std::string token1, token2, lptoken;
+  Amount amount1, amount2;
+
+  {
+    auto res = parse_token_amount(local_args[0], token1, amount1);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'name2'"))).str();
+      return true;
+    }
+
+    auto res = parse_token_amount(local_args[0], token2, amount2);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_token_name'"))).str();
+    return true;
+  }
+
+  {
+    auto res = parse_lp_token_name(local_args[0], lptoken);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  }
+
+  {
+    std::string lp_name = tokens_to_lpname(token1, token2);
+    if (!validate_lpname(lp_name)) {
+      fail_msg_writer() << (boost::format(tr("Incorrect liquidity pool name"))).str();
+      return true;
+    }
+
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = lp_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get liquidity pools: ") << err;
+      return true;
+    }
+
+    if (is_valid_pool(res.liquidity_pool)) {
+      fail_msg_writer() << tr("The specified liquidity pool already exists");
+      return true;
+    }
+  }
+
+  {
+    COMMAND_RPC_GET_POOL_BY_LP_TOKEN::request req = AUTO_VAL_INIT(req);
+    req.lp_token = token_name_to_id(lptoken);
+    COMMAND_RPC_GET_POOL_BY_LP_TOKEN::response res = AUTO_VAL_INIT(res);
+    bool r = m_wallet->invoke_http_bin("/get_pool_by_lp_token.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get liquidity pool by lptoken: ") << err;
+      return true;
+    }
+
+    if (is_valid_pool(res.liquidity_pool)) {
+      fail_msg_writer() << tr("The specified lptoken is already used");
+      return true;
+    }
+  }
+
+  {
+    bool r = check_initial_pool_liquidity(amount1, amount2);
+    if (!r) {
+      fail_msg_writer() << "Aborted, 'token 1 liquidity' * 'token 2 liquidity' must be at least 1000";
+      return true;
+    }
+  }
+
+  LiquidityPool lp_summary;
+  if (tokens_direct_order(token1, token2)) {
+    lp_summary.d_token1    = token_name_to_id(token1);
+    lp_summary.d_token2    = token_name_to_id(token2);
+    lp_summary.d_ratio     = { amount1, amount2 };
+  }
+  else {
+    lp_summary.d_token1    = token_name_to_id(token2);
+    lp_summary.d_token2    = token_name_to_id(token1);
+    lp_summary.d_ratio     = { amount2, amount1 };
+  }
+
+  lp_summary.d_lptoken   = token_name_to_id(lptoken);
+  lp_summary.d_lp_amount = get_lp_token_to_funds(lp_summary.d_ratio);
+
+  if (token1 != CUTCOIN_NAME) {
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = token1;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get tokens: ") << err;
+      return true;
+    }
+
+    if (res.tokens.empty()) {
+      fail_msg_writer() << "Aborted, token " << token1 << " does not exist.";
+      return true;
+    }
+  }
+
+  if (token2 != CUTCOIN_NAME) {
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = token2;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get tokens: ") << err;
+      return true;
+    }
+
+    if (res.tokens.empty()) {
+      fail_msg_writer() << "Aborted, token " << token2 << " does not exist.";
+      return true;
+    }
+  }
+
+  {
+    COMMAND_RPC_GET_TOKENS::request req{};
+    req.prefix = lptoken;
+    req.exact_match = true;
+    COMMAND_RPC_GET_TOKENS::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get tokens: ") << err;
+      return true;
+    }
+
+    if (res.tokens.empty()) {
+      fail_msg_writer() << "Aborted, token " << lptoken << " does not exist.";
+      return true;
+    }
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->pool_genesis_transaction(m_current_subaddress_account, lp_summary, ptx_vector);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create pool genesis transaction");
+      return true;
+    }
+
+    std::stringstream prompt;
+    prompt << boost::format(tr("This transaction is creating liquidity pool %s "
+                               "with lp token %s and initial exchange rate %d."))
+        % tokens_to_lpname(lp_summary.d_token1, lp_summary.d_token2)
+        % token_id_to_name(lp_summary.d_lptoken)
+        % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+    prompt << boost::format(tr("Sending from the wallet to the pool %s %s and %s %s."))
+        % print_money(lp_summary.d_ratio.d_amount1) % token_id_to_name(lp_summary.d_token1)
+        % print_money(lp_summary.d_ratio.d_amount2) % token_id_to_name(lp_summary.d_token2) << std::endl;
+    prompt << boost::format(tr("Receiving to the wallet %s %s."))
+        % print_money(lp_summary.d_lp_amount)
+        % token_id_to_name(lp_summary.d_lptoken) << std::endl;
+    prompt << boost::format(tr("You will pay %s CUT for this operation and total fee %s CUT."))
+        % print_money(config::POOL_GENESIS_AMOUNT)
+        % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Liquidity pool successfully created.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::add_liquidity(const std::vector<std::string> &args)
+{
+  // "add_liquidity <lp_name> <token_name1=N1> [<token_name2=N2>]"
+
+  using namespace cryptonote;
+
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_name'"))).str();
+    return true;
+  }
+
+  std::string lp_name;
+  {
+    auto res = parse_lp_name(local_args[0], lp_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  std::string token_name1;
+  Amount amount1;
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
+      return true;
+    }
+
+    auto res = parse_token_amount(local_args[0], token_name1, amount1);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  LiquidityPool old_lp{}, new_lp{};
+  Amount deposit1, deposit2, lp_withdrawal;
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = lp_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get liquidity pools: ") << err;
+      return true;
+    }
+
+    if (!is_valid_pool(res.liquidity_pool)) {
+      fail_msg_writer() << tr("Could not find the specified liquidity pool");
+      return true;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    old_lp.d_token1    = lp.token1;
+    old_lp.d_token2    = lp.token2;
+    old_lp.d_ratio     = { lp.amount1 ,lp.amount2 };
+    old_lp.d_lptoken   = lp.lp_token;
+    old_lp.d_lp_amount = lp.lp_amount;
+
+    if (is_empty_pool(res.liquidity_pool)) {
+      std::string token_name2;
+      Amount amount2;
+
+      if (local_args.empty()) {
+        fail_msg_writer() << (boost::format(tr(
+          "Liquidity pool is empty. Both tokens and they amounts should be specified"))).str();
+        return true;
+      }
+
+      auto res = parse_token_amount(local_args[0], token_name2, amount2);
+      if (!res) {
+        fail_msg_writer() << res;
+        return true;
+      }
+      local_args.erase(local_args.begin());
+
+      if (!tokens_direct_order(token_name1, token_name2)) {
+        std::swap(token_name1, token_name2);
+        std::swap(amount1, amount2);
+      }
+
+      if (lp.token1 != token_name_to_id(token_name1) ||
+           lp.token2 != token_name_to_id(token_name2)) {
+        fail_msg_writer() << tr("Specified tokens don't match liquidity pool tokens");
+        return true;
+      }
+
+      deposit1 = amount1;
+      deposit2 = amount2;
+    }
+    else {
+      if (!local_args.empty()) {
+        fail_msg_writer() << (boost::format(tr(
+          "Liquidity pool is not empty. Only one token and its amount should be specified"))).str();
+        return true;
+      }
+
+      const TokenId tokenId = token_name_to_id(token_name1);
+      if (tokenId != lp.token1 && tokenId != lp.token2) {
+        fail_msg_writer() << tr("Specified token is not from liquidity pool pair");
+        return true;
+      }
+
+      if (tokenId == lp.token1) {
+        deposit1 = amount1;
+        deposit2 = underlying_amount_from_lp_pair(old_lp.d_ratio, amount1);
+      }
+      else {
+        deposit1 = token_amount_from_lp_pair(old_lp.d_ratio, amount1);
+        deposit2 = underlying_amount_from_lp_pair(old_lp.d_ratio, deposit1);
+      }
+    }
+
+    new_lp.d_token1    = lp.token1;
+    new_lp.d_token2    = lp.token2;
+    new_lp.d_ratio      = { old_lp.d_ratio.d_amount1 + deposit1, old_lp.d_ratio.d_amount2 + deposit2};
+    new_lp.d_lptoken   = lp.lp_token;
+    new_lp.d_lp_amount = get_lp_token_to_funds(new_lp.d_ratio);
+
+    lp_withdrawal = new_lp.d_lp_amount - old_lp.d_lp_amount;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->pool_add_liquidity_transaction(m_current_subaddress_account, old_lp, new_lp, ptx_vector);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for adding pool liquidity");
+      return true;
+    }
+
+    std::stringstream prompt;
+    prompt << boost::format(tr("This transaction is adding liquidity to pool %s "
+                               "with lp token %s and current exchange rate %d."))
+        % tokens_to_lpname(new_lp.d_token1, new_lp.d_token2)
+        % token_id_to_name(new_lp.d_lptoken)
+        % (((double)new_lp.d_ratio.d_amount1) / new_lp.d_ratio.d_amount2) << std::endl;
+    prompt << boost::format(tr("Currently liquidity pool has %s %s and %s %s."))
+        % print_money(old_lp.d_ratio.d_amount1) % token_id_to_name(old_lp.d_token1)
+        % print_money(old_lp.d_ratio.d_amount2) % token_id_to_name(old_lp.d_token2) << std::endl;
+    prompt << boost::format(tr("Sending from the wallet to the pool %s %s and %s %s."))
+        % print_money(deposit1) % token_id_to_name(old_lp.d_token1)
+        % print_money(deposit2) % token_id_to_name(old_lp.d_token2) << std::endl;
+    prompt << boost::format(tr("Receiving to the wallet %s %s."))
+        % print_money(lp_withdrawal)
+        % token_id_to_name(new_lp.d_lptoken) << std::endl;
+    prompt << boost::format(tr("You will pay %s CUT for this operation"))
+        % print_money(config::POOL_DEPOSIT_AMOUNT) << std::endl;
+    prompt << boost::format(tr("and total fee %s CUT."))
+        % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for adding pool liquidity.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::take_liquidity(const std::vector<std::string> &args)
+{
+  // take_liquidity <lp_name> <lp token_name=N>
+
+  using namespace cryptonote;
+
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_name'"))).str();
+    return true;
+  }
+
+  std::string lp_name;
+  {
+    auto res = parse_lp_name(local_args[0], lp_name);
+
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  std::string lpt_name;
+  Amount lpt_amount;
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp token_name'"))).str();
+      return true;
+    }
+
+    auto res = parse_lp_token_amount(local_args[0], lpt_name, lpt_amount);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  LiquidityPool old_lp{}, new_lp{};
+  Amount withdrawal1, withdrawal2, lp_deposit;
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = lp_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get liquidity pools: ") << err;
+      return true;
+    }
+
+    if (!is_valid_pool(res.liquidity_pool)) {
+      fail_msg_writer() << tr("Could not find the specified liquidity pool");
+      return true;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    if (lp.lp_token != token_name_to_id(lpt_name)) {
+      fail_msg_writer() << tr("Invalid LP token (") << token_id_to_name(lp.lp_token)
+                        << " token is expected)"<< err;
+      return true;
+    }
+
+    old_lp.d_token1    = lp.token1;
+    old_lp.d_token2    = lp.token2;
+    old_lp.d_ratio     = { lp.amount1, lp.amount2 };
+    old_lp.d_lptoken   = lp.lp_token;
+    old_lp.d_lp_amount = lp.lp_amount;
+
+    if (old_lp.d_lp_amount < lpt_amount) {
+      fail_msg_writer() << (boost::format(tr("LP token amount exceeds liquidity pool issued amount"))).str();
+      return true;
+    }
+
+    const AmountRatio new_funds = get_funds_to_lp_token(old_lp.d_lp_amount,
+                                                        old_lp.d_lp_amount - lpt_amount,
+                                                        old_lp.d_ratio);
+    withdrawal1 = old_lp.d_ratio.d_amount1 - new_funds.d_amount1;
+    withdrawal2 = old_lp.d_ratio.d_amount2 - new_funds.d_amount2;
+
+    new_lp.d_token1    = lp.token1;
+    new_lp.d_token2    = lp.token2;
+    new_lp.d_ratio     = { new_funds.d_amount1, new_funds.d_amount2 };
+    new_lp.d_lptoken   = lp.lp_token;
+    new_lp.d_lp_amount = old_lp.d_lp_amount - lpt_amount;
+
+    lp_deposit = lpt_amount;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->pool_take_liquidity_transaction(m_current_subaddress_account, old_lp, new_lp, ptx_vector);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for taking pool liquidity");
+      return true;
+    }
+
+    std::stringstream prompt;
+    prompt << boost::format(tr("This transaction is taking liquidity from the pool  %s "
+                               "with lp token %s and initial exchange rate %d."))
+        % tokens_to_lpname(new_lp.d_token1, new_lp.d_token2)
+        % token_id_to_name(new_lp.d_lptoken)
+        % (((double)old_lp.d_ratio.d_amount1) / old_lp.d_ratio.d_amount2) << std::endl;
+    prompt << boost::format(tr("Currently liquidity pool has %s %s and %s %s."))
+              % print_money(old_lp.d_ratio.d_amount1) % token_id_to_name(old_lp.d_token1)
+              % print_money(old_lp.d_ratio.d_amount2) % token_id_to_name(old_lp.d_token2) << std::endl;
+    prompt << boost::format(tr("Sending from the pool to the wallet %s %s and %s %s."))
+              % print_money(withdrawal1) % token_id_to_name(old_lp.d_token1)
+              % print_money(withdrawal2) % token_id_to_name(old_lp.d_token2) << std::endl;
+    prompt << boost::format(tr("Sending to the pool %s %s."))
+              % print_money(lp_deposit)
+              % token_id_to_name(new_lp.d_lptoken) << std::endl;
+    prompt << boost::format(tr("You will pay %s CUT for this operation"))
+              % print_money(config::POOL_WITHDRAWAL_AMOUNT) << std::endl;
+    prompt << boost::format(tr("and total fee %s CUT."))
+              % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for taking pool liquidity.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::show_liquidity_pools(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "show_liquidity_pools [name] [exact_match]"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::string name{""};
+  bool exact_match = false;
+
+  if (args.size() != 0) {
+    name = args[0];
+    if (args.size() > 1) {
+      if (args[1] == "exact_match") {
+        exact_match = true;
+      }
+      else {
+        fail_msg_writer() << tr("usage: show_liquidity_pools [name] [exact_match]");
+        return true;
+      }
+    }
+  }
+
+  COMMAND_RPC_GET_LIQUIDITY_POOLS::request req{};
+  req.name = name;
+  req.exact_match = exact_match;
+  COMMAND_RPC_GET_LIQUIDITY_POOLS::response res{};
+  bool r = m_wallet->invoke_http_bin("/get_liquidity_pools.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    fail_msg_writer() << tr("failed to get liquidity pools: ") << err;
+    return true;
+  }
+
+  COMMAND_RPC_GET_TOKENS::request tokens_req{};
+  COMMAND_RPC_GET_TOKENS::response tokens_res{};
+  r = m_wallet->invoke_http_bin("/get_tokens.bin", tokens_req, tokens_res);
+  err = interpret_rpc_response(r, tokens_res.status);
+  if (!err.empty()) {
+    fail_msg_writer() << tr("failed to get tokens: ") << err;
+    return true;
+  }
+  std::unordered_map<TokenId, TokenType> token_types;
+  for (auto& token : tokens_res.tokens) {
+    token_types[token.token_id] = TokenType{token.type};
+  }
+  token_types[CUTCOIN_ID] = TokenType{TokenType::public_supply};
+
+  message_writer()
+    << std::setw(30) << tr("Name")
+    << std::setw(15) << tr("LP token")
+    << std::setw(15) << tr("Rate")
+    << std::setw(20) << tr("Token 1")
+    << std::setw(20) << tr("Token 2") << std::endl
+    << tr("-----------------------------------------------------------------------------------------------------");
+
+  std::map<std::string, const pool_summary*> sorted_pools;
+  for (const auto& lp_summary: res.liquidity_pools) {
+    sorted_pools[tokens_to_lpname(lp_summary.token1, lp_summary.token2)] = &lp_summary;
+  }
+
+  for (const auto &pair: sorted_pools) {
+    const std::string& lp_name = pair.first;
+    const pool_summary& lp_summary = *pair.second;
+    bool is_public_lp = token_types[lp_summary.token1].is_public()
+        && token_types[lp_summary.token2].is_public();
+    message_writer(is_public_lp ? console_color_default : console_color_yellow)
+      << std::setw(30) << lp_name
+      << std::setw(15) << token_id_to_name(lp_summary.lp_token)
+      << std::setw(15) << (lp_summary.amount1 == 0 ?
+          "undefined" : std::to_string(((double)lp_summary.amount1) / lp_summary.amount2))
+      << std::setw(20) << print_money(lp_summary.amount1)
+      << std::setw(20) << print_money(lp_summary.amount2);
+  }
+
+  message_writer(console_color_yellow)
+    << "\nNote: Highlighted pools contain tokens with mintalbe or hidden supply";
+
+  return true;
+}
+
+bool simple_wallet::buy(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "buy <token_pair_name> <N> [slippage]"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_name'"))).str();
+    return true;
+  }
+
+  std::string lp_name;
+  {
+    auto res = parse_lp_name(local_args[0], lp_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  Amount amount;
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: amount to buy"))).str();
+      return true;
+    }
+
+    if (parse_amount(amount, local_args[0]) && 0 != amount) {
+      local_args.erase(local_args.begin());
+    }
+    else {
+      fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
+                        << ", " << tr("expected number from 1 to ")
+                        << print_money(std::numeric_limits<uint64_t>::max());
+      return true;
+    }
+  }
+
+  double slippage = 0.0;
+  {
+    if (!local_args.empty()) {
+      auto res = parse_slippage(local_args[0], slippage);
+      if (!res) {
+        fail_msg_writer() << res;
+        return true;
+      }
+
+      local_args.erase(local_args.begin());
+    }
+  }
+
+  int n_tries = 5;
+  if (!local_args.empty()) {
+    local_args.erase(local_args.begin());
+
+    std::string::size_type stop_index;
+    n_tries = std::stoul(local_args[0], &stop_index);
+    if (stop_index == 0) {
+      fail_msg_writer() << (boost::format(tr("Incorrect parameter: number of tries."))).str();
+      return true;
+    }
+  }
+
+  LiquidityPool lp_summary{};
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = lp_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get liquidity pools: ") << err;
+      return true;
+    }
+
+    if (!is_valid_pool(res.liquidity_pool)) {
+      fail_msg_writer() << tr("Could not find the specified liquidity pool");
+      return true;
+    }
+
+    if (amount > res.liquidity_pool.amount1 && slippage == 0.0) {
+      fail_msg_writer() << tr("Liquidity pool doesn't have enough tokens");
+      return true;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    lp_summary.d_token1    = lp.token1;
+    lp_summary.d_token2    = lp.token2;
+    lp_summary.d_ratio     = { lp.amount1, lp.amount2 };
+    lp_summary.d_lptoken   = lp.lp_token;
+    lp_summary.d_lp_amount = lp.lp_amount;
+  }
+
+  CompositeTransfer ct{};
+  ct.d_side          = cryptonote::ExchangeSide::buy;
+  ct.d_token1        = lp_summary.d_token1;
+  ct.d_token2        = lp_summary.d_token2;
+  ct.d_amount        = amount;
+  ct.d_pool_interest = config::DEX_FEE_PER_MILLE;
+
+  Amount deposit = derive_buy_amount_from_lp_pair(lp_summary.d_ratio, ct.d_amount, ct.d_pool_interest);
+  const AmountRatio buy_ratio = {ct.d_amount, deposit};
+  if (slippage != 0.0) {
+    if (m_wallet->is_slippage_transfer_in_progress()) {
+      fail_msg_writer() << tr("Exchange operation with slippage has already started");
+      message_writer() << tr("Wait until the previous operation completes.");
+      return true;
+    }
+
+    message_writer() << boost::format(tr("You are going to buy %d %s with exchange rate %f and slippage %.2f%%."))
+                          % print_money(amount)
+                          % token_id_to_name(lp_summary.d_token1)
+                          % (((double)buy_ratio.d_amount1) / buy_ratio.d_amount2)
+                          % slippage;
+    std::string accepted = input_line(tr("Is this okay?  (Y/Yes/N/No): "));
+    if (std::cin.eof() || !command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    if (!decrypt_keys()) {
+      return true;
+    }
+
+    m_wallet->slippage_transfer(m_current_subaddress_account,
+                                ct,
+                                std::bind(&simple_wallet::finished_slippage_transfer, this, std::placeholders::_1),
+                                std::bind(&simple_wallet::exchange_round_slippage_transfer, this, std::placeholders::_1),
+                                n_tries,
+                                slippage / 100.0,
+                                0);
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    ExchangeTransfer summary;
+    m_wallet->exchange_transfer(m_current_subaddress_account, ct, ptx_vector, summary);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for buying");
+      return true;
+    }
+
+    std::stringstream prompt;
+    prompt << boost::format(tr("By accepting this transaction you are buying %s "
+                               "with exchange rate %f."))
+        % token_id_to_name(lp_summary.d_token1)
+        % (((double)buy_ratio.d_amount1) / buy_ratio.d_amount2) << std::endl;
+    prompt << boost::format(tr("You are sending to the pool %s %s"))
+        % print_money(deposit) % token_id_to_name(lp_summary.d_token2) << std::endl;
+    prompt << boost::format(tr("and receiving to the wallet %s %s"))
+        % print_money(ct.d_amount) % token_id_to_name(lp_summary.d_token1) << std::endl;
+    prompt << boost::format(tr("price impact %.2f%%"))
+        % price_impact(lp_summary.d_ratio, buy_ratio) << std::endl;
+    prompt << boost::format(tr("pool interest %s %s."))
+        % print_money(derive_buy_amount_from_lp_pair(lp_summary.d_ratio, ct.d_amount, ct.d_pool_interest) -
+                      derive_buy_amount_from_lp_pair(lp_summary.d_ratio, ct.d_amount, 0))
+        % token_id_to_name(lp_summary.d_token2) << std::endl;
+    prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
+              % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    if (fabs(price_impact(lp_summary.d_ratio, buy_ratio)) >= config::SIGNIFICANT_PRICE_IMPACT) {
+      std::stringstream impact_prompt;
+      impact_prompt << boost::format(tr("You are buying %s with exchange rate %f."))
+                % token_id_to_name(lp_summary.d_token1)
+                % (((double)buy_ratio.d_amount1) / buy_ratio.d_amount2) << std::endl;
+      impact_prompt << boost::format(tr("It differs much from the current pool exchange rate: %f."))
+                % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+      message_writer(console_color_yellow) << impact_prompt.str();
+
+      std::string accepted_price_impact = input_line("Do you want to continue?  (Y/Yes/N/No): ");
+      if (std::cin.eof()) {
+        return true;
+      }
+      if (!command_line::is_yes(accepted_price_impact)) {
+        fail_msg_writer() << tr("transaction cancelled.");
+        return true;
+      }
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for buying.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::sell(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "sell <token_pair_name> <N> [slippage]"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'lp_name'"))).str();
+    return true;
+  }
+
+  std::string lp_name;
+  {
+    auto res = parse_lp_name(local_args[0], lp_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  }
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: amount to sell"))).str();
+    return true;
+  }
+
+  Amount amount;
+  if (parse_amount(amount, local_args[0]) && 0 != amount) {
+    local_args.erase(local_args.begin());
+  }
+  else {
+    fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
+                      << ", " << tr("expected number from 1 to ")
+                      << print_money(std::numeric_limits<uint64_t>::max());
+    return true;
+  }
+
+  double slippage = 0.0;
+  {
+    if (!local_args.empty()) {
+      auto res = parse_slippage(local_args[0], slippage);
+      if (!res) {
+        fail_msg_writer() << res;
+        return true;
+      }
+
+      local_args.erase(local_args.begin());
+    }
+  }
+
+  int n_tries = 5;
+  if (!local_args.empty()) {
+    local_args.erase(local_args.begin());
+
+    std::string::size_type stop_index;
+    n_tries = std::stoul(local_args[0], &stop_index);
+    if (stop_index == 0) {
+      fail_msg_writer() << (boost::format(tr("Incorrect parameter: number of tries."))).str();
+      return true;
+    }
+  }
+
+  LiquidityPool lp_summary{};
+  {
+    COMMAND_RPC_GET_LIQUIDITY_POOL::request req{};
+    req.name = lp_name;
+    COMMAND_RPC_GET_LIQUIDITY_POOL::response res{};
+    bool r = m_wallet->invoke_http_bin("/get_liquidity_pool.bin", req, res);
+    std::string err = interpret_rpc_response(r, res.status);
+    if (!err.empty()) {
+      fail_msg_writer() << tr("failed to get liquidity pools: ") << err;
+      return true;
+    }
+
+    if (!is_valid_pool(res.liquidity_pool)) {
+      fail_msg_writer() << tr("Could not find the specified liquidity pool");
+      return true;
+    }
+
+    const auto &lp = res.liquidity_pool;
+    lp_summary.d_token1    = lp.token1;
+    lp_summary.d_token2    = lp.token2;
+    lp_summary.d_ratio     = { lp.amount1, lp.amount2 };
+    lp_summary.d_lptoken   = lp.lp_token;
+    lp_summary.d_lp_amount = lp.lp_amount;
+  }
+
+  CompositeTransfer et{};
+  et.d_side          = ExchangeSide::sell;
+  et.d_token1        = lp_summary.d_token1;
+  et.d_token2        = lp_summary.d_token2;
+  et.d_amount        = amount;
+  et.d_pool_interest = config::DEX_FEE_PER_MILLE;
+
+  Amount withdrawal = derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest);
+  const AmountRatio sell_ratio = {et.d_amount, withdrawal};
+
+  if (slippage != 0.0) {
+    if (m_wallet->is_slippage_transfer_in_progress()) {
+      fail_msg_writer() << tr("Exchange operation with slippage has already started");
+      message_writer() << tr("Wait until the previous operation completes.");
+      return true;
+    }
+
+    message_writer() << boost::format(tr("You are going to sell %d %s with exchange rate %f and slippage %.2f%%."))
+                          % print_money(amount)
+                          % token_id_to_name(lp_summary.d_token1)
+                          % (((double)sell_ratio.d_amount1) / sell_ratio.d_amount2)
+                          % slippage;
+    std::string accepted = input_line(tr("Is this okay?  (Y/Yes/N/No): "));
+    if (std::cin.eof() || !command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    if (!decrypt_keys()) {
+      return true;
+    }
+
+    m_wallet->slippage_transfer(m_current_subaddress_account,
+                                et,
+                                std::bind(&simple_wallet::finished_slippage_transfer, this, std::placeholders::_1),
+                                std::bind(&simple_wallet::exchange_round_slippage_transfer, this, std::placeholders::_1),
+                                n_tries,
+                                slippage / 100.0,
+                                0);
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    ExchangeTransfer summary;
+    m_wallet->exchange_transfer(m_current_subaddress_account, et, ptx_vector, summary);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for selling");
+      return true;
+    }
+
+    std::stringstream prompt;
+    prompt << boost::format(tr("By accepting this transaction you are selling %s "
+                               "with exchange rate %f."))
+              % token_id_to_name(lp_summary.d_token1)
+              % (((double)sell_ratio.d_amount1) / sell_ratio.d_amount2) << std::endl;
+    prompt << boost::format(tr("You are receiving to the wallet %s %s"))
+              % print_money(withdrawal) % token_id_to_name(lp_summary.d_token2) << std::endl;
+    prompt << boost::format(tr("and sending to the pool %s %s"))
+              % print_money(et.d_amount) % token_id_to_name(lp_summary.d_token1) << std::endl;
+    prompt << boost::format(tr("price impact %.2f%%"))
+              % price_impact(lp_summary.d_ratio, sell_ratio) << std::endl;
+    prompt << boost::format(tr("pool interest %s %s."))
+              % print_money(derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, 0) -
+                            derive_sell_amount_from_lp_pair(lp_summary.d_ratio, et.d_amount, et.d_pool_interest))
+              % token_id_to_name(lp_summary.d_token2) << std::endl;
+    prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
+              % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    if (fabs(price_impact(lp_summary.d_ratio, sell_ratio)) >= config::SIGNIFICANT_PRICE_IMPACT) {
+      std::stringstream impact_prompt;
+      impact_prompt << boost::format(tr("You are selling %s with exchange rate %f."))
+                % token_id_to_name(lp_summary.d_token1)
+                % (((double)sell_ratio.d_amount1) / sell_ratio.d_amount2) << std::endl;
+      impact_prompt << boost::format(tr("It differs much from the current pool exchange rate: %f."))
+                % (((double)lp_summary.d_ratio.d_amount1) / lp_summary.d_ratio.d_amount2) << std::endl;
+      message_writer(console_color_yellow) << impact_prompt.str();
+
+      std::string accepted_price_impact = input_line("Do you want to continue?  (Y/Yes/N/No): ");
+      if (std::cin.eof()) {
+        return true;
+      }
+      if (!command_line::is_yes(accepted_price_impact)) {
+        fail_msg_writer() << tr("transaction cancelled.");
+        return true;
+      }
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for selling.");
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::cross_exchange(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "cross_exchange <token_name1> <token_name2> <N>"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name1'"))).str();
+    return true;
+  }
+  std::string token_name1;
+  {
+    auto res = parse_token_name(local_args[0], token_name1, true);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name2'"))).str();
+    return true;
+  }
+  std::string token_name2;
+  {
+    auto res = parse_token_name(local_args[0], token_name2, true);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: amount to exchange"))).str();
+    return true;
+  }
+
+  Amount amount;
+  bool ok = cryptonote::parse_amount(amount, local_args[0]);
+  if(!ok || 0 == amount) {
+    fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
+                      << ", " << tr("expected number from 1 to ")
+                      << print_money(std::numeric_limits<uint64_t>::max());
+    return true;
+  }
+
+  TokenId token1 = token_name_to_id(token_name1);
+  TokenId token2 = token_name_to_id(token_name2);
+
+  CompositeTransfer et{};
+  et.d_side          = ExchangeSide::cross;
+  et.d_token1        = token1;
+  et.d_token2        = token2;
+  et.d_amount        = amount;
+  et.d_pool_interest = config::DEX_FEE_PER_MILLE;
+
+  SCOPED_WALLET_UNLOCK();
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    ExchangeTransfer summary;
+    m_wallet->cross_exchange_transfer(m_current_subaddress_account, et, ptx_vector, summary);
+
+    if (ptx_vector.size() != 1) {
+      fail_msg_writer() << tr("Could not create transaction for buying");
+      return true;
+    }
+
+    std::stringstream prompt;
+    prompt << boost::format(tr("By accepting this transaction you are buying %s "
+                               "with exchange rate %d."))
+              % token_id_to_name(token1)
+              % (((double)summary.d_old_ratio.d_amount1) / summary.d_old_ratio.d_amount2) << std::endl;
+    Amount sum_deposit = summary.d_new_ratio.d_amount2 - summary.d_old_ratio.d_amount2;
+    prompt << boost::format(tr("You are sending to the pool %s %s"))
+             % print_money(sum_deposit) % token_id_to_name(summary.d_token2) << std::endl;
+    Amount sum_withdraw = summary.d_old_ratio.d_amount1 - summary.d_new_ratio.d_amount1;
+    prompt << boost::format(tr("and receiving to the wallet %s %s"))
+              % print_money(sum_withdraw) % token_id_to_name(summary.d_token1) << std::endl;
+
+    prompt << std::endl
+           << "Transfers:" << std::endl
+           << "----------" << std::endl;
+    for (auto& transfer : et.d_transfers) {
+      Amount deposit, withdraw;
+      if (transfer.d_new_ratio.d_amount2 > transfer.d_old_ratio.d_amount2) {
+        deposit = transfer.d_new_ratio.d_amount2 - transfer.d_old_ratio.d_amount2;
+        withdraw = transfer.d_old_ratio.d_amount1 - transfer.d_new_ratio.d_amount1;
+        prompt << boost::format(tr("Pool %s: sending %s %s receiving %s %s"))
+                  % tokens_to_lpname(transfer.d_token1, transfer.d_token2)
+                  % print_money(deposit) % token_id_to_name(transfer.d_token2)
+                  % print_money(withdraw) % token_id_to_name(transfer.d_token1) << std::endl;
+      }
+      else {
+        withdraw = transfer.d_old_ratio.d_amount2 - transfer.d_new_ratio.d_amount2;
+        deposit = transfer.d_new_ratio.d_amount1 - transfer.d_old_ratio.d_amount1;
+        prompt << boost::format(tr("Pool %s: sending %s %s receiving %s %s"))
+                  % tokens_to_lpname(transfer.d_token1, transfer.d_token2)
+                  % print_money(deposit) % token_id_to_name(transfer.d_token1)
+                  % print_money(withdraw) % token_id_to_name(transfer.d_token2) << std::endl;
+      }
+
+
+    }
+    prompt << std::endl;
+
+    const auto& last_et = et.d_transfers.back();
+    Amount last_et_amount = last_et.d_old_ratio.d_amount1 - last_et.d_new_ratio.d_amount1;
+//    prompt << boost::format(tr("pool interest %s %s."))
+//              % print_money(derive_buy_amount_from_lp_pair(last_et.d_old_ratio, last_et_amount, et.d_pool_interest) -
+//                            derive_buy_amount_from_lp_pair(last_et.d_old_ratio, last_et_amount, 0))
+//              % token_id_to_name(summary.d_token2) << std::endl;
+    prompt << boost::format(tr("You will pay total fee %s CUT for this operation."))
+              % print_money(ptx_vector[0].fee) << std::endl;
+    prompt << std::endl << tr("Is this okay?  (Y/Yes/N/No): ");
+
+    std::string accepted = input_line(prompt.str());
+    if (std::cin.eof()) {
+      return true;
+    }
+    if (!command_line::is_yes(accepted)) {
+      fail_msg_writer() << tr("transaction cancelled.");
+      return true;
+    }
+
+    commit_or_save(ptx_vector, m_do_not_relay);
+
+    success_msg_writer(true) << tr("Successfully created transaction for buying.");
+  }
+  catch (const tools::error::no_way_to_exchange&) {
+    fail_msg_writer() << boost::format(tr("No way to exchange %s for %s")) % token_name1 % token_name2;
+  } catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  return true;
+}
+
+bool simple_wallet::stop_slippage_exchange(const std::vector<std::string> &args_)
+{
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  if (!m_wallet->is_slippage_transfer_in_progress()) {
+    message_writer() << "There is no buy/sell with slippage in progress";
+    return true;
+  }
+
+  message_writer() << tr("Current buy/sell with slippage operation is going to be stopped.");
+  message_writer(console_color_yellow)
+    << tr("Note: The active transaction is not going to be cancelled.");
+
+  std::string accepted = input_line(tr("Is this okay?  (Y/Yes/N/No): "));
+  if (std::cin.eof()) {
+    return true;
+  }
+  if (!command_line::is_yes(accepted)) {
+    fail_msg_writer() << tr("cancelled.");
+    return true;
+  }
+
+  m_wallet->stop_slippage_exchange();
+
+  if (!m_plant->is_mining()) {
+    encrypt_keys();
+  }
+
+  return true;
+}
+
+bool simple_wallet::exchange_rate(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "exchange_rate <token_to_sell> <token_to_buy> <amount>"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  std::string token1;
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_to_sell'"))).str();
+      return true;
+    }
+
+    auto res = parse_token_name(local_args[0], token1);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  }
+
+  std::string token2;
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_to_buy'"))).str();
+      return true;
+    }
+
+    auto res = parse_token_name(local_args[0], token2);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  }
+
+  if (token1 == token2) {
+    success_msg_writer(true) << "If you need to exchange " << token1 << " to itself you can do nothing";
+    return true;
+  }
+
+  Amount amount{0};
+  if (!local_args.empty()) {
+    bool ok = parse_amount(amount, local_args[0]);
+    if(!ok || 0 == amount) {
+      fail_msg_writer() << tr("amount is wrong: ") << local_args[0]
+                        << ", " << tr("expected number from 1 to ") << print_money(std::numeric_limits<uint64_t>::max());
+      return true;
+    }
+  }
+
+  std::vector<TokenId> hops;
+  double               final_rate;
+
+  try {
+    m_wallet->exchange_rate(hops, final_rate, token_name_to_id(token1), token_name_to_id(token2), amount);
+  }
+  catch (const std::exception &e) {
+    handle_transfer_exception(std::current_exception(), m_wallet->is_trusted_daemon());
+  } catch (...) {
+    LOG_ERROR("Unknown error");
+    fail_msg_writer() << tr("Unknown error");
+  }
+
+  if (hops.empty()) {
+    success_msg_writer(true) << tr("No way to exchange ") << token1 << " to " << token2;
+    return true;
+  }
+
+  if (hops.size() < 2) {
+    fail_msg_writer() << tr("Unknown error");
+    return true;
+  }
+
+  std::stringstream s;
+  for (size_t i = 0; i < hops.size() - 1; ++i) {
+    s << tokens_to_lpname(hops[i], hops[i + 1]);
+    if (i + 1 < hops.size() - 1) {
+      s << " --> ";
+    }
+  }
+
+  s << std::endl;
+  s << "Final rate: " << final_rate;
+
+  if (amount != 0) {
+    s << std::endl;
+    s << "Final amount: " << print_money(amount * final_rate);
+  }
+  success_msg_writer(true) << s.str();
+
+  return true;
+}
+
+void simple_wallet::finished_slippage_transfer(const tools::ExchangeStatus &status)
+{
+  if (!status.completed) {
+    fail_msg_writer() << tr("Exchange tx: internal error");
+  }
+
+  std::ostringstream s;
+  s << status.tx_hash;
+  auto tx_hash_str = s.str();
+
+  if (status.success) {
+    success_msg_writer(true)
+      << (boost::format(tr("Successfully submitted exchange tx %s")) % tx_hash_str) << std::endl
+      << (boost::format(tr("exchange rate: %f")) % status.ratio) << std::endl
+      << (boost::format(tr("slippage: %.2f%%")) % (status.slippage * 100.0)) << std::endl
+      << (boost::format(tr("in %d rounds")) % status.n_rounds);
+  }
+  else {
+    fail_msg_writer() << status.message
+                      << (status.tx_hash == crypto::null_hash
+                           ? "" : (boost::format(tr("\nExchange tx %s")) % tx_hash_str).str());
+  }
+
+  if (!m_plant->is_mining()) {
+    encrypt_keys();
+  }
+}
+
+void simple_wallet::exchange_round_slippage_transfer(const tools::ExchangeStatus &status)
+{
+  std::ostringstream s;
+  s << status.tx_hash;
+  auto tx_hash_str = s.str();
+
+  message_writer() << status.message << std::endl
+    << (boost::format(tr("Exchange tx: %s")) % tx_hash_str);
+}
+
+bool simple_wallet::mint_token_supply(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  //  "mint_token_supply <token_name> <new_token_supply> [token_secret_key]"
+  if (!try_connect_to_daemon()) {
+    message_writer() << "No connection to the daemon";
+    return true;
+  }
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  std::vector<std::string> local_args = args;
+  TokenSummary token_summary{};
+
+  if (local_args.empty()) {
+    fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
+    return true;
+  }
+
+  std::string token_name;
+  {
+    auto res = parse_token_name(local_args[0], token_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  }
+
+  token_summary.d_token_id = token_name_to_id(token_name);
+
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'new_token_supply'"))).str();
+      return true;
+    }
+    auto res = parse_token_supply(local_args[0], token_summary.d_token_supply);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  COMMAND_RPC_GET_TOKENS::request req{};
+  req.prefix = token_name;
+  req.exact_match = true;
+  COMMAND_RPC_GET_TOKENS::response res{};
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    fail_msg_writer() << tr("failed to get tokens: ") << err;
+    return true;
+  }
+
+  Amount new_token_supply = 0;
+  if (res.tokens.empty()) {
+    fail_msg_writer() << (boost::format(tr("Could not find a token with the specified name. "
+                                           "If you want to create a token use 'create_token' command"))).str();
+    return true;
+  }
+  else {
+    const auto &ts = res.tokens[0];
+    if (!TokenType::is_mintable(ts.type)) {
+      fail_msg_writer() << (boost::format(tr("Token must have 'mintable' token type"))).str();
+      return true;
+    }
+    if (token_summary.d_token_supply <= ts.token_supply) {
+      fail_msg_writer() << (boost::format(tr("New token supply must be greater than the current one"))).str();
+      return true;
+    }
+
+    new_token_supply = token_summary.d_token_supply - ts.token_supply;
+    token_summary.d_type = ts.type;
+    token_summary.d_unit = ts.unit;
+  }
+
+  if (!local_args.empty()) {
+    epee::wipeable_string token_key_string = local_args[0];
+    if (!token_key_string.hex_to_pod(unwrap(unwrap(token_summary.d_skey)))) {
+      fail_msg_writer() << tr("Failed to parse token secret key");
+      return true;
+    }
+    local_args.erase(local_args.begin());
+  } else {
+    token_summary.d_skey = m_wallet->get_token_secret_key(token_summary.d_token_id);
+  }
+
+  std::string accepted = input_line((boost::format(tr(
+    "You request the minting of additional token supply for '%s' with %d units of new total supply. "
+    "If you proceed, %d cutcoins will be written off permanently from the current account. "
+    "Is this okay?  (Y/Yes/N/No): "))
+                                     % token_name
+                                     % token_summary.d_token_supply
+                                     % (config::TOKEN_GENESIS_AMOUNT / COIN)).str());
+  if (std::cin.eof()) {
+    return true;
+  }
+  if (!command_line::is_yes(accepted)) {
+    fail_msg_writer() << tr("Transaction cancelled.");
+    return true;
+  }
+
+  try {
+    tools::pending_tx_v ptx_vector{};
+    m_wallet->token_genesis_transaction(token_summary, ptx_vector, new_token_supply);
+
+    if (ptx_vector.empty()) {
+      fail_msg_writer() << tr("Could not create token minting transaction");
       return true;
     }
 
@@ -6423,10 +8337,11 @@ bool simple_wallet::create_token(const std::vector<std::string> &args)
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
-bool simple_wallet::get_tokens(const std::vector<std::string> &args)
+
+bool simple_wallet::show_tokens(const std::vector<std::string> &args)
 {
-  //  "get_tokens [<token_name_prefix>]"
+  using namespace cryptonote;
+  //  "show_tokens [<token_name_prefix>] [exact_match]"
   if (!try_connect_to_daemon()) {
     message_writer() << "No connection to the daemon";
     return true;
@@ -6438,46 +8353,126 @@ bool simple_wallet::get_tokens(const std::vector<std::string> &args)
   }
 
   std::string prefix;
+  bool exact_match = false;
 
   if (args.size() != 0) {
     prefix = args[0];
+    if (args.size() > 1) {
+      if (args[1] == "exact_match") exact_match = true;
+      else {
+        fail_msg_writer() << tr("usage: show_tokens [prefix] [exact_match]");
+        return true;
+      }
+    }
   }
   else {
     prefix = std::string("");
   }
 
-  std::string err;
+  std::vector<cryptonote::TokenSummary> tokens;
+  m_wallet->get_tokens(tokens, prefix, exact_match);
 
-  COMMAND_RPC_GET_TOKENS::request req = AUTO_VAL_INIT(req);
-  req.prefix = prefix;
-  COMMAND_RPC_GET_TOKENS::response res = AUTO_VAL_INIT(res);
-  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
-  err = interpret_rpc_response(r, res.status);
-  if (!err.empty())
-  {
-    fail_msg_writer() << tr("failed to get tokens: ") << err;
-    return false;
+  if (tokens.empty()) {
+    return true;
   }
 
-  message_writer() << boost::format("%15s %21s %21s %21s %13s")
-    % tr("Name") % tr("Token ID") % tr("Supply") % tr("Unit") % tr("Type");
+  ostringstream oss;
+  oss << std::setw(15) << tr("Name")
+      << std::setw(21) << tr("Token ID")
+      << std::setw(21) << tr("Supply")
+      << std::setw(21) << tr("Unit")
+      << std::setw(16) << tr("Type") << std::endl;
+  oss << tr("----------------------------------------------------------------------------------------------") << std::endl;
 
-  for (const auto &token_summary : res.tokens)
-  {
-    message_writer() << boost::format("%15s %21u %21d %21d %13s") % token_id_to_name(token_summary.token_id)
-      % token_summary.token_id % token_summary.token_supply % token_summary.unit
-      % (cryptonote::is_token_with_public_supply(static_cast<cryptonote::TokenType>(token_summary.type))
-      ? "public supply": "private supply");
+  for (const auto &token_summary: tokens) {
+    std::string token_type;
+    if (token_summary.d_type.is_public()) {
+      token_type = "public supply";
+    }
+    else if (token_summary.d_type.is_mintable()) {
+      token_type = "mintable";
+    }
+    else if (token_summary.d_type.is_lptoken()) {
+      token_type = "LP token";
+    }
+    else {
+      token_type = "private supply";
+    }
+    oss << std::setw(15) << token_id_to_name(token_summary.d_token_id)
+        << std::setw(21) << token_summary.d_token_id
+        << std::setw(21) << token_summary.d_token_supply
+        << std::setw(21) << token_summary.d_unit
+        << std::setw(16) << token_type << std::endl;
   }
+
+  success_msg_writer() << oss.str();
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
+bool simple_wallet::get_mintable_token_key(const std::vector<std::string> &args)
+{
+  using namespace cryptonote;
+
+  if (!m_wallet->use_fork_rules(HF_VERSION_DEX)) {
+    message_writer() << "This command is available after " << HF_VERSION_DEX << " fork";
+    return true;
+  }
+
+  std::vector<std::string> local_args = args;
+
+  std::string token_name;
+  {
+    if (local_args.empty()) {
+      fail_msg_writer() << (boost::format(tr("Missing mandatory parameter: 'token_name'"))).str();
+      return true;
+    }
+
+    auto res = parse_token_name(local_args[0], token_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
+
+    local_args.erase(local_args.begin());
+  }
+
+  SCOPED_WALLET_UNLOCK();
+
+  COMMAND_RPC_GET_TOKENS::request req{};
+  req.prefix = token_name;
+  req.exact_match = true;
+  COMMAND_RPC_GET_TOKENS::response res{};
+  bool r = m_wallet->invoke_http_bin("/get_tokens.bin", req, res);
+  std::string err = interpret_rpc_response(r, res.status);
+  if (!err.empty()) {
+    fail_msg_writer() << tr("failed to get tokens: ") << err;
+    return true;
+  }
+
+  if (res.tokens.empty()) {
+    fail_msg_writer() << (boost::format(tr("Token does not exist"))).str();
+    return true;
+  }
+
+  const auto &ts = res.tokens[0];
+  if (!TokenType::is_mintable(ts.type)) {
+    fail_msg_writer() << (boost::format(tr("Token must have 'mintable' token type"))).str();
+    return true;
+  }
+
+  crypto::secret_key sk = m_wallet->get_token_secret_key(token_name_to_id(token_name));
+
+  success_msg_writer(true) << tr("Token private key:  ") << sk;
+
+  return true;
+}
+
 bool simple_wallet::sweep_all(const std::vector<std::string> &args_)
 {
   return sweep_main(0, false, args_);
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::sweep_below(const std::vector<std::string> &args_)
 {
   uint64_t below = 0;
@@ -6493,7 +8488,7 @@ bool simple_wallet::sweep_below(const std::vector<std::string> &args_)
   }
   return sweep_main(below, false, std::vector<std::string>(++args_.begin(), args_.end()));
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::donate(const std::vector<std::string> &args_)
 {
   if(m_wallet->nettype() != cryptonote::MAINNET)
@@ -6531,7 +8526,7 @@ bool simple_wallet::donate(const std::vector<std::string> &args_)
   transfer(local_args);
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::accept_loaded_tx(const std::function<size_t()> get_num_txes, const std::function<const tools::tx_construction_data&(size_t)> &get_tx, const std::string &extra_message)
 {
   // gather info to ask the user
@@ -6580,8 +8575,8 @@ bool simple_wallet::accept_loaded_tx(const std::function<size_t()> get_num_txes,
     for (size_t d = 0; d < cd.splitted_dsts.size(); ++d)
     {
       const tx_destination_entry &entry = cd.splitted_dsts[d];
-      std::string address, standard_address = get_account_address_as_str(m_wallet->nettype(), entry.is_subaddress, entry.addr);
-      if (has_encrypted_payment_id && !entry.is_subaddress)
+      std::string address, standard_address = get_account_address_as_str(m_wallet->nettype(), entry.is_subaddress(), entry.addr);
+      if (has_encrypted_payment_id && !entry.is_subaddress())
       {
         address = get_account_integrated_address_as_str(m_wallet->nettype(), entry.addr, payment_id8);
         address += std::string(" (" + standard_address + " with encrypted payment id " + epee::string_tools::pod_to_hex(payment_id8) + ")");
@@ -6670,7 +8665,7 @@ bool simple_wallet::accept_loaded_tx(const std::function<size_t()> get_num_txes,
   std::string prompt_str = (boost::format(tr("Loaded %lu transactions, for %s, fee %s, %s, %s, with min ring size %lu, %s. %sIs this okay? (Y/Yes/N/No): ")) % (unsigned long)get_num_txes() % print_money(amount) % print_money(fee) % dest_string % change_string % (unsigned long)min_ring_size % payment_id_string % extra_message).str();
   return command_line::is_yes(input_line(prompt_str));
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::accept_loaded_tx(const tools::wallet2::unsigned_tx_set &txs)
 {
   std::string extra_message;
@@ -6678,7 +8673,7 @@ bool simple_wallet::accept_loaded_tx(const tools::wallet2::unsigned_tx_set &txs)
     extra_message = (boost::format("%u outputs to import. ") % (unsigned)txs.transfers.size()).str();
   return accept_loaded_tx([&txs](){return txs.txes.size();}, [&txs](size_t n)->const tools::tx_construction_data&{return txs.txes[n];}, extra_message);
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::accept_loaded_tx(const tools::wallet2::signed_tx_set &txs)
 {
   std::string extra_message;
@@ -6686,7 +8681,7 @@ bool simple_wallet::accept_loaded_tx(const tools::wallet2::signed_tx_set &txs)
     extra_message = (boost::format("%u key images to import. ") % (unsigned)txs.key_images.size()).str();
   return accept_loaded_tx([&txs](){return txs.ptx.size();}, [&txs](size_t n)->const tools::tx_construction_data&{return txs.ptx[n].construction_data;}, extra_message);
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::sign_transfer(const std::vector<std::string> &args_)
 {
   if (m_wallet->key_on_device())
@@ -6746,7 +8741,7 @@ bool simple_wallet::sign_transfer(const std::vector<std::string> &args_)
   }
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::submit_transfer(const std::vector<std::string> &args_)
 {
   if (m_wallet->key_on_device())
@@ -6779,7 +8774,7 @@ bool simple_wallet::submit_transfer(const std::vector<std::string> &args_)
 
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::get_tx_key(const std::vector<std::string> &args_)
 {
   std::vector<std::string> local_args = args_;
@@ -6816,7 +8811,7 @@ bool simple_wallet::get_tx_key(const std::vector<std::string> &args_)
     return true;
   }
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::set_tx_key(const std::vector<std::string> &args_)
 {
   std::vector<std::string> local_args = args_;
@@ -6874,7 +8869,7 @@ bool simple_wallet::set_tx_key(const std::vector<std::string> &args_)
   }
   return true;
 }
-//----------------------------------------------------------------------------------------------------
+
 bool simple_wallet::get_tx_proof(const std::vector<std::string> &args)
 {
   if (m_wallet->key_on_device())
@@ -7451,7 +9446,7 @@ bool simple_wallet::show_transfers(const std::vector<std::string> &args_)
       for (const auto &d: pd.m_dests) {
         if (!dests.str().empty())
           dests << ", ";
-        dests << get_account_address_as_str(m_wallet->nettype(), d.is_subaddress, d.addr)
+        dests << get_account_address_as_str(m_wallet->nettype(), d.is_subaddress(), d.addr)
               << ": " << cryptonote::token_id_to_name(d.token_id)
               << " "  << print_money(d.amount);
       }
@@ -7711,12 +9706,13 @@ bool simple_wallet::unspent_token_outputs(const std::vector<std::string> &args_)
   auto local_args = args_;
 
   std::string token_name;
-  if(parse_token_name(local_args[0], token_name)) {
+  {
+    auto res = parse_token_name(local_args[0], token_name);
+    if (!res) {
+      fail_msg_writer() << res;
+      return true;
+    }
     local_args.erase(local_args.begin());
-  }
-  else {
-    fail_msg_writer() << tr("Parameter 'token_name' doesn't meet the requirements: 1-8 capital letters or digits");
-    return true;
   }
 
   TokenId token_id = token_name_to_id(token_name);
@@ -8090,7 +10086,7 @@ void simple_wallet::print_accounts()
 {
   const std::pair<std::map<std::string, std::string>, std::vector<std::string>>& account_tags = m_wallet->get_account_tags();
   size_t num_untagged_accounts = m_wallet->get_num_subaddress_accounts();
-  for (const std::pair<std::string, std::string>& p : account_tags.first)
+  for (const auto& p : account_tags.first)
   {
     const std::string& tag = p.first;
     print_accounts(tag);
@@ -8837,7 +10833,7 @@ bool simple_wallet::show_transfer(const std::vector<std::string> &args)
       for (const auto &d: pd.m_dests) {
         if (!dests.empty())
           dests += ", ";
-        dests +=  get_account_address_as_str(m_wallet->nettype(), d.is_subaddress, d.addr) + ": " + print_money(d.amount);
+        dests +=  get_account_address_as_str(m_wallet->nettype(), d.is_subaddress(), d.addr) + ": " + print_money(d.amount);
       }
       std::string payment_id = string_tools::pod_to_hex(i->second.m_payment_id);
       if (payment_id.substr(16).find_first_not_of('0') == std::string::npos)
@@ -8999,6 +10995,7 @@ int main(int argc, char* argv[])
   command_line::add_arg(desc_params, arg_create_address_file);
   command_line::add_arg(desc_params, arg_subaddress_lookahead);
   command_line::add_arg(desc_params, arg_use_english_language_names);
+  command_line::add_arg(desc_params, arg_no_tx_info);
 
   po::positional_options_description positional_options;
   positional_options.add(arg_command.name, -1);

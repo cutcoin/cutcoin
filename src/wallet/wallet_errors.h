@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -37,6 +37,7 @@
 #include <vector>
 
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/token.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
 #include "cryptonote_core/tx_source_entry.h"
 #include "rpc/core_rpc_server_commands_defs.h"
@@ -53,6 +54,7 @@ namespace tools
     //       wallet_internal_error
     //         unexpected_txin_type
     //         wallet_not_initialized
+    //         src_permutation_failed
     //       multisig_export_needed
     //       multisig_import_needed
     //       password_needed
@@ -85,6 +87,7 @@ namespace tools
     //         tx_sum_overflow
     //         tx_too_big
     //         zero_destination
+    //         no_way_to_exchange
     //       wallet_rpc_error *
     //         daemon_busy
     //         no_connection_to_daemon
@@ -123,14 +126,16 @@ namespace tools
       "failed to get blocks",
       "failed to get hashes",
       "failed to get out indices",
-      "failed to get random outs"
+      "failed to get random outs",
+      "failed to get tokens"
     };
     enum failed_rpc_request_message_indices
     {
       get_blocks_error_message_index,
       get_hashes_error_message_index,
       get_out_indices_error_message_index,
-      get_outs_error_message_index
+      get_outs_error_message_index,
+      get_tokens_error_message_index
     };
 
     template<typename Base, int msg_index>
@@ -192,6 +197,14 @@ namespace tools
     {
       explicit wallet_not_initialized(std::string&& loc)
         : wallet_internal_error(std::move(loc), "wallet is not initialized")
+      {
+      }
+    };
+    //----------------------------------------------------------------------------------------------------
+    struct src_permutation_failed : public wallet_internal_error
+    {
+      explicit src_permutation_failed(std::string&& loc)
+        : wallet_internal_error(std::move(loc), "Failed to work out sources permutation")
       {
       }
     };
@@ -387,6 +400,9 @@ namespace tools
     typedef failed_rpc_request<refresh_error, get_blocks_error_message_index> get_blocks_error;
     //----------------------------------------------------------------------------------------------------
     typedef failed_rpc_request<refresh_error, get_hashes_error_message_index> get_hashes_error;
+
+  typedef failed_rpc_request<refresh_error, get_tokens_error_message_index> get_tokens_error;
+
     //----------------------------------------------------------------------------------------------------
     typedef failed_rpc_request<refresh_error, get_out_indices_error_message_index> get_out_indices_error;
     //----------------------------------------------------------------------------------------------------
@@ -589,7 +605,7 @@ namespace tools
         ss << transfer_error::to_string() << ", ring size = " << (m_mixin_count + 1) << ", scanty_outs:";
         for (const auto& out: m_scanty_outs)
         {
-          ss << '\n' << cryptonote::print_money(out.first) << " - " << out.second;
+          ss << '\n' << cryptonote::token_id_to_name(out.first) << " - " << out.second;
         }
         return ss.str();
       }
@@ -645,11 +661,11 @@ namespace tools
         }
 
         ss << "\nDestinations:";
-        for (size_t i = 0; i < m_destinations.size(); ++i)
-        {
-          const cryptonote::tx_destination_entry& dst = m_destinations[i];
-          ss << "\n  " << i << ": " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress, dst.addr) << " " <<
-            cryptonote::print_money(dst.amount);
+        for (size_t i = 0; i < m_destinations.size(); ++i) {
+          const cryptonote::tx_destination_entry &dst = m_destinations[i];
+          ss << "\n  " << i
+             << ": " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress(), dst.addr)
+             << " " << cryptonote::print_money(dst.amount);
         }
 
         ss << "\nunlock_time: " << m_unlock_time;
@@ -721,7 +737,8 @@ namespace tools
           ", destinations:";
         for (const auto& dst : m_destinations)
         {
-          ss << '\n' << cryptonote::print_money(dst.amount) << " -> " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress, dst.addr);
+          ss << '\n' << cryptonote::print_money(dst.amount)
+             << " -> " << cryptonote::get_account_address_as_str(m_nettype, dst.is_subaddress(), dst.addr);
         }
         return ss.str();
       }
@@ -791,7 +808,7 @@ namespace tools
   //----------------------------------------------------------------------------------------------------
   struct pseudo_input_not_constructed: public transfer_error{
     explicit pseudo_input_not_constructed(std::string &&loc)
-    : transfer_error(std::move(loc), "fake input not constructed")
+    : transfer_error(std::move(loc), "fake input is not constructed")
     {
     }
   };
@@ -799,6 +816,13 @@ namespace tools
   struct wrong_subaddress_indicies: public transfer_error{
     explicit wrong_subaddress_indicies(std::string &&loc)
       :transfer_error(std::move(loc), "wrong subaddress indicies")
+    {
+    }
+  };
+
+  struct no_way_to_exchange: public transfer_error{
+    explicit no_way_to_exchange(std::string &&loc)
+      :transfer_error(std::move(loc), "no way to exchange tokens")
     {
     }
   };
@@ -876,6 +900,13 @@ namespace tools
       {
       }
     };
+  struct get_liquidity_pools : public wallet_rpc_error
+  {
+    explicit get_liquidity_pools(std::string &&loc, const std::string &request)
+      : wallet_rpc_error(std::move(loc), "failed to get liquidity pools", request)
+    {
+    }
+  };
     //----------------------------------------------------------------------------------------------------
     struct wallet_files_doesnt_correspond : public wallet_logic_error
     {

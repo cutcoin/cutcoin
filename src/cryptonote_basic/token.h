@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -30,11 +30,14 @@
 #ifndef CUTCOIN_TOKEN_H
 #define CUTCOIN_TOKEN_H
 
+#include <crypto/crypto.h>
+#include <cryptonote_basic/amount.h>
 #include <cryptonote_config.h>
 
 #include <cstdint>
 #include <limits>
 #include <string>
+#include <unordered_map>
 
 namespace cryptonote {
 
@@ -45,31 +48,136 @@ using TokenId = std::uint64_t;
 const TokenId CUTCOIN_ID = 0;
   // Cutcoin identifier.
 
-using TokenUnit = std::uint64_t;
-  // Token amount type.
+using TokenAmount = std::pair<TokenId, Amount>;
+  // Token amount with the specified id.
 
-const TokenUnit MIN_TOKEN_SUPPLY = 1;
+using TokenAmounts = std::unordered_map<TokenId, Amount>;
+  // Basic container for different token amounts.
+
+const Amount MIN_TOKEN_SUPPLY = COIN;
   // The minimal token supply.
 
-const TokenUnit MAX_TOKEN_SUPPLY = std::numeric_limits<uint64_t>::max() / COIN;
+const Amount MAX_TOKEN_SUPPLY = std::numeric_limits<uint64_t>::max() / COIN * COIN;
   // The maximal token supply.
 
 const std::size_t TOKEN_GENESIS_OUTPUTS = 11;
   // Number of the outputs for the token genesis tx.
   // The value should be equal to DEFAULT_MIX + 1.
 
-const std::string PROHIBITED_TOKEN_NAMES[] = {};
+const std::string CUTCOIN_NAME{"CUTCOIN"};
+
+const std::string PROHIBITED_TOKEN_NAMES[] = {CUTCOIN_NAME};
 const std::string PROHIBITED_TOKEN_NAMES_PREFIXES[] = {"CUT"};
 const char TOKEN_ALLOWED_CHARACTERS[] = {"ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890"};
 
-enum TokenType: std::uint64_t {
-  // Token type.
+const std::string LP_PREFIX = "lp";
+  // All liquidity pool tokens start with this prefix.
 
-  public_supply = 1,
-    // Represents a token with publicly visible supply
+class TokenType {
+  // Contains 'Token type' and functions-helpers.
 
-  hidden_supply = 2
-    // Represents a token with hidden supply.
+public:
+  enum Value : std::uint64_t {
+    // Token type.
+
+    undefined = 0,
+
+    public_supply = 1,
+      // Represents a token with publicly visible supply.
+
+    hidden_supply = 2,
+      // Represents a token with hidden supply.
+
+    mintable_supply = 4,
+      // Represents a token with mintable (unlimited) supply.
+
+    lptoken = 8
+      // Represents liquidity pool token.
+  };
+
+private:
+  Value d_value;
+
+public:
+  TokenType() = default;
+
+  TokenType(uint64_t value)
+  {
+    d_value = static_cast<Value>(value);
+  }
+
+  constexpr
+  bool is_undefined() const
+    // Return 'true' if the specified 'token_type' represents a token with undefined type.
+  {
+    return !static_cast<bool>(d_value);
+  }
+
+  constexpr
+  bool is_public() const
+    // Return 'true' if the specified 'token_type' represents a token with publicly visible supply.
+  {
+    return static_cast<bool>(d_value & TokenType::public_supply);
+  }
+
+  constexpr
+  bool is_hidden() const
+    // Return 'true' if the specified 'token_type' represents a token with hidden supply.
+  {
+    return static_cast<bool>(d_value & TokenType::hidden_supply);
+  }
+
+  constexpr
+  bool is_mintable() const
+    // Return 'true' if the specified 'token_type' represents a token with mintable supply.
+  {
+    return static_cast<bool>(d_value & TokenType::mintable_supply);
+  }
+
+  constexpr
+  bool is_lptoken() const
+    // Return 'true' if the specified 'token_type' represents a liquidity pool token.
+  {
+    return static_cast<bool>(d_value & TokenType::lptoken);
+  }
+
+  constexpr
+  static bool is_undefined(const TokenType &type)
+  {
+    return !static_cast<bool>(type.d_value);
+  }
+
+  constexpr
+  static bool is_public(const TokenType &type)
+  {
+    return static_cast<bool>(type.d_value & public_supply);
+  }
+
+  constexpr
+  static bool is_hidden(const TokenType &type)
+  {
+    return static_cast<bool>(type.d_value & hidden_supply);
+  }
+
+  constexpr
+  static bool is_mintable(const TokenType &type)
+  {
+    return static_cast<bool>(type.d_value & mintable_supply);
+  }
+
+  constexpr
+  static bool is_lptoken(const TokenType &type)
+  {
+    return static_cast<bool>(type.d_value & lptoken);
+  }
+
+  constexpr
+  std::uint64_t to_uint() const
+    // Convert to uint64_t.
+  {
+    return d_value;
+  }
+
 };
 
 struct TokenSummary {
@@ -79,17 +187,28 @@ struct TokenSummary {
 
   TokenType     d_type;          // token type
 
-  TokenUnit     d_token_supply;  // total token supply
+  Amount        d_token_supply;  // total token supply
 
-  std::uint64_t d_unit;          // token unit. Currently not used, all tokens have Cutcoin unit 1.0e10.
+  std::uint64_t d_unit;          // token unit. Currently not used, all tokens have Cutcoin unit 1.0e10
+
+  crypto::public_key d_pkey{crypto::NullKey::p()};  // token public key
+  crypto::secret_key d_skey{crypto::NullKey::s()};  // token secret key
+  crypto::signature  d_signature;     // creator's signature
 };
 
 TokenId token_name_to_id(const std::string &token_name);
-  // Copying first n bytes of string, n matches token_id_type size
+  // Copying first n bytes of string, n matches token_id_type size.
 
 std::string token_id_to_name(TokenId token_id);
+  // Convert integer 'token_id' to human-readable token name.
 
 bool validate_token_name(const std::string &token_name);
+  // Validate the specified 'token_name'.
+
+bool validate_lptoken_name(const std::string &token_name);
+  // Validate the specified 'token_name' of lp token.
+
+bool is_lptoken(TokenId token_id);
 
 constexpr
 bool is_cutcoin(const TokenId &token_id)
@@ -98,25 +217,28 @@ bool is_cutcoin(const TokenId &token_id)
   return token_id == CUTCOIN_ID;
 }
 
+bool is_cutcoin(const std::string &token_name);
+  // Return true if the specified 'token_name' is 'CUTCOIN_NAME'.
+
 constexpr
-bool is_valid_token_supply(TokenUnit supply)
+bool is_valid_token_coin_supply(Amount supply)
+  // Return 'true' if the specified coin 'supply' lays in the allowed range.
+{
+  return MIN_TOKEN_SUPPLY / COIN <= supply && supply <= MAX_TOKEN_SUPPLY / COIN;
+}
+
+constexpr
+bool is_valid_token_supply(Amount supply)
   // Return 'true' if the specified 'supply' lays in the allowed range.
 {
   return MIN_TOKEN_SUPPLY <= supply && supply <= MAX_TOKEN_SUPPLY;
 }
 
 constexpr
-bool is_token_with_public_supply(const TokenType &token_type)
-  // Return 'true' if the specified 'token_summary' represents a token with publicly visible supply.
+bool is_valid_lptoken_supply(Amount supply)
+// Return 'true' if the specified 'supply' == MAX_TOKEN_SUPPLY.
 {
-  return token_type == TokenType::public_supply;
-}
-
-constexpr
-bool is_token_with_hidden_supply(const TokenType &token_type)
-  // Return 'true' if the specified 'token_summary' represents a token with hidden supply.
-{
-  return token_type == TokenType::hidden_supply;
+  return supply * COIN == MAX_TOKEN_SUPPLY;
 }
 
 }  // namespace cryptonote

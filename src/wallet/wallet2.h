@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -42,8 +42,11 @@
 #include "cryptonote_basic/account_boost_serialization.h"
 #include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/dex.h"
+#include "cryptonote_basic/liquidity_pool.h"
 #include "cryptonote_basic/token.h"
 #include "cryptonote_core/cryptonote_tx_utils.h"
+#include "exchange_util.h"
 #include "multisig_tx_set.h"
 #include "include_base_utils.h"
 #include "net/http_client.h"
@@ -53,6 +56,7 @@
 #include "rpc/core_rpc_server_commands_defs.h"
 #include "storages/http_abstract_invoke.h"
 #include "transfer_details.h"
+#include "tx.h"
 #include "tx_creation_context.h"
 #include "tx_template.h"
 #include "unconfirmed_transfer_details.h"
@@ -70,7 +74,7 @@
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "wallet.wallet2"
 
-class Serialization_portability_wallet_Test;
+class Serialization_DISABLED_portability_wallet_Test;
 
 namespace tools
 {
@@ -179,7 +183,7 @@ namespace tools
   class wallet_keys_unlocker;
   class wallet2
   {
-    friend class ::Serialization_portability_wallet_Test;
+    friend class ::Serialization_DISABLED_portability_wallet_Test;
     friend class wallet_keys_unlocker;
   public:
     static constexpr const std::chrono::seconds rpc_timeout = std::chrono::minutes(3) + std::chrono::seconds(30);
@@ -290,8 +294,6 @@ namespace tools
       crypto::signature shared_secret_sig;
       crypto::signature key_image_sig;
     };
-
-    typedef std::tuple<uint64_t, crypto::public_key, rct::key> get_outs_entry;
 
     struct parsed_block
     {
@@ -548,10 +550,10 @@ namespace tools
     uint64_t unlocked_balance_all() const;
     template<typename T>
     void transfer_selected(const std::vector<cryptonote::tx_destination_entry>& dsts, const std::vector<size_t>& selected_transfers, size_t fake_outputs_count,
-      std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+      std::vector<std::vector<get_outs_entry>> &outs,
       uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra, T destination_split_strategy, const tx_dust_policy& dust_policy, cryptonote::transaction& tx, pending_tx &ptx);
     void transfer_selected_rct(std::vector<cryptonote::tx_destination_entry> dsts, const std::vector<size_t>& selected_transfers, size_t fake_outputs_count,
-      std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs, uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra,
+      std::vector<std::vector<get_outs_entry>> &outs, uint64_t unlock_time, uint64_t fee, const std::vector<uint8_t>& extra,
       cryptonote::transaction& tx, pending_tx &ptx, rct::RangeProofType range_proof_type, bool is_stake = false);
 
     void transfer_token_rct(TxCreationContext                        &t_data,
@@ -586,7 +588,7 @@ namespace tools
     bool load_tx(const std::string &signed_filename, pending_tx_v &ptx, std::function<bool(const signed_tx_set&)> accept_func = nullptr);
     bool parse_tx_from_str(const std::string &signed_tx_st, pending_tx_v &ptx, std::function<bool(const signed_tx_set &)> accept_func);
     pending_tx_v create_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices);     // pass subaddr_indices by value on purpose
-    pending_tx_v create_token_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices);
+    pending_tx_v create_token_transactions_2(std::vector<cryptonote::tx_destination_entry> dsts, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, const std::set<uint32_t> &subaddr_indices);
     pending_tx_v create_transactions_all(uint64_t below, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra, uint32_t subaddr_account, std::set<uint32_t> subaddr_indices);
     pending_tx_v create_transactions_single(const crypto::key_image &ki, const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra);
     pending_tx_v create_transactions_from(const cryptonote::account_public_address &address, bool is_subaddress, const size_t outputs, std::vector<size_t> unused_transfers_indices, std::vector<size_t> unused_dust_indices, const size_t fake_outs_count, const uint64_t unlock_time, uint32_t priority, const std::vector<uint8_t>& extra);
@@ -617,10 +619,14 @@ namespace tools
 
     uint64_t get_last_block_reward() const { return m_last_block_reward; }
 
-    void token_genesis_transaction(const uint32_t                 subaddress_account,
-                                   const cryptonote::TokenSummary &token_summary,
+    void token_genesis_transaction(const cryptonote::TokenSummary &token_summary,
                                    pending_tx_v                   &ptx_vector,
+                                   cryptonote::Amount              created_token_supply,
                                    size_t                          custom_fake_outs_count = 0);
+      // Create a new token with the specified 'token_summary' using the specified 'subaddress_account' and
+      // 'created_token_supply' or mint an additional token supply.
+      // Return the resulting transaction in the specified 'ptx_vector'.
+      // Optional parameter 'custom_fake_outs_count' specifies the number of fake outputs.
 
     pending_tx_v token_genesis_basic(const cryptonote::tx_destination_entry &token_destination,
                                      const size_t                            fake_outs_count,
@@ -633,12 +639,121 @@ namespace tools
                            const std::vector<size_t>                                &selected_cut_transfers,
                            const cryptonote::TokenType                              &token_type,
                            size_t                                                    fake_outputs_count,
-                           std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs,
+                           std::vector<std::vector<get_outs_entry>>                 &outs,
                            uint64_t                                                  unlock_time,
                            uint64_t                                                  fee,
                            std::vector<uint8_t>                                     &extra,
                            cryptonote::transaction                                  &tx,
                            pending_tx                                               &ptx);
+
+    void pool_genesis_transaction(const uint32_t                   subaddress_account,
+                                  const cryptonote::LiquidityPool &lp_summary,
+                                  pending_tx_v                    &ptx_vector,
+                                  size_t                           custom_fake_outs_count = 0);
+
+    pending_tx_v pool_genesis_basic(const std::vector<cryptonote::tx_destination_entry>  &destinations,
+                                    const size_t                                          fake_outs_count,
+                                    const uint64_t                                        unlock_time,
+                                    cryptonote::TxType                                    tx_type,
+                                    std::vector<uint8_t>                                 &extra);
+
+    void pool_add_liquidity_transaction(const uint32_t                          subaddress_account,
+                                        const cryptonote::LiquidityPool &old_lp_summary,
+                                        cryptonote::LiquidityPool       &new_lp_summary,
+                                        pending_tx_v                           &ptx_vector,
+                                        size_t                                  custom_fake_outs_count = 0);
+
+    void pool_take_liquidity_transaction(const uint32_t                   subaddress_account,
+                                         const cryptonote::LiquidityPool &old_lp_summary,
+                                         cryptonote::LiquidityPool       &new_lp_summary,
+                                         pending_tx_v                    &ptx_vector,
+                                         size_t                           custom_fake_outs_count = 0);
+
+    void exchange_transfer(const uint32_t                 subaddress_account,
+                           cryptonote::CompositeTransfer &composite_transfer,
+                           pending_tx_v                  &ptx_vector,
+                           cryptonote::ExchangeTransfer  &summary,
+                           size_t                         custom_fake_outs_count = 0);
+
+    void cross_exchange_transfer(const uint32_t                 subaddress_account,
+                                 cryptonote::CompositeTransfer &composite_transfer,
+                                 pending_tx_v                  &ptx_vector,
+                                 cryptonote::ExchangeTransfer  &summary,
+                                 size_t                         custom_fake_outs_count = 0);
+
+    void exchange_rate(std::vector<cryptonote::TokenId> &hops,
+                       double                           &final_rate,
+                       const cryptonote::TokenId        &source,
+                       const cryptonote::TokenId        &target,
+                       const cryptonote::Amount         &amount);
+
+    pending_tx_v exchange_basic(const std::vector<cryptonote::tx_destination_entry>  &destinations,
+                                const size_t                                          fake_outs_count,
+                                const uint64_t                                        unlock_time,
+                                const cryptonote::ExchangeSide                       &side,
+                                std::vector<uint8_t>                                 &extra);
+
+    void slippage_transfer(const uint32_t                       subaddress_account,
+                           const cryptonote::CompositeTransfer &composite_transfer,
+                           StatusCallback                       finished_cb,
+                           StatusCallback                       exchange_round_cb,
+                           size_t                               n_tries,
+                           double                               slippage,
+                           size_t                               custom_fake_outs_count);
+
+    bool is_slippage_transfer_in_progress() const;
+
+    void stop_slippage_exchange();
+
+    bool add_tx_unit(Tx                                     &tx,
+                     const cryptonote::tx_destination_entry &destination,
+                     const std::set<uint32_t>               &subaddr_indices,
+                     uint32_t                                priority,
+                     const size_t                            fake_outs_count,
+                     const std::vector<uint8_t>             &extra,
+                     const AccountView                      &balance,
+                     uint32_t                                subaddr_account,
+                     const uint64_t                          unlock_time,
+                     const cryptonote::Amount               &fractional_threshold,
+                     hw::device                             &hwdev);
+
+    bool add_lp_tx_unit(Tx                                     &tx,
+                        const cryptonote::tx_destination_entry &tx_unit,
+                        const size_t                            fake_outs_count,
+                        const std::vector<uint8_t>             &extra,
+                        uint32_t                                subaddr_account);
+
+    bool add_token_tx_unit(Tx                                     &tx,
+                           const cryptonote::tx_destination_entry &tx_unit,
+                           const size_t                            fake_outs_count,
+                           const std::vector<uint8_t>             &extra,
+                           const AccountView                      &balance,
+                           uint32_t                                subaddr_account,
+                           const cryptonote::Amount               &fractional_threshold);
+
+    bool add_cutcoin_tx_unit(Tx                                     &tx,
+                             const cryptonote::tx_destination_entry &tx_unit,
+                             const std::set<uint32_t>               &subaddr_indices,
+                             uint32_t                                priority,
+                             const size_t                            fake_outs_count,
+                             const std::vector<uint8_t>             &extra,
+                             const AccountView                      &balance,
+                             uint32_t                                subaddr_account,
+                             const uint64_t                          unlock_time,
+                             const cryptonote::Amount               &fractional_threshold,
+                             hw::device                             &hwdev);
+
+    bool add_tx_fees(Tx                                     &tx,
+                     const cryptonote::tx_destination_entry &tx_unit,
+                     const std::set<uint32_t>               &subaddr_indices,
+                     uint32_t                                priority,
+                     const size_t                            fake_outs_count,
+                     const std::vector<uint8_t>             &extra,
+                     const AccountView                      &balance,
+                     uint32_t                                subaddr_account,
+                     const uint64_t                          unlock_time,
+                     const cryptonote::Amount               &fractional_threshold,
+                     hw::device                             &hwdev);
 
     template <class t_archive>
     inline void serialize(t_archive &a, const unsigned int ver)
@@ -1046,6 +1161,14 @@ namespace tools
 
     void get_pos_transfers(transfer_details_v &pos_transfers, uint64_t start_height);
 
+    crypto::secret_key get_token_secret_key(cryptonote::TokenId token_id);
+
+    /*!
+     * \brief  Get all tokens in the system.
+     * \return Vector of tokens.
+     */
+    void get_tokens(std::vector<cryptonote::TokenSummary> &tokens, const std::string &prefix, bool exact_match);
+
   private:
     /*!
      * \brief  Stores wallet information to wallet file.
@@ -1107,7 +1230,12 @@ namespace tools
     void set_spent(size_t idx, uint64_t height);
     void set_unspent(size_t idx);
     void get_outs(cryptonote::TokenId token_id, std::vector<std::vector<get_outs_entry>> &outs, const std::vector<size_t> &selected_transfers, size_t fake_outputs_count, size_t max_height);
-    bool tx_add_fake_output(std::vector<std::vector<tools::wallet2::get_outs_entry>> &outs, uint64_t global_index, const crypto::public_key& tx_public_key, const rct::key& mask, uint64_t real_index, bool unlocked) const;
+    void get_lpouts(cryptonote::TokenId                     token_id,
+                    cryptonote::Amount                      amount,
+                    std::vector<lp_out_entry>              &outs,
+                    std::vector<lp_out_entry> &fake_outs,
+                    size_t                                  fake_outputs_count);
+    bool tx_add_fake_output(std::vector<std::vector<get_outs_entry>> &outs, uint64_t global_index, const crypto::public_key& tx_public_key, const rct::key& mask, uint64_t real_index, bool unlocked) const;
     crypto::public_key get_tx_pub_key_from_received_outs(const transfer_details &td) const;
     bool should_pick_a_second_output(bool use_rct, size_t n_transfers, const std::vector<size_t> &unused_transfers_indices, const std::vector<size_t> &unused_dust_indices) const;
     std::vector<size_t> get_only_rct(const std::vector<size_t> &unused_dust_indices, const std::vector<size_t> &unused_transfers_indices) const;
@@ -1257,6 +1385,8 @@ namespace tools
     bool m_unattended;
 
     std::shared_ptr<tools::Notify> m_tx_notify;
+
+    Exchanger m_exchanger;
   };
 
 }  // namespace tools
@@ -1321,32 +1451,35 @@ namespace tools {
 namespace detail {
 
 inline void digit_split_strategy(const std::vector<cryptonote::tx_destination_entry>& dsts,
-  const cryptonote::tx_destination_entry& change_dst, uint64_t dust_threshold,
-  std::vector<cryptonote::tx_destination_entry>& splitted_dsts, std::vector<cryptonote::tx_destination_entry> &dust_dsts)
+                                 const cryptonote::tx_destination_entry& change_dst,
+                                 uint64_t dust_threshold,
+                                 std::vector<cryptonote::tx_destination_entry>& splitted_dsts,
+                                 std::vector<cryptonote::tx_destination_entry> &dust_dsts)
 {
   splitted_dsts.clear();
   dust_dsts.clear();
 
-  for(auto& de: dsts)
-  {
+  for(auto& de: dsts) {
     cryptonote::decompose_amount_into_digits(de.amount, 0,
-      [&](uint64_t chunk) { splitted_dsts.emplace_back(de.token_id, chunk, de.addr, de.is_subaddress); },
-      [&](uint64_t a_dust) { splitted_dsts.emplace_back(de.token_id, a_dust, de.addr, de.is_subaddress); } );
+      [&](uint64_t chunk) { splitted_dsts.emplace_back(de.token_id, chunk, de.addr, de.is_subaddress(), false, false, false); },
+      [&](uint64_t a_dust) { splitted_dsts.emplace_back(de.token_id, a_dust, de.addr, de.is_subaddress(), false, false, false); } );
   }
 
   cryptonote::decompose_amount_into_digits(change_dst.amount, 0,
     [&](uint64_t chunk) {
       if (chunk <= dust_threshold)
-        dust_dsts.emplace_back(change_dst.token_id, chunk, change_dst.addr, false);
+        dust_dsts.emplace_back(change_dst.token_id, chunk, change_dst.addr, false, false, false, false);
       else
-        splitted_dsts.emplace_back(change_dst.token_id, chunk, change_dst.addr, false);
+        splitted_dsts.emplace_back(change_dst.token_id, chunk, change_dst.addr, false, false, false, false);
     },
-    [&](uint64_t a_dust) { dust_dsts.emplace_back(change_dst.token_id, a_dust, change_dst.addr, false); } );
+    [&](uint64_t a_dust) { dust_dsts.emplace_back(change_dst.token_id, a_dust, change_dst.addr, false, false, false, false); } );
 }
 //----------------------------------------------------------------------------------------------------
 inline void null_split_strategy(const std::vector<cryptonote::tx_destination_entry>& dsts,
-  const cryptonote::tx_destination_entry& change_dst, uint64_t dust_threshold,
-  std::vector<cryptonote::tx_destination_entry>& splitted_dsts, std::vector<cryptonote::tx_destination_entry> &dust_dsts)
+                                const cryptonote::tx_destination_entry& change_dst,
+                                uint64_t dust_threshold,
+                                std::vector<cryptonote::tx_destination_entry>& splitted_dsts,
+                                std::vector<cryptonote::tx_destination_entry> &dust_dsts)
 {
   splitted_dsts = dsts;
 
@@ -1355,7 +1488,7 @@ inline void null_split_strategy(const std::vector<cryptonote::tx_destination_ent
 
   if (0 != change)
   {
-    splitted_dsts.emplace_back(change_dst.token_id, change, change_dst.addr, false);
+    splitted_dsts.emplace_back(change_dst.token_id, change, change_dst.addr, false, false, false, false);
   }
 }
 //----------------------------------------------------------------------------------------------------
@@ -1363,7 +1496,7 @@ inline void print_source_entry(const cryptonote::tx_source_entry& src)
 {
   std::string indexes;
   std::for_each(src.outputs.begin(), src.outputs.end(), [&](const cryptonote::tx_source_entry::output_entry& s_e) { indexes += boost::to_string(s_e.first) + " "; });
-  LOG_PRINT_L0("amount=" << cryptonote::print_money(src.amount) << ", real_output=" <<src.real_output << ", real_output_in_tx_index=" << src.real_output_in_tx_index << ", indexes: " << indexes);
+  LOG_PRINT_L2("amount=" << cryptonote::print_money(src.amount) << ", real_output=" <<src.real_output << ", real_output_in_tx_index=" << src.real_output_in_tx_index << ", indexes: " << indexes);
 }
 
 }  // namespace detail

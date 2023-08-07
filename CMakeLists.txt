@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -665,9 +665,12 @@ else()
     add_cxx_flag_if_supported(-fstack-clash-protection CXX_SECURITY_FLAGS)
   endif()
 
-  add_c_flag_if_supported(-mmitigate-rop C_SECURITY_FLAGS)
-  add_cxx_flag_if_supported(-mmitigate-rop CXX_SECURITY_FLAGS)
-
+  # Removed in GCC 9.1 (or before ?), but still accepted, so spams the output
+  if (NOT (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND NOT CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1))
+    add_c_flag_if_supported(-mmitigate-rop C_SECURITY_FLAGS)
+    add_cxx_flag_if_supported(-mmitigate-rop CXX_SECURITY_FLAGS)
+  endif()
+  
   # linker
   if (NOT (WIN32 AND (CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_LESS 9.1)))
     # Windows binaries die on startup with PIE when compiled with GCC <9.x
@@ -924,12 +927,14 @@ list(APPEND EXTRA_LIBRARIES ${CMAKE_DL_LIBS})
 if (HIDAPI_FOUND) 
   if (APPLE)
     if(DEPENDS)
-      list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework IOKit")
+      list(APPEND EXTRA_LIBRARIES "-framework Foundation -framework IOKit -framework AppKit")
     else()
       find_library(COREFOUNDATION CoreFoundation)
       find_library(IOKIT IOKit)
+      find_library(APPKIT AppKit)
       list(APPEND EXTRA_LIBRARIES ${IOKIT})
       list(APPEND EXTRA_LIBRARIES ${COREFOUNDATION})
+      list(APPEND EXTRA_LIBRARIES ${APPKIT})
     endif()
   endif()
   if (WIN32)

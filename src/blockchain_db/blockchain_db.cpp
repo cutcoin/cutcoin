@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -27,13 +27,14 @@
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#include <boost/range/adaptor/reversed.hpp>
-
-#include "string_tools.h"
 #include "blockchain_db.h"
+
 #include "cryptonote_basic/cryptonote_format_utils.h"
+#include "cryptonote_basic/liquidity_pool.h"
 #include "profile_tools.h"
 #include "ringct/rctOps.h"
+#include "special_accounts/special_accounts.h"
+#include "string_tools.h"
 
 #include "lmdb/db_lmdb.h"
 #ifdef BERKELEY_DB
@@ -47,6 +48,8 @@ static const char *db_types[] = {
 #endif
   NULL
 };
+
+#include <boost/range/adaptor/reversed.hpp>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
 #define MONERO_DEFAULT_LOG_CATEGORY "blockchain.db"
@@ -105,7 +108,7 @@ BlockchainDB *new_db(const std::string& db_type)
   if (db_type == "berkeley")
     return new BlockchainBDB();
 #endif
-  return NULL;
+  return nullptr;
 }
 
 void BlockchainDB::init_options(boost::program_options::options_description& desc)
@@ -158,7 +161,7 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const transacti
     else
     {
       LOG_PRINT_L1("Unsupported input type, removing key images and aborting transaction addition");
-      for (const txin_v& tx_input : tx.vin)
+      for (const txin_v &tx_input: tx.vin)
       {
         if (tx_input.type() == typeid(txin_to_key))
         {
@@ -172,28 +175,84 @@ void BlockchainDB::add_transaction(const crypto::hash& blk_hash, const transacti
   uint64_t tx_id = add_transaction_data(blk_hash, tx, tx_hash, tx_prunable_hash);
 
   std::vector<uint64_t> amount_output_indices;
+  crypto::public_key pub_key = get_tx_pub_key_from_extra(tx);
 
   // iterate tx.vout using indices instead of C++11 foreach syntax because
   // we need the index
-  for (uint64_t i = 0; i < tx.vout.size(); ++i)
-  {
+  for (std::size_t i = 0; i < tx.vout.size(); ++i) {
     // miner v2 txes have their coinbase output in one single out to save space,
     // and we store them as rct outputs with an identity mask
-    if (miner_tx && tx.version >= TxVersion::ring_signatures)
-    {
+    if (miner_tx && tx.version >= TxVersion::ring_signatures) {
       tx_out vout = tx.vout[i];
       rct::key commitment = rct::zeroCommit(vout.amount);
       vout.amount = 0;
-      amount_output_indices.push_back(add_output(tx_hash, vout, i, tx.unlock_time,
-        &commitment));
+      amount_output_indices.push_back(add_output(tx_hash, vout, i, tx.unlock_time, &commitment));
     }
-    else
-    {
-      amount_output_indices.push_back(add_output(tx_hash, tx.vout[i], i, tx.unlock_time,
-        tx.version > TxVersion::plain ? &tx.rct_signatures.outPk[i].mask : NULL));
+    else {
+      Amount amount;
+      const rct::key omega = rct::tokenIdToPoint(tx.vout[i].token_id);
+      if (LpAccount::check_destination_output(tx.vout[i], pub_key, tx.rct_signatures, omega, i, amount)) {
+        amount_output_indices.push_back(add_output_lpool(tx_hash,
+                                                         tx.vout[i],
+                                                         i,
+                                                         tx.unlock_time,
+                                                         amount,
+                                                         &tx.rct_signatures.outPk[i].mask));
+      } else {
+        amount_output_indices.push_back(add_output(tx_hash,
+                                                   tx.vout[i],
+                                                   i,
+                                                   tx.unlock_time,
+                                                   tx.version > TxVersion::plain ? &tx.rct_signatures.outPk[i].mask
+                                                                                 : nullptr));
+      }
     }
   }
   add_tx_amount_output_indices(tx_id, amount_output_indices);
+
+  if (tx.type.is_tgtx()) {
+    tx_extra_token_data tetd;
+    cryptonote::get_token_data(tx, tetd);
+    token_data_t td;
+    td.id = tetd.d_id;
+    td.supply = tetd.d_supply;
+    td.unit = tetd.d_unit;
+    td.tgtx_hash = tx.hash;
+    if (tx.type.has_flag_minting()) {
+      tx_extra_token_genesis_ownership tgo;
+      get_token_genesis_ownership(tx, tgo);
+      td.pkey = tgo.pk;
+      td.signature = tgo.s;
+      td.type = TokenType::mintable_supply;
+    }
+    else if (tx.type.has_flag_lp_token()) {
+      td.type = TokenType::lptoken;
+    }
+    else if (tx.type.has_flag_hidden_supply()) {
+      td.type = TokenType::hidden_supply;
+    }
+    else {
+      td.type = TokenType::public_supply;
+    }
+    add_token_data(td);
+  }
+
+  if (tx.type.is_create_lp() ||
+      tx.type.is_add_liquidity() ||
+      tx.type.is_dex_buy() ||
+      tx.type.is_dex_sell() ||
+      tx.type.is_take_liquidity() ||
+      tx.type.is_dex_cross()) {
+    for (const txin_v& tx_input: tx.vin) {
+      const txin_to_key &in = boost::get<txin_to_key>(tx_input);
+      if (in.s_type == SourceType::lp) {
+        if (!in.key_offsets.empty()) {
+          const size_t output_index = in.key_offsets[0];
+          set_lp_output_spent(in.token_id, output_index, true);
+        }
+      }
+    }
+  }
 }
 
 uint64_t BlockchainDB::add_block( const block& blk
@@ -226,12 +285,10 @@ uint64_t BlockchainDB::add_block( const block& blk
     num_rct_outs += blk.miner_tx.vout.size();
   int tx_i = 0;
   crypto::hash tx_hash = crypto::null_hash;
-  for (const transaction& tx : txs)
-  {
+  for (const transaction &tx: txs) {
     tx_hash = blk.tx_hashes[tx_i];
     add_transaction(blk_hash, tx, &tx_hash);
-    for (const auto &vout: tx.vout)
-    {
+    for (const auto &vout: tx.vout) {
       if (vout.amount == 0)
         ++num_rct_outs;
     }
@@ -310,16 +367,106 @@ void BlockchainDB::remove_transaction(const crypto::hash& tx_hash)
 {
   transaction tx = get_tx(tx_hash);
 
-  for (const txin_v& tx_input : tx.vin)
-  {
-    if (tx_input.type() == typeid(txin_to_key))
-    {
+  for (const txin_v& tx_input : tx.vin) {
+    if (tx_input.type() == typeid(txin_to_key)) {
       remove_spent_key(boost::get<txin_to_key>(tx_input).k_image);
+    }
+  }
+
+  if (tx.type.is_create_lp()) {
+    set_lp_outputs_unspent(tx);
+
+    tx_extra_lp_data lp_data{};
+    get_lp_data(tx, lp_data);
+    remove_liqudity_pool(lp_data.d_lptoken);
+  }
+
+  if (tx.type.is_add_liquidity() || tx.type.is_take_liquidity()) {
+    set_lp_outputs_unspent(tx);
+
+    tx_extra_lp_data lp_data{};
+    get_lp_data(tx, lp_data);
+
+    liquidity_pool_data_t new_lp_data{};
+    new_lp_data.token1   = lp_data.d_token1;
+    new_lp_data.token2   = lp_data.d_token2;
+    new_lp_data.amount1  = lp_data.d_old_amount1;
+    new_lp_data.amount2  = lp_data.d_old_amount2;
+    new_lp_data.lptoken  = lp_data.d_lptoken;
+    new_lp_data.lpamount = cryptonote::get_lp_token_to_funds({new_lp_data.amount1, new_lp_data.amount2});
+
+    add_liqudity_pool(new_lp_data);
+  }
+
+  if (tx.type.is_dex_buy() || tx.type.is_dex_sell() || tx.type.is_dex_cross()) {
+    set_lp_outputs_unspent(tx);
+
+    tx_extra_exchange_data exchange_data{};
+    get_exchange_data(tx, exchange_data);
+
+    for (const ExchangeTransfer &et: exchange_data.data) {
+      liquidity_pool_data_t lp_data;
+      if (!get_liquidity_pool(et.d_token1, et.d_token2, lp_data)) {
+        LOG_PRINT_L2("Failed to find a liquidity pool in the db:" << tokens_to_lpname(et.d_token1, et.d_token2));
+        throw DB_ERROR("Failed to find a liquidity pool in the db:");
+      }
+
+      lp_data.amount1  = et.d_old_ratio.d_amount1;
+      lp_data.amount2  = et.d_old_ratio.d_amount2;
+      lp_data.lpamount = get_lp_token_to_funds(et.d_old_ratio);
+
+      add_liqudity_pool(lp_data);
+    }
+  }
+
+  if (tx.type.is_tgtx()) {
+    tx_extra_token_data tetd;
+    cryptonote::get_token_data(tx, tetd);
+    remove_token_data(tetd.d_id);
+    if (tx.type.has_flag_minting()) {
+      token_data_t td;
+      for_all_token_outputs(
+        tetd.d_id,
+        [&](const cryptonote::transaction &tx)->bool {
+          if (tx.type.has_flag_minting()) {
+            if (!cryptonote::get_token_data(tx, tetd)) {
+              LOG_PRINT_L2("Could not parse tx from blockchain" << tx.hash);
+              return true;
+            }
+            td.id = tetd.d_id;
+            td.supply = tetd.d_supply;
+            td.unit = tetd.d_unit;
+            td.type = TokenType::mintable_supply;
+            td.tgtx_hash = tx.hash;
+            tx_extra_token_genesis_ownership tgo{};
+            if (!get_token_genesis_ownership(tx, tgo)) {
+              LOG_PRINT_L2("Could not parse tx from blockchain" << tx.hash);
+              return true;
+            }
+            td.pkey      = tgo.pk;
+            td.signature = tgo.s;
+          }
+          return false;
+        });
+      add_token_data(td);
     }
   }
 
   // need tx as tx.vout has the tx outputs, and the output amounts are needed
   remove_transaction_data(tx_hash, tx);
+}
+
+void BlockchainDB::set_lp_outputs_unspent(const transaction &tx)
+{
+  for (const txin_v &tx_input: tx.vin) {
+    const txin_to_key &in = boost::get<txin_to_key>(tx_input);
+    if (in.s_type == SourceType::lp) {
+      if (!in.key_offsets.empty()) {
+        const size_t output_index = in.key_offsets[0];
+        set_lp_output_spent(in.token_id, output_index, false);
+      }
+    }
+  }
 }
 
 block BlockchainDB::get_block_from_height(const uint64_t& height) const

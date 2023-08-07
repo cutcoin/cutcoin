@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2016, Monero Research Labs
 //
 // Author: Shen Noether <shen.noether@gmx.com>
@@ -554,5 +554,26 @@ namespace rct {
             points.emplace_back(tokenIdToPoint(id));
         }
         return points;
+    }
+
+    std::tuple<crypto::secret_key, crypto::public_key> get_token_keys(cryptonote::TokenId       token_id,
+                                                                      const crypto::secret_key &svk,
+                                                                      const crypto::secret_key &ssk) {
+      using namespace cryptonote;
+
+      crypto::secret_key hash = rct2sk(hash_to_scalar(hash_to_scalar(tokenIdToPoint(token_id))));
+
+      struct Commitment {
+        crypto::ec_scalar vk;
+        crypto::ec_scalar sk;
+        crypto::ec_scalar h;
+      } c {svk, ssk , hash};
+
+      crypto::secret_key t{};
+      crypto::public_key T{};
+      crypto::hash_to_scalar(&c, sizeof(Commitment), t);
+      crypto::secret_key_to_public_key(t, T);
+
+      return std::make_tuple(t, T);
     }
 }

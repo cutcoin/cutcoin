@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -538,13 +538,13 @@ bool t_command_parser_executor::print_blockchain_dynamic_stats(const std::vector
 
 bool t_command_parser_executor::print_tokens(const std::vector<std::string>& args)
 {
-  if(args.size() > 1)
+  if(args.size() > 2 || (args.size() == 2 && args[1] != "exact_match"))
   {
-    std::cout << "usage: print_tokens [token_prefix]" << std::endl;
+    std::cout << "usage: print_tokens [<token_prefix>] [exact_match]" << std::endl;
     return false;
   }
 
-  return m_executor.print_tokens(args.size() == 1 ? args[0] : "");
+  return m_executor.print_tokens(args.size() >= 1 ? args[0] : "", args.size() == 2 && args[1] == "exact_match");
 }
 
 bool t_command_parser_executor::update(const std::vector<std::string>& args)

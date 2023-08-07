@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -31,39 +31,45 @@
 
 #include "blockchain.h"
 
-#include <boost/filesystem.hpp>
-#include <boost/range/adaptor/reversed.hpp>
-
-#include "include_base_utils.h"
-#include "cryptonote_basic/cryptonote_basic_impl.h"
-#include "cryptonote_tx_utils.h"
-#include "tx_pool.h"
 #include "blockchain_db/blockchain_db.h"
-#include "cryptonote_basic/account_utils.h"
+#include "common/boost_serialization_helper.h"
+#include "common/int-util.h"
+#include "common/notify.h"
+#include "common/perf_timer.h"
+#include "common/threadpool.h"
+#include "crypto/hash.h"
 #include "cryptonote_basic/cryptonote_basic.h"
+#include "cryptonote_basic/cryptonote_basic_impl.h"
 #include "cryptonote_basic/cryptonote_boost_serialization.h"
+#include "cryptonote_basic/dex.h"
+#include "cryptonote_basic/liquidity_pool.h"
 #include "cryptonote_basic/miner.h"
+#include "cryptonote_basic/tx_type.h"
 #include "cryptonote_config.h"
+#include "cryptonote_core.h"
+#include "cryptonote_tx_utils.h"
+#include "file_io_utils.h"
+#include "include_base_utils.h"
+#include "mining/miningutil.h"
 #include "misc_language.h"
 #include "profile_tools.h"
-#include "file_io_utils.h"
-#include "common/int-util.h"
-#include "common/threadpool.h"
-#include "common/boost_serialization_helper.h"
-#include "warnings.h"
-#include "crypto/hash.h"
-#include "cryptonote_core.h"
 #include "ringct/rctSigs.h"
-#include "common/perf_timer.h"
-#include "common/notify.h"
-#include "mining/miningutil.h"
+#include "special_accounts/special_accounts.h"
+#include "special_accounts/special_accounts_util.h"
+#include "tx_pool.h"
+#include "warnings.h"
+
 #if defined(PER_BLOCK_CHECKPOINT)
 #include "blocks/blocks.h"
 #endif
 
+#include <boost/filesystem.hpp>
+#include <boost/range/adaptor/reversed.hpp>
+
 #include <algorithm>
 #include <cstdio>
 #include <iterator>
+#include <set>
 #include <unordered_set>
 
 #undef MONERO_DEFAULT_LOG_CATEGORY
@@ -114,7 +120,8 @@ static const struct {
   { 1, 0, 0, 1341378000 },       // use version 1 in the first block of the blockchain
   { 9, 1, 0, 1533297600 },       // and version 9 for the rest of blocks
   { 10, 10000, 0, 1566213210 },  // enabled POS
-  { 11, 373000, 0, 1592911000 }  // enabled tokens
+  { 11, 373000, 0, 1592911000 }, // enabled tokens
+  { 12, 940000, 0, 1692320400 }  // enabled DEX
 };
 static const uint64_t testnet_hard_fork_version_1_till = 1;
 
@@ -130,7 +137,7 @@ static const struct {
 
 //------------------------------------------------------------------
 Blockchain::Blockchain(tx_memory_pool& tx_pool) :
-  m_db(), m_tx_pool(tx_pool), m_hardfork(NULL), m_timestamps_and_difficulties_height(0), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
+  m_db(), m_tx_pool(tx_pool), m_hardfork(nullptr), m_timestamps_and_difficulties_height(0), m_current_block_cumul_weight_limit(0), m_current_block_cumul_weight_median(0),
   m_enforce_dns_checkpoints(false), m_max_prepare_blocks_threads(4), m_db_sync_on_blocks(true), m_db_sync_threshold(1), m_db_sync_mode(db_async), m_db_default_sync(false), m_fast_sync(true), m_show_time_stats(false), m_sync_counter(0), m_bytes_to_sync(0), m_cancel(false),
   m_difficulty_for_next_block_top_hash(crypto::null_hash),
   m_difficulty_for_next_block(1),
@@ -158,12 +165,16 @@ bool Blockchain::have_tx_keyimg_as_spent(const crypto::key_image &key_im) const
   // lock if it is otherwise needed.
   return  m_db->has_key_image(key_im);
 }
-//------------------------------------------------------------------
+
 // This function makes sure that each "input" in an input (mixins) exists
 // and collects the public key for each from the transaction it was included in
 // via the visitor passed to it.
 template <class visitor_t>
-bool Blockchain::scan_outputkeys_for_indexes(size_t tx_version, const txin_to_key& tx_in_to_key, visitor_t &vis, const crypto::hash &tx_prefix_hash, uint64_t* pmax_related_block_height) const
+bool Blockchain::scan_outputkeys_for_indexes(size_t              tx_version,
+                                             const txin_to_key  &tx_in_to_key,
+                                             visitor_t          &vis,
+                                             const crypto::hash &tx_prefix_hash,
+                                             uint64_t           *pmax_related_block_height) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
 
@@ -178,60 +189,52 @@ bool Blockchain::scan_outputkeys_for_indexes(size_t tx_version, const txin_to_ke
   // outputs list.  that is to say that absolute offset #2 is absolute offset
   // #1 plus relative offset #2.
   // TODO: Investigate if this is necessary / why this is done.
-  std::vector<uint64_t> absolute_offsets = relative_output_offsets_to_absolute(tx_in_to_key.key_offsets);
+  std::vector<uint64_t> absolute_offsets = tx_in_to_key.s_type == SourceType::wallet ?
+                                           relative_output_offsets_to_absolute(tx_in_to_key.key_offsets):
+                                           lp_relative_output_offsets_to_absolute(tx_in_to_key.key_offsets);
   std::vector<output_data_t> outputs;
 
   bool found = false;
   auto it = m_scan_table.find(tx_prefix_hash);
-  if (it != m_scan_table.end())
-  {
+  if (it != m_scan_table.end()) {
     auto its = it->second.find(tx_in_to_key.k_image);
-    if (its != it->second.end())
-    {
+    if (its != it->second.end()) {
       outputs = its->second;
       found = true;
     }
   }
 
-  if (!found)
-  {
-    try
-    {
+  if (!found) {
+    try {
       m_db->get_output_key(tx_in_to_key.token_id, absolute_offsets, outputs, true);
-      if (absolute_offsets.size() != outputs.size())
-      {
+      if (absolute_offsets.size() != outputs.size()) {
         MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
         return false;
       }
     }
-    catch (...)
-    {
+    catch (...) {
       MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
       return false;
     }
   }
-  else
-  {
+  else {
     // check for partial results and add the rest if needed;
-    if (outputs.size() < absolute_offsets.size() && outputs.size() > 0)
-    {
+    if (outputs.size() < absolute_offsets.size() && !outputs.empty()) {
       MDEBUG("Additional outputs needed: " << absolute_offsets.size() - outputs.size());
       std::vector < uint64_t > add_offsets;
       std::vector<output_data_t> add_outputs;
       add_outputs.reserve(absolute_offsets.size() - outputs.size());
-      for (size_t i = outputs.size(); i < absolute_offsets.size(); i++)
+      for (size_t i = outputs.size(); i < absolute_offsets.size(); i++) {
         add_offsets.push_back(absolute_offsets[i]);
-      try
-      {
+      }
+      try {
         m_db->get_output_key(tx_in_to_key.token_id, add_offsets, add_outputs, true);
-        if (add_offsets.size() != add_outputs.size())
-        {
+        if (add_offsets.size() != add_outputs.size()) {
           MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
           return false;
         }
       }
-      catch (...)
-      {
+      catch (...) {
         MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
         return false;
       }
@@ -240,60 +243,187 @@ bool Blockchain::scan_outputkeys_for_indexes(size_t tx_version, const txin_to_ke
   }
 
   size_t count = 0;
-  for (const uint64_t& i : absolute_offsets)
-  {
-    try
-    {
+  for (const uint64_t &i: absolute_offsets) {
+    try {
       output_data_t output_index;
-      try
-      {
+      try {
         // get tx hash and output index for output
-        if (count < outputs.size())
+        if (count < outputs.size()) {
           output_index = outputs.at(count);
-        else
+        }
+        else {
           output_index = m_db->get_output_key(tx_in_to_key.token_id, i);
+        }
 
         // call to the passed boost visitor to grab the public key for the output
-        if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment))
-        {
+        if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment)) {
           MERROR_VER("Failed to handle_output for output no = " << count << ", with absolute offset " << i);
           return false;
         }
       }
-      catch (...)
-      {
+      catch (...) {
         MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id << ", absolute_offset = " << i);
         return false;
       }
 
       // if on last output and pmax_related_block_height not null pointer
-      if(++count == absolute_offsets.size() && pmax_related_block_height)
-      {
+      if(++count == absolute_offsets.size() && pmax_related_block_height) {
         // set *pmax_related_block_height to tx block height for this output
         auto h = output_index.height;
-        if(*pmax_related_block_height < h)
-        {
+        if(*pmax_related_block_height < h) {
           *pmax_related_block_height = h;
         }
       }
 
     }
-    catch (const OUTPUT_DNE& e)
-    {
+    catch (const OUTPUT_DNE& e) {
       MERROR_VER("Output does not exist: " << e.what());
       return false;
     }
-    catch (const TX_DNE& e)
-    {
+    catch (const TX_DNE& e) {
       MERROR_VER("Transaction does not exist: " << e.what());
       return false;
     }
-
   }
 
   return true;
 }
-//------------------------------------------------------------------
+
+// This function makes sure that each "lp input" in an input (mixins) exists
+// and collects the public key for each from the transaction it was included in
+// via the visitor passed to it.
+template <class visitor_t>
+bool Blockchain::scan_lp_outputkeys_for_indexes(size_t              tx_version,
+                                                const txin_to_key  &tx_in_to_key,
+                                                visitor_t          &vis,
+                                                const crypto::hash &tx_prefix_hash,
+                                                uint64_t           *pmax_related_block_height) const
+{
+  LOG_PRINT_L3("Blockchain::" << __func__);
+
+  // ND: Disable locking and make method private.
+  //CRITICAL_REGION_LOCAL(m_blockchain_lock);
+
+  // verify that the input has key offsets (that it exists properly, really)
+  if(tx_in_to_key.key_offsets.empty())
+    return false;
+
+  // cryptonote_format_utils uses relative offsets for indexing to the global
+  // outputs list.  that is to say that absolute offset #2 is absolute offset
+  // #1 plus relative offset #2.
+  // TODO: Investigate if this is necessary / why this is done.
+  std::vector<uint64_t> absolute_offsets = tx_in_to_key.s_type == SourceType::wallet ?
+    relative_output_offsets_to_absolute(tx_in_to_key.key_offsets):
+    lp_relative_output_offsets_to_absolute(tx_in_to_key.key_offsets);
+  std::vector<output_data_t> outputs;
+
+  bool found = false;
+  auto it = m_lp_scan_table.find(tx_prefix_hash);
+  if (it != m_lp_scan_table.end()) {
+    auto its = it->second.find(tx_in_to_key.k_image);
+    if (its != it->second.end()) {
+      outputs = its->second;
+      found = true;
+    }
+  }
+
+  if (!found) {
+    try {
+      std::vector<lpoutput_data_t> lp_outputs;
+      m_db->get_output_key_lpool(tx_in_to_key.token_id, absolute_offsets, lp_outputs, true, false);
+      if (absolute_offsets.size() != lp_outputs.size()) {
+        MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
+        return false;
+      }
+
+      for (const auto &lpo: lp_outputs) {
+        outputs.push_back({lpo.pubkey, lpo.unlock_time, lpo.height, lpo.commitment});
+      }
+    }
+    catch (...) {
+      MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
+      return false;
+    }
+  }
+  else {
+    // check for partial results and add the rest if needed;
+    if (outputs.size() < absolute_offsets.size() && !outputs.empty()) {
+      MDEBUG("Additional outputs needed: " << absolute_offsets.size() - outputs.size());
+      std::vector < uint64_t > add_offsets;
+      std::vector<output_data_t> add_outputs;
+      add_outputs.reserve(absolute_offsets.size() - outputs.size());
+      for (size_t i = outputs.size(); i < absolute_offsets.size(); i++) {
+        add_offsets.push_back(absolute_offsets[i]);
+      }
+      try {
+        std::vector<lpoutput_data_t> lp_outputs;
+        m_db->get_output_key_lpool(tx_in_to_key.token_id, add_offsets, lp_outputs, true, false);
+        if (add_offsets.size() != lp_outputs.size()) {
+          MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
+          return false;
+        }
+
+        for (const auto &lpo: lp_outputs) {
+          add_outputs.push_back({lpo.pubkey, lpo.unlock_time, lpo.height, lpo.commitment});
+        }
+      }
+      catch (...) {
+        MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id);
+        return false;
+      }
+      outputs.insert(outputs.end(), add_outputs.begin(), add_outputs.end());
+    }
+  }
+
+  size_t count = 0;
+  for (const uint64_t &i: absolute_offsets) {
+    try {
+      output_data_t output_index;
+      try {
+        // get tx hash and output index for output
+        if (count < outputs.size()) {
+          output_index = outputs.at(count);
+        }
+        else {
+          std::tuple<uint64_t, uint64_t, lpoutput_data_t> odp = m_db->get_output_key_lpool(tx_in_to_key.token_id, i);
+          const lpoutput_data_t &od = std::get<2>(odp);
+          output_index = {od.pubkey, od.unlock_time, od.height, od.commitment};
+        }
+
+        // call to the passed boost visitor to grab the public key for the output
+        if (!vis.handle_output(output_index.unlock_time, output_index.pubkey, output_index.commitment)) {
+          MERROR_VER("Failed to handle_output for output no = " << count << ", with absolute offset " << i);
+          return false;
+        }
+      }
+      catch (...) {
+        MERROR_VER("Output does not exist! token_id = " << tx_in_to_key.token_id << ", absolute_offset = " << i);
+        return false;
+      }
+
+      // if on last output and pmax_related_block_height not null pointer
+      if(++count == absolute_offsets.size() && pmax_related_block_height) {
+        // set *pmax_related_block_height to tx block height for this output
+        auto h = output_index.height;
+        if(*pmax_related_block_height < h) {
+          *pmax_related_block_height = h;
+        }
+      }
+
+    }
+    catch (const OUTPUT_DNE& e) {
+      MERROR_VER("Output does not exist: " << e.what());
+      return false;
+    }
+    catch (const TX_DNE& e) {
+      MERROR_VER("Transaction does not exist: " << e.what());
+      return false;
+    }
+  }
+
+  return true;
+}
+
 uint64_t Blockchain::get_current_blockchain_height() const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
@@ -326,7 +456,7 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
 
   m_db = db;
 
-  m_nettype = test_options != NULL ? FAKECHAIN : nettype;
+  m_nettype = test_options != nullptr ? FAKECHAIN : nettype;
   m_offline = offline;
   m_fixed_difficulty = fixed_difficulty;
   if (m_hardfork == nullptr)
@@ -390,11 +520,11 @@ bool Blockchain::init(BlockchainDB* db, const network_type nettype, bool offline
   m_db->block_txn_start(true);
   // check how far behind we are
   uint64_t top_block_timestamp = m_db->get_top_block_timestamp();
-  uint64_t timestamp_diff = time(NULL) - top_block_timestamp;
+  uint64_t timestamp_diff = time(nullptr) - top_block_timestamp;
 
   // genesis block has no timestamp, could probably change it to have timestamp of 1341378000...
   if(!top_block_timestamp)
-    timestamp_diff = time(NULL) - 1341378000;
+    timestamp_diff = time(nullptr) - 1341378000;
 
   // create general purpose async service queue
 
@@ -465,7 +595,7 @@ bool Blockchain::init(BlockchainDB* db, HardFork*& hf, const network_type nettyp
 {
   if (hf != nullptr)
     m_hardfork = hf;
-  bool res = init(db, nettype, offline, NULL);
+  bool res = init(db, nettype, offline, nullptr);
   if (hf == nullptr)
     hf = m_hardfork;
   return res;
@@ -515,7 +645,7 @@ bool Blockchain::deinit()
   // as this should be called if handling a SIGSEGV, need to check
   // if m_db is a NULL pointer (and thus may have caused the illegal
   // memory operation), otherwise we may cause a loop.
-  if (m_db == NULL)
+  if (m_db == nullptr)
   {
     throw DB_ERROR("The db pointer is null in Blockchain, the blockchain may be corrupt!");
   }
@@ -535,9 +665,9 @@ bool Blockchain::deinit()
   }
 
   delete m_hardfork;
-  m_hardfork = NULL;
+  m_hardfork = nullptr;
   delete m_db;
-  m_db = NULL;
+  m_db = nullptr;
   return true;
 }
 //------------------------------------------------------------------
@@ -603,6 +733,7 @@ block Blockchain::pop_block_from_blockchain()
 
   m_blocks_longhash_table.clear();
   m_scan_table.clear();
+  m_lp_scan_table.clear();
   m_blocks_txs_check.clear();
   m_check_txin_table.clear();
 
@@ -748,7 +879,7 @@ bool Blockchain::get_prev_hash(const block &blk, crypto::hash &h)  const
     h = blk.prev_id;
     return true;
   }
-  if (!blk.tx_hashes.size())
+  if (blk.tx_hashes.empty())
   {
     LOG_ERROR("PoS block with no coinstake transaction");
     return false;
@@ -823,6 +954,13 @@ difficulty_type Blockchain::get_difficulty_for_next_block()
   if (m_fixed_difficulty)
   {
     return m_db->height() ? m_fixed_difficulty : 1;
+  }
+
+  if (m_hardfork->get_current_version() >= HF_VERSION_DEX) {
+    uint64_t fork_height = m_hardfork->get_earliest_ideal_height_for_version(HF_VERSION_DEX);
+    if (m_db->height() - fork_height < 100) {
+      return 300000;
+    }
   }
 
   LOG_PRINT_L3("Blockchain::" << __func__);
@@ -1817,7 +1955,7 @@ bool Blockchain::handle_alternative_block(const block& b, const crypto::hash& id
     }
     else
     {
-      MGINFO_BLUE("----- BLOCK ADDED AS ALTERNATIVE ON HEIGHT " << bei.height << std::endl << "id:\t" << id << std::endl << "PoW:\t" << proof_of_work << std::endl << "difficulty:\t" << current_diff);
+      MGINFO_BLUE("----- BLOCK ADDED AS ALTERNATIVE ON HEIGHT " << bei.height << std::endl << "id:\t" << id << std::endl << (b.major_version >= HF_VERSION_POS ? "PoS hash:\t" : "PoW:\t") << proof_of_work << std::endl << "difficulty:\t" << current_diff);
       return true;
     }
   }
@@ -1975,7 +2113,6 @@ crypto::public_key Blockchain::get_output_key(TokenId token_id, uint64_t global_
   return data.pubkey;
 }
 
-//------------------------------------------------------------------
 bool Blockchain::get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
@@ -2001,28 +2138,174 @@ bool Blockchain::get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMA
   }
   return true;
 }
-//------------------------------------------------------------------
+
+bool Blockchain::get_lpouts(const COMMAND_RPC_GET_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_LPOUTPUTS_BIN::response& res) const
+{
+  LOG_PRINT_L3("Blockchain::" << __func__);
+  CRITICAL_REGION_LOCAL(m_blockchain_lock);
+
+  res.outs.clear();
+
+  try {
+    const TokenId token_id            = req.token_id;
+    const Amount amount               = req.amount;
+    const uint64_t fake_outputs_count = req.fake_outputs_count;
+
+    std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> outputs;
+    m_db->get_lpoutputs(token_id, amount, outputs);
+    for (const auto &o: outputs) {
+      const lpoutput_data_t   &od         = std::get<2>(o);
+      const tx_out_index       toi        = m_db->get_output_tx_and_index_from_global(std::get<0>(o));
+      const transaction        tx         = m_db->get_tx(toi.first);
+      const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
+      res.outs.push_back({od.pubkey,
+                          tx_pub_key,
+                          od.commitment,
+                          true,
+                          od.height,
+                          std::get<0>(o),
+                          std::get<1>(o),
+                          toi.second,
+                          od.amount,
+                          toi.first});
+    }
+
+    std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> fake_outputs{};
+    m_db->get_lpoutputs_set(token_id, fake_outputs_count, fake_outputs);
+    for (const auto &o: fake_outputs) {
+      const lpoutput_data_t   &od         = std::get<2>(o);
+      const tx_out_index       toi        = m_db->get_output_tx_and_index_from_global(std::get<0>(o));
+      const transaction        tx         = m_db->get_tx(toi.first);
+      const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
+      res.fake_outs.push_back({od.pubkey,
+                               tx_pub_key,
+                               od.commitment,
+                               true,
+                               od.height,
+                               std::get<0>(o),
+                               std::get<1>(o),
+                               toi.second,
+                               od.amount,
+                               toi.first});
+    }
+  }
+  catch (const std::exception &e) {
+    return false;
+  }
+
+  return true;
+}
+
+bool Blockchain::get_mixing_lpouts(const COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::request &req,
+                                   COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::response      &res) const
+{
+  LOG_PRINT_L3("Blockchain::" << __func__);
+  CRITICAL_REGION_LOCAL(m_blockchain_lock);
+
+  res.outs.clear();
+
+  try {
+    const TokenId &token_id = req.token_id;
+    uint64_t fake_outputs_count = req.fake_outputs_count;
+    const std::vector<uint64_t> &selected_indexes = req.selected_indexes;
+
+    if (fake_outputs_count == 0) {
+      return true;
+    }
+
+    for (const auto &i: selected_indexes) {
+      // get tx_hash, tx_out_index from DB
+      const std::tuple<uint64_t, uint64_t, lpoutput_data_t> odp = m_db->get_output_key_lpool(token_id, i);
+      const lpoutput_data_t &od = std::get<2>(odp);
+      const tx_out_index toi = m_db->get_output_tx_and_index_from_global(i);
+      const transaction tx = m_db->get_tx(toi.first);
+      const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
+
+      res.outs.push_back({od.pubkey,
+                          tx_pub_key,
+                          od.commitment,
+                          true,
+                          od.height,
+                          std::get<0>(odp),
+                          std::get<1>(odp),
+                          toi.second,
+                          od.amount,
+                          toi.first});
+    }
+
+    --fake_outputs_count;
+    if (fake_outputs_count == 0) {
+      return true;
+    }
+
+    std::vector<std::tuple<uint64_t, uint64_t, lpoutput_data_t>> outputs;
+    m_db->get_lpoutputs_set(token_id, fake_outputs_count, outputs);
+    for (const auto &o: outputs) {
+      const lpoutput_data_t &od = std::get<2>(o);
+      const tx_out_index toi = m_db->get_output_tx_and_index_from_global(std::get<0>(o));
+      const transaction tx = m_db->get_tx(toi.first);
+      const crypto::public_key tx_pub_key = get_tx_pub_key_from_extra(tx);
+
+      res.outs.push_back({od.pubkey,
+                          tx_pub_key,
+                          od.commitment,
+                          true,
+                          od.height,
+                          std::get<0>(o),
+                          std::get<1>(o),
+                          toi.second,
+                          od.amount,
+                          toi.first});
+    }
+  }
+  catch (const std::exception &e) {
+    return false;
+  }
+
+  return true;
+}
+
 bool Blockchain::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   CRITICAL_REGION_LOCAL(m_blockchain_lock);
 
   res.tokens.clear();
-  std::vector<TokenId> tokens;
-  try
-  {
-    m_db->get_all_tokens(tokens);
-    for (const TokenId &id: tokens)
-    {
-      if (boost::algorithm::starts_with(token_id_to_name(id), req.prefix) && id != 0) {
-        tx_out_index toi = m_db->get_output_tx_and_index(id, 0);
-        transaction tx = m_db->get_tx(toi.first);
-        tx_extra_token_data td;
-        get_token_data(tx, td);
-        res.tokens.push_back({id,
-                              td.d_supply,
-                              td.d_unit,
-                              td.d_supply == 0 ? static_cast<std::uint64_t>(2): static_cast<std::uint64_t>(1)});
+  std::set<TokenId> tokens;
+  try {
+    if (req.exact_match) {
+      const TokenId id = token_name_to_id(req.prefix);
+      if (m_db->has_outputs_with_token_id(id)) {
+        tokens.insert(id);
+      } else if (m_db->has_lpoutputs_with_token_id(id)) {
+        tokens.insert(id);
+      }
+    }
+    else {
+      std::vector<TokenId> raw_tokens;
+      m_db->get_all_tokens(raw_tokens);
+      for (const TokenId &id: raw_tokens) {
+        if (boost::algorithm::starts_with(token_id_to_name(id), req.prefix) && id != 0) {
+          tokens.insert(id);
+        }
+      }
+
+      m_db->get_all_lptokens(raw_tokens);
+      for (const TokenId &id: raw_tokens) {
+        if (boost::algorithm::starts_with(token_id_to_name(id), req.prefix) && id != 0) {
+          tokens.insert(id);
+        }
+      }
+    }
+
+    token_data_t td;
+    for (const TokenId &id: tokens) {
+      td.id = id;
+      if (m_db->get_token_data(td)) {
+        res.tokens.push_back({td.id, td.supply, td.unit, td.type.to_uint(), td.pkey, td.signature});
+      }
+      else {
+        LOG_ERROR("Failed to find token info: " << id);
       }
     }
   }
@@ -2032,7 +2315,77 @@ bool Blockchain::get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_
   }
   return true;
 }
-//------------------------------------------------------------------
+
+bool Blockchain::get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const
+{
+  LOG_PRINT_L3("Blockchain::" << __func__);
+  CRITICAL_REGION_LOCAL(m_blockchain_lock);
+
+  return m_db->get_liquidity_pool(name, liquidity_pool);
+}
+
+bool Blockchain::get_liquidity_pools(const std::string                  &name,
+                                     const bool                         &exact_match,
+                                     std::vector<liquidity_pool_data_t> &liquidity_pools) const
+{
+  LOG_PRINT_L3("Blockchain::" << __func__);
+  CRITICAL_REGION_LOCAL(m_blockchain_lock);
+
+  liquidity_pools.clear();
+  TokenId token;
+  if (exact_match == (name.find('/') == std::string::npos)) {
+    return false;
+  } else if (name.empty() && !exact_match) {
+    try {
+      std::vector<TokenId> tokens;
+      m_db->get_all_tokens(tokens);
+
+      for (const TokenId &id: tokens) {
+        if (is_lptoken(id)) {
+          liquidity_pool_data_t lp_data;
+          if (m_db->get_liquidity_pool(id, lp_data)) {
+            liquidity_pools.emplace_back(lp_data);
+          }
+        }
+      }
+    }
+    catch (const std::exception &e) {
+      return false;
+    }
+  }
+  else if (!exact_match) {
+    token = token_name_to_id(name);
+
+    std::vector<TokenId> tokens;
+    try
+    {
+      m_db->get_all_lptokens(tokens);
+      liquidity_pool_data_t lp_data;
+      for (const TokenId &id: tokens)
+      {
+        if (m_db->get_liquidity_pool(id, lp_data)) {
+          if (exact_match) {
+            if (tokens_to_lpname(lp_data.token1,lp_data.token2) == name) {
+              liquidity_pools.emplace_back(lp_data);
+              break;
+            }
+          }
+          else if (lp_data.token1 == token || lp_data.token2 == token) {
+            liquidity_pools.emplace_back(lp_data);
+          }
+        }
+      }
+    }
+    catch (const std::exception &e)
+    {
+      return false;
+    }
+  }
+
+
+  return true;
+}
+
 void Blockchain::get_output_key_mask_unlocked(const TokenId& token_id, const uint64_t& index, crypto::public_key& key, rct::key& mask, bool& unlocked) const
 {
   const auto o_data = m_db->get_output_key(token_id, index);
@@ -2041,7 +2394,7 @@ void Blockchain::get_output_key_mask_unlocked(const TokenId& token_id, const uin
   tx_out_index toi = m_db->get_output_tx_and_index(token_id, index);
   unlocked = is_tx_spendtime_unlocked(m_db->get_tx_unlock_time(toi.first));
 }
-//------------------------------------------------------------------
+
 bool Blockchain::get_output_distribution(cryptonote::TokenId    token_id,
                                          uint64_t               from_height,
                                          uint64_t               to_height,
@@ -2631,28 +2984,37 @@ bool Blockchain::check_tx_outputs(const transaction& tx, tx_verification_context
   return true;
 }
 
-//------------------------------------------------------------------
-bool Blockchain::check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary *token_summary) const
+bool Blockchain::check_existing_token_id(cryptonote::TokenId token_id) const
 {
-  if (!m_db->has_outputs_with_token_id(token_id)) {
+  return is_lptoken(token_id)? m_db->has_lpoutputs_with_token_id(token_id): m_db->has_outputs_with_token_id(token_id);
+}
+
+bool Blockchain::check_no_lp_inputs(const transaction &tx) const {
+  for (const auto &in: tx.vin) {
+    if(in.type() == typeid(txin_to_key)) {
+      if (boost::get<txin_to_key>(in).s_type == SourceType::lp) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+bool Blockchain::check_existing_liquidity_pool(const TokenId &id1, const TokenId &id2, const TokenId &lp_id) const
+{
+  liquidity_pool_data_t lp_data{};
+  if (m_db->get_liquidity_pool(lp_id, lp_data)) {
     return false;
   }
-  else if (token_summary != nullptr) {
-    token_summary->d_token_id = token_id;
-    tx_out_index toi = m_db->get_output_tx_and_index(token_id, 0);
-    cryptonote::transaction tx = m_db->get_tx(toi.first);
-    cryptonote::tx_extra_token_data td;
-    get_token_data(tx, td);
-    token_summary->d_token_supply = td.d_supply;
-    token_summary->d_unit = td.d_unit;
-    token_summary->d_type = td.d_supply == 0 ? TokenType::hidden_supply: TokenType::public_supply;
-    return true;
+
+  liquidity_pool_data_t liquidity_pool;
+  if (m_db->get_liquidity_pool(id1, id2, liquidity_pool)) {
+    return false;
   }
 
   return true;
 }
 
-//------------------------------------------------------------------
 bool Blockchain::have_tx_keyimges_as_spent(const transaction &tx) const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
@@ -2664,6 +3026,7 @@ bool Blockchain::have_tx_keyimges_as_spent(const transaction &tx) const
   }
   return false;
 }
+
 bool Blockchain::expand_transaction_2(transaction &tx, const crypto::hash &tx_prefix_hash, const std::vector<std::vector<rct::ctkey>> &pubkeys)
 {
   PERF_TIMER(expand_transaction_2);
@@ -2753,7 +3116,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
   const uint8_t hf_version = m_hardfork->get_current_version();
 
   std::vector<txin_v> canonic_vin;
-  if (!tx.is_token_genesis()) {
+  if (!tx.type.is_tgtx()) {
     canonic_vin = std::vector<txin_v>(tx.vin.begin(), tx.vin.end());
   } else {
     std::copy_if(tx.vin.begin(), tx.vin.end(), std::back_inserter(canonic_vin),
@@ -2766,26 +3129,25 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 
   // from hard fork 2, we require mixin at least 2 unless one output cannot mix with 2 others
   // if one output cannot mix with 2 others, we accept at most 1 output that can mix
-  if (hf_version >= 2)
-  {
+  if (hf_version >= HF_VERSION_MIX_RING) {
+
     size_t n_unmixable = 0, n_mixable = 0;
     size_t mixin = std::numeric_limits<size_t>::max();
-    const size_t min_mixin = hf_version >= HF_VERSION_MIN_MIXIN_10 ? 10 : hf_version >= HF_VERSION_MIN_MIXIN_6 ? 6 : hf_version >= HF_VERSION_MIN_MIXIN_4 ? 4 : 2;
-    for (const auto& txin : canonic_vin)
-    {
+    const size_t min_mixin = hf_version >= HF_VERSION_MIN_MIXIN_10 ? 10 :
+                             hf_version >= HF_VERSION_MIN_MIXIN_6  ? 6  :
+                             hf_version >= HF_VERSION_MIN_MIXIN_4  ? 4  : 2;
+
+    for (const auto &txin: canonic_vin) {
       // non txin_to_key inputs will be rejected below
-      if (txin.type() == typeid(txin_to_key))
-      {
-        const txin_to_key& in_to_key = boost::get<txin_to_key>(txin);
-        if (in_to_key.amount == 0)
-        {
+      if (txin.type() == typeid(txin_to_key)) {
+        const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+        if (in_to_key.amount == 0) {
           // always consider rct inputs mixable. Even if there's not enough rct
           // inputs on the chain to mix with, this is going to be the case for
           // just a few blocks right after the fork at most
           ++n_mixable;
         }
-        else
-        {
+        else {
           uint64_t n_outputs = m_db->get_num_outputs(in_to_key.amount); // TODO: #token ? should never happen
           MDEBUG("output size " << print_money(in_to_key.amount) << ": " << n_outputs << " available");
           // n_outputs includes the output we're considering
@@ -2794,8 +3156,10 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           else
             ++n_mixable;
         }
-        if (in_to_key.key_offsets.size() - 1 < mixin)
+
+        if (in_to_key.s_type == SourceType::wallet && in_to_key.key_offsets.size() - 1 < mixin) {
           mixin = in_to_key.key_offsets.size() - 1;
+        }
       }
     }
 
@@ -2840,24 +3204,20 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
   }
 
   // from v7, sorted ins
-  if (hf_version >= 7) {
-    const crypto::key_image *last_key_image = NULL;
-    cryptonote::TokenId      last_token_id = CUTCOIN_ID;
+  if (hf_version >= HF_VERSION_MIN_MIXIN_6) {
+    const txin_to_key *prev_input = nullptr;
     for (size_t n = 0; n < tx.vin.size(); ++n)
     {
       const txin_v &txin = tx.vin[n];
-      if (txin.type() == typeid(txin_to_key))
-      {
-        const txin_to_key& in_to_key = boost::get<txin_to_key>(txin);
-        if (last_key_image
-            && (in_to_key.token_id < last_token_id
-            || ((in_to_key.token_id == last_token_id) && memcmp(&in_to_key.k_image, last_key_image, sizeof(*last_key_image)) >= 0))) {
+      if (txin.type() == typeid(txin_to_key)) {
+        const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+        int result = in_to_key_compatator(prev_input, &in_to_key);
+        if (result >= 0) {
           MERROR_VER("transaction has unsorted inputs");
           tvc.m_verifivation_failed = true;
           return false;
         }
-        last_key_image = &in_to_key.k_image;
-        last_token_id = in_to_key.token_id;
+        prev_input = &in_to_key;
       }
     }
   }
@@ -2887,8 +3247,10 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     // make sure tx output has key offset(s) (is signed to be used)
     CHECK_AND_ASSERT_MES(in_to_key.key_offsets.size(), false, "empty in_to_key.key_offsets in transaction with id " << get_transaction_hash(tx));
 
-    if(have_tx_keyimg_as_spent(in_to_key.k_image))
-    {
+    if(have_tx_keyimg_as_spent(in_to_key.k_image)) {
+      MERROR_VER("Error checking input: token id: " << token_id_to_name(in_to_key.token_id)
+        << ", source: " << (in_to_key.s_type == SourceType::lp? "lp wallet": "user wallet")
+        << ", token_index: " << in_to_key.key_offsets.front());
       MERROR_VER("Key image already spent in blockchain: " << epee::string_tools::pod_to_hex(in_to_key.k_image));
       tvc.m_double_spend = true;
       return false;
@@ -2916,9 +3278,13 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
 #endif
     }
 
-    // make sure that output being spent matches up correctly with the
-    // signature spending it.
-    if (tx.is_token_genesis() && in_to_key.token_id != CUTCOIN_ID) {
+    // make sure that output being spent matches up correctly with the signature spending it.
+    if (tx.type.has_flag_minting() && in_to_key.token_id != CUTCOIN_ID) {
+      if(!check_mntx_input(tx, in_to_key, pubkeys[sig_index])) {
+        return false;
+      }
+    }
+    else if (tx.type.is_tgtx() && in_to_key.token_id != CUTCOIN_ID) {
       if(!check_tgtx_input(tx, in_to_key, pubkeys[sig_index])) {
         return false;
       }
@@ -2927,7 +3293,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
     {
       it->second[in_to_key.k_image] = false;
       MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
-      if (pmax_used_block_height) // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
+      if (pmax_used_block_height) // a default value of nullptr is used when called from Blockchain::handle_block_to_main_chain()
       {
         MERROR_VER("  *pmax_used_block_height: " << *pmax_used_block_height);
       }
@@ -2951,7 +3317,7 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
           it->second[in_to_key.k_image] = false;
           MERROR_VER("Failed to check ring signature for tx " << get_transaction_hash(tx) << "  vin key with k_image: " << in_to_key.k_image << "  sig_index: " << sig_index);
 
-          if (pmax_used_block_height)  // a default value of NULL is used when called from Blockchain::handle_block_to_main_chain()
+          if (pmax_used_block_height)  // a default value of nullptr is used when called from Blockchain::handle_block_to_main_chain()
           {
             MERROR_VER("*pmax_used_block_height: " << *pmax_used_block_height);
           }
@@ -3060,7 +3426,18 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
         }
       }
 
-      if (!rct::verRctNonSemanticsSimple(rv))
+      std::vector<bool> need_check;
+      for (const auto &in: tx.vin) {
+        const txin_to_key& in_to_key = boost::get<txin_to_key>(in);
+        if (in_to_key.s_type == SourceType::lp) {
+          need_check.push_back(false);
+        }
+        else {
+          need_check.push_back(true);
+        }
+      }
+
+      if (!rct::verRctNonSemanticsSimple(rv, &need_check))
       {
         MERROR_VER("Failed to check ringct signatures!");
         return false;
@@ -3150,58 +3527,49 @@ bool Blockchain::check_tx_inputs(transaction& tx, tx_verification_context &tvc, 
   return true;
 }
 
-//------------------------------------------------------------------
-bool Blockchain::check_tgtx(tx_verification_context &tvc, block_verification_context &bvc, const transaction &tx)
+bool Blockchain::check_plain_tx(const transaction &tx)
 {
-  if (bvc.m_token_genesis_block) {
-    MERROR_VER("Second token genesis transaction in same block");
-    tvc.m_verifivation_failed = true;
+  if (tx.type.has_flags()) {
+    MERROR_VER("Plain transaction must have no flags");
     return false;
   }
 
-  if(!check_tgtx(tvc, tx)) {
-    MERROR_VER("Incorrect token genesis transaction");
-    tvc.m_verifivation_failed = true;
+  if (!check_no_lp_inputs(tx)) {
+    MERROR_VER("Plain transaction cannot have lp inputs");
     return false;
   }
 
-  bvc.m_token_genesis_block = true;
   return true;
 }
 
-bool Blockchain::check_tgtx(tx_verification_context &tvc, const transaction &tx)
+bool Blockchain::check_tgtx(const transaction &tx)
 {
   if (tx.version < TxVersion::tokens) {
     MERROR_VER("Token genesis transaction has transaction version < 3");
-    tvc.m_verifivation_failed = true;
+    return false;
+  }
+
+  if (!check_no_lp_inputs(tx)) {
+    MERROR_VER("Token genesis transaction cannot have lp inputs");
     return false;
   }
 
   tx_extra_token_data token_data;
   if (!get_token_data(tx, token_data)) {
     LOG_PRINT_L2("Could not extract token data from token genesis transaction");
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
   TokenId token_id = token_data.d_id;
   std::string token_name = token_id_to_name(token_id);
 
-  if(!validate_token_name(token_name)) {
-    LOG_PRINT_L2("Invalid token name in token genesis transaction: " << token_name);
-    tvc.m_verifivation_failed = true;
-    return false;
-  }
-
-  if (check_existing_token_id(token_id)){
+  if (check_existing_token_id(token_id) && !tx.type.has_flag_minting()) {
     LOG_PRINT_L2("Token already exists in blockchain");
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
-  if (!check_tgtx_payment(tx)){
+  if (!check_tgtx_payment(tx)) {
     LOG_PRINT_L2("Token genesis payment is not correct");
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
@@ -3211,9 +3579,8 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, const transaction &tx)
       ++token_outs_count;
     }
   }
-  if (token_outs_count < TOKEN_GENESIS_OUTPUTS){
+  if (token_outs_count < TOKEN_GENESIS_OUTPUTS) {
     LOG_PRINT_L2("Number of token outputs in token genesis transaction must be at least " << TOKEN_GENESIS_OUTPUTS);
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
@@ -3221,85 +3588,1106 @@ bool Blockchain::check_tgtx(tx_verification_context &tvc, const transaction &tx)
   for (const auto &o: tx.vout) {
     ids.insert(o.token_id);
   }
-  if (ids.size() != 2){
+  if (ids.size() != 2) {
     LOG_PRINT_L2("In token genesis transaction all token outputs must have same 'token_id'");
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
   if (ids.find(token_id) == ids.end()) {
     LOG_PRINT_L2("In token genesis tx extra field and token outputs must have same 'token_id'");
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
-  if (!check_tgtx_supply(tx, token_data)) {
+  if (!tx.type.has_flag_lp_token() && !validate_token_name(token_name)) {
+    LOG_PRINT_L2("Invalid token name in token genesis transaction: " << token_name);
+    return false;
+  }
+
+  if (!tx.type.has_flag_lp_token() && !check_tgtx_supply(tx, token_data)) {
     LOG_PRINT_L2("Token supply is not correct");
-    tvc.m_verifivation_failed = true;
     return false;
   }
 
-//  if (!check_outs_overflow(tx, token_id)) {
-//    LOG_PRINT_L2("Tx has money overflow, rejected for tx id= " << get_transaction_hash(tx));
-//    tvc.m_verifivation_failed = true;
-//    return false;
-//  }
+  return true;
+}
 
-  tvc.m_verifivation_failed = false;
+bool Blockchain::check_mntx(const transaction &tx)
+{
+  using namespace cryptonote;
+
+  if (tx.type.has_flag_hidden_supply() || tx.type.has_flag_lp_token()) {
+    MERROR_VER("Token minting transaction cannot has hidden supply or be lp");
+    return false;
+  }
+
+  tx_extra_token_data token_data;
+  if (!get_token_data(tx, token_data)) {
+    LOG_PRINT_L2("Could not extract token data from token minting transaction");
+    return false;
+  }
+
+  if (token_data.d_supply == 0) {
+    LOG_PRINT_L2("Mintable tokens are tokens with public supply");
+    return false;
+  }
+
+  if (!check_token_ownership(tx, token_data)) {
+    LOG_PRINT_L2("Could not verify_token genesis ownership");
+    return false;
+  }
+
+  TokenId token_id = token_data.d_id;
+  TokenType type = token_data.d_extra1;
+
+  if (!type.is_mintable()) {
+    LOG_PRINT_L2("Mintable tokens must have mintable token type");
+    return false;
+  }
+
+  if (m_db->has_outputs_with_token_id(token_id)) {
+    TokenSummary token_summary;
+    if (!get_token_info(token_summary, token_id)) {
+      LOG_PRINT_L2("Error retrieving data from the blockchain");
+      return false;
+    }
+
+    if (token_summary.d_token_supply == 0) {
+      LOG_PRINT_L2("For token minting tx current token supply cannot be equal to 0");
+      return false;
+    }
+
+    if (token_data.d_supply < token_summary.d_token_supply) {
+      LOG_PRINT_L2("New token supply must be greater than the current one.");
+      return false;
+    }
+
+    if (token_summary.d_pkey == crypto::NullKey::p()) {
+      LOG_PRINT_L2("Mintable token has no signature and public token key saved in the past");
+      return false;
+    }
+
+    tx_extra_token_genesis_ownership tgo{};
+    if (!get_token_genesis_ownership(tx, tgo)) {
+      LOG_PRINT_L2("Could not extract token ownership data from token genesis transaction");
+      return false;
+    }
+
+    if (token_summary.d_pkey != tgo.pk) {
+      LOG_PRINT_L2("New token minting tx has incorrect public key");
+      return false;
+    }
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_tgtx(const transaction &tx) {
+  using namespace cryptonote;
+
+  if (tx.type.has_flag_hidden_supply() || tx.type.has_flag_minting()) {
+    MERROR_VER("LP Token genesis transaction cannot has hidden supply or be minting");
+    return false;
+  }
+
+  tx_extra_token_data token_data;
+  if (!get_token_data(tx, token_data)) {
+    LOG_PRINT_L2("Could not extract token data from lp token genesis transaction");
+    return false;
+  }
+
+  TokenId token_id = token_data.d_id;
+  TokenType type = token_data.d_extra1;
+  std::string token_name = token_id_to_name(token_id);
+
+  if (!type.is_lptoken()) {
+    LOG_PRINT_L2("LP tokens must have lp token type");
+    return false;
+  }
+
+  if (!validate_lptoken_name(token_name)) {
+    LOG_PRINT_L2("Invalid lp token name in token genesis transaction: " << token_name);
+    return false;
+  }
+
+  if (!check_lptgtx_supply(tx, token_data)) {
+    LOG_PRINT_L2("Token supply is not correct");
+    return false;
+  }
+
+  if (!check_transfer_to_liquidity_pool(tx, token_data.d_id, MAX_TOKEN_SUPPLY)) {
+    LOG_PRINT_L2("LP Token supply must transferred to LP system account");
+    return false;
+  }
+
+  return true;
+}
+
+bool Blockchain::check_hs_tgtx(const transaction &tx)
+{
+  if (tx.type.has_flag_lp_token() || tx.type.has_flag_minting()) {
+    MERROR_VER("Token genesis transaction with hidden supply cannot be lp or minting");
+    return false;
+  }
+
+  tx_extra_token_data token_data;
+  if (!get_token_data(tx, token_data)) {
+    LOG_PRINT_L2("Could not extract token data from lp token genesis transaction");
+    return false;
+  }
+
+  TokenType type = token_data.d_extra1;
+
+  if (!type.is_hidden()) {
+    LOG_PRINT_L2("Token genesis transaction with hidden supply must have token with hidden supply");
+    return false;
+  }
+
+  if (!check_tgtx_hidden_supply(tx, token_data)) {
+    LOG_PRINT_L2("Token supply is not correct");
+    return false;
+  }
+
+  return true;
+}
+
+bool Blockchain::check_ps_tgtx(const transaction &tx)
+{
+  tx_extra_token_data token_data;
+  if (!get_token_data(tx, token_data)) {
+    LOG_PRINT_L2("Could not extract token data from lp token genesis transaction");
+    return false;
+  }
+
+  if (m_db->height() < 571000) {
+    return true;
+  }
+
+  TokenType type = token_data.d_extra1;
+  if (!type.is_public()) {
+    LOG_PRINT_L2("Token genesis transaction with public supply must have token with public supply");
+    return false;
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_gtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
+{
+  if (tx.type.has_flags()) {
+    MERROR_VER("Liquidity pool genesis transaction must have no flags");
+    return false;
+  }
+
+  tx_extra_lp_data lp_data{};
+  if (!get_lp_data(tx, lp_data)) {
+    LOG_PRINT_L2("Could not extract liquidity pool data from liquidity pool genesis transaction");
+    return false;
+  }
+
+  const TokenId &token_id1 = lp_data.d_token1;
+  const TokenId &token_id2 = lp_data.d_token2;
+  const TokenId &lp_token = lp_data.d_lptoken;
+
+  if (token_id1 == token_id2 || token_id1 == lp_token || token_id2 == lp_token) {
+    LOG_PRINT_L2("Duplicated tokens are not allowed in liquidity pool");
+    return false;
+  }
+
+  if (!check_existing_token_id(token_id1)) {
+    LOG_PRINT_L2("Token 1 doesn't exists in blockchain");
+    return false;
+  }
+
+  if (!check_existing_token_id(token_id2)) {
+    LOG_PRINT_L2("Token 2 doesn't exists in blockchain");
+    return false;
+  }
+
+  if (!check_existing_token_id(lp_token)) {
+    LOG_PRINT_L2("LP token doesn't exists in blockchain");
+    return false;
+  }
+
+  token_data_t token_data;
+
+  if (token_id1 != CUTCOIN_ID) {
+    token_data.id = token_id1;
+    if (!m_db->get_token_data(token_data)) {
+      LOG_PRINT_L2("Could not get token data for token " << token_id_to_name(token_id1));
+      return false;
+    }
+  }
+
+  if (token_id2 != CUTCOIN_ID) {
+    token_data.id = token_id2;
+    if (!m_db->get_token_data(token_data)) {
+      LOG_PRINT_L2("Could not get token data for token " << token_id_to_name(token_id2));
+      return false;
+    }
+  }
+
+  token_data.id = lp_token;
+  if (!m_db->get_token_data(token_data)) {
+    LOG_PRINT_L2("Could not get token data for token " << token_id_to_name(lp_token));
+    return false;
+  }
+
+  if (!token_data.type.is_lptoken()) {
+    LOG_PRINT_L2("LP token has incorrect type");
+    return false;
+  }
+
+  if (!check_existing_liquidity_pool(token_id1, token_id2, lp_token)) {
+    LOG_PRINT_L2("Liquidity pool already exists in blockchain");
+    return false;
+  }
+
+  if (!check_lpgtx_payment(tx)) {
+    LOG_PRINT_L2("Liquidity pool genesis payment is not correct");
+    return false;
+  }
+
+  if (lp_data.d_old_amount1 != 0 || lp_data.d_old_amount2 != 0) {
+    LOG_PRINT_L2("Incorrect liquidity pool state transition");
+    return false;
+  }
+
+  const Amount &amount1 = lp_data.d_amount1;
+  const Amount &amount2 = lp_data.d_amount2;
+
+  if (!check_transfer_to_liquidity_pool(tx, token_id1, amount1) ||
+      !check_transfer_to_liquidity_pool(tx, token_id2, amount2)) {
+    LOG_PRINT_L2("Tokens were not correctly transferred to liquidity pool");
+    return false;
+  }
+
+  const Amount lp_amount = get_lp_token_to_funds({amount1, amount2});
+  if (!check_transfer_from_liquidity_pool(tx, lp_token, lp_amount)) {
+    LOG_PRINT_L2("Tokens were not correctly transferred from liquidity pool");
+    return false;
+  }
+
+  std::unordered_set<TokenId> ids;
+  for (const auto &o: tx.vout) {
+    ids.insert(o.token_id);
+  }
+  if (ids.size() < 3 || ids.size() > 4) {
+    LOG_PRINT_L2("Wrong number of tokens in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(token_id1) == ids.end()) {
+    LOG_PRINT_L2("Wrong token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(token_id2) == ids.end()) {
+    LOG_PRINT_L2("Wrong token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(lp_token) == ids.end()) {
+    LOG_PRINT_L2("Wrong lp token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (liquidity_pools_update != nullptr) {
+    liquidity_pool_data_t lpd{lp_data.d_lptoken,
+                              lp_data.d_token1,
+                              lp_data.d_token2,
+                              lp_data.d_lpamount,
+                              lp_data.d_amount1,
+                              lp_data.d_amount2};
+    liquidity_pools_update->emplace_back(lpd);
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_addtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
+{
+  if (tx.type.has_flags()) {
+    MERROR_VER("Add liquidity transaction must have no flags");
+    return false;
+  }
+
+  tx_extra_lp_data new_lp_data{};
+  if (!get_lp_data(tx, new_lp_data)) {
+    LOG_PRINT_L2("Could not extract liquidity pool data from add liquidity transaction");
+    return false;
+  }
+
+  const TokenId &token_id1 = new_lp_data.d_token1;
+  const TokenId &token_id2 = new_lp_data.d_token2;
+  const TokenId &lp_token  = new_lp_data.d_lptoken;
+
+  if (token_id1 == token_id2 || token_id1 == lp_token || token_id2 == lp_token) {
+    LOG_PRINT_L2("Duplicated tokens are not allowed in liquidity pool");
+    return false;
+  }
+
+  liquidity_pool_data_t old_lp_data{};
+  if (!m_db->get_liquidity_pool(token_id1, token_id2, old_lp_data)) {
+    LOG_PRINT_L2("Liquidity pool doesn't exist in blockchain");
+    return false;
+  }
+
+  if (!check_lpgtx_payment(tx)) {
+    LOG_PRINT_L2("Add liquidity payment is not correct");
+    return false;
+  }
+
+  const Amount &old_a1 = old_lp_data.amount1;
+  const Amount &old_a2 = old_lp_data.amount2;
+  const Amount &new_a1 = new_lp_data.d_amount1;
+  const Amount &new_a2 = new_lp_data.d_amount2;
+
+  if (old_a1 != new_lp_data.d_old_amount1 || old_a2 != new_lp_data.d_old_amount2) {
+    LOG_PRINT_L2("Incorrect liquidity pool state transition");
+    return false;
+  }
+
+  if (new_a1 <= old_a1 || new_a2 <= old_a2) {
+    LOG_PRINT_L2("New pool liquidity must be greater then the old one");
+    return false;
+  }
+
+  const bool not_empty_pool = (old_a1 != 0);
+  AmountRatio old_ratio = {old_a1, old_a2};
+  AmountRatio new_ratio = {new_a1, new_a2};
+
+  Amount deposit1 = new_a1 - old_a1;
+  Amount deposit2 = underlying_amount_from_lp_pair(
+    (not_empty_pool ? old_ratio : new_ratio), deposit1);
+
+  if (!check_transfer_to_liquidity_pool(tx, token_id1, deposit1) ||
+      !check_transfer_to_liquidity_pool(tx, token_id2, deposit2)) {
+    LOG_PRINT_L2("Tokens were not correctly transferred to liquidity pool");
+    return false;
+  }
+
+  const Amount lp_amount = get_lp_token_to_funds(new_ratio) - old_lp_data.lpamount;
+  if (!check_transfer_from_liquidity_pool(tx, lp_token, lp_amount)) {
+    LOG_PRINT_L2("Tokens were not correctly transferred from liquidity pool");
+    return false;
+  }
+
+  std::unordered_set<TokenId> ids;
+  for (const auto &o: tx.vout) {
+    ids.insert(o.token_id);
+  }
+  if (ids.size() < 3 || ids.size() > 4) {
+    LOG_PRINT_L2("Wrong number of tokens in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(token_id1) == ids.end()) {
+    LOG_PRINT_L2("Wrong token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(token_id2) == ids.end()) {
+    LOG_PRINT_L2("Wrong token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(lp_token) == ids.end()) {
+    LOG_PRINT_L2("Wrong lp token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (liquidity_pools_update != nullptr) {
+    liquidity_pool_data_t lpd{new_lp_data.d_lptoken,
+                              new_lp_data.d_token1,
+                              new_lp_data.d_token2,
+                              new_lp_data.d_lpamount,
+                              new_lp_data.d_amount1,
+                              new_lp_data.d_amount2};
+    liquidity_pools_update->emplace_back(lpd);
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_taketx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
+{
+  if (tx.type.has_flags()) {
+    MERROR_VER("Take liquidity transaction must have no flags");
+    return false;
+  }
+
+  tx_extra_lp_data new_lp_data{};
+  if (!get_lp_data(tx, new_lp_data)) {
+    LOG_PRINT_L2("Could not extract liquidity pool data from take liquidity transaction");
+    return false;
+  }
+
+  const TokenId &token_id1 = new_lp_data.d_token1;
+  const TokenId &token_id2 = new_lp_data.d_token2;
+  const TokenId &lp_token  = new_lp_data.d_lptoken;
+
+  if (token_id1 == token_id2 || token_id1 == lp_token || token_id2 == lp_token) {
+    LOG_PRINT_L2("Duplicated tokens are not allowed in liquidity pool");
+    return false;
+  }
+
+  liquidity_pool_data_t old_lp_data{};
+  if (!m_db->get_liquidity_pool(token_id1, token_id2, old_lp_data)) {
+    LOG_PRINT_L2("Liquidity pool doesn't exist in blockchain");
+    return false;
+  }
+
+  const Amount &old_a1 = old_lp_data.amount1;
+  const Amount &old_a2 = old_lp_data.amount2;
+  const Amount &new_a1 = new_lp_data.d_amount1;
+  const Amount &new_a2 = new_lp_data.d_amount2;
+  const Amount &lp_deposit = old_lp_data.lpamount - new_lp_data.d_lpamount;
+
+  if (old_a1 != new_lp_data.d_old_amount1 || old_a2 != new_lp_data.d_old_amount2) {
+    LOG_PRINT_L2("Incorrect liquidity pool state transition");
+    return false;
+  }
+
+  AmountRatio new_funds = get_funds_to_lp_token(old_lp_data.lpamount, new_lp_data.d_lpamount, {old_a1, old_a2});
+
+  if (new_a1 >= old_a1 || new_a2 >= old_a2) {
+    LOG_PRINT_L2("New pool liquidity must be less then the old one");
+    return false;
+  }
+
+  if (new_lp_data.d_amount1 != new_funds.d_amount1 || new_lp_data.d_amount2 != new_funds.d_amount2) {
+    LOG_PRINT_L2("New amount in liquidity pool are incorrect");
+    return false;
+  }
+
+  Amount withdrawal1 = old_a1 - new_a1;
+  Amount withdrawal2 = old_a2 - new_a2;
+
+  if (!check_transfer_from_liquidity_pool(tx, token_id1, withdrawal1) ||
+      !check_transfer_from_liquidity_pool(tx, token_id2, withdrawal2)) {
+    LOG_PRINT_L2("Tokens were not correctly transferred to liquidity pool");
+    return false;
+  }
+
+  if (!check_transfer_to_liquidity_pool(tx, lp_token, lp_deposit)) {
+    LOG_PRINT_L2("Tokens were not correctly transferred from liquidity pool");
+    return false;
+  }
+
+  std::unordered_set<TokenId> ids;
+  for (const auto &o: tx.vout) {
+    ids.insert(o.token_id);
+  }
+  if (ids.size() < 3 || ids.size() > 4) {
+    LOG_PRINT_L2("Wrong number of tokens in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(token_id1) == ids.end()) {
+    LOG_PRINT_L2("Wrong token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(token_id2) == ids.end()) {
+    LOG_PRINT_L2("Wrong token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (ids.find(lp_token) == ids.end()) {
+    LOG_PRINT_L2("Wrong lp token in liquidity pool genesis transaction");
+    return false;
+  }
+
+  if (liquidity_pools_update != nullptr) {
+    liquidity_pool_data_t lpd{new_lp_data.d_lptoken,
+                             new_lp_data.d_token1,
+                             new_lp_data.d_token2,
+                             new_lp_data.d_lpamount,
+                             new_lp_data.d_amount1,
+                             new_lp_data.d_amount2};
+    liquidity_pools_update->emplace_back(lpd);
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_buy_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
+{
+  if (tx.type.has_flags()) {
+    MERROR_VER("Exchange transaction must have no flags");
+    return false;
+  }
+
+  tx_extra_exchange_data exchange_data{};
+  if (!get_exchange_data(tx, exchange_data)) {
+    LOG_PRINT_L2("Could not extract exchange data from buy transaction");
+    return false;
+  }
+
+  Amount token1_amount = 0;
+
+  std::set<TokenId> pool_out_tokens;
+  for (const auto &in: tx.vin) {
+    if (in.type() != typeid(txin_to_key)) {
+      MERROR_VER("Input must have 'txin_to_key' type");
+      return false;
+    }
+
+    const txin_to_key &in_to_key = boost::get<txin_to_key>(in);
+    if (in_to_key.s_type == SourceType::lp) {
+      pool_out_tokens.insert(in_to_key.token_id);
+
+      std::vector<uint64_t> absolute_offsets = in_to_key.s_type == SourceType::wallet ?
+                                               relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                               lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+      std::vector<lpoutput_data_t> outputs;
+
+      try {
+        m_db->get_output_key_lpool(in_to_key.token_id, absolute_offsets, outputs, true, false);
+        if (absolute_offsets.size() != outputs.size()) {
+          MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+          return false;
+        }
+      }
+      catch (...) {
+        MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+        return false;
+      }
+
+      token1_amount += outputs[0].amount;
+    }
+  }
+
+  if (pool_out_tokens.size() != 1) {
+    MERROR_VER("Exchange transaction must have 1 outbounding token (from liquidity pool)");
+    return false;
+  }
+
+  const TokenId &pool_out_token = *pool_out_tokens.cbegin();
+  Amount token1_change = 0;
+  Amount token2_amount = 0;
+
+  crypto::public_key pub_key = get_tx_pub_key_from_extra(tx);
+
+  std::set<TokenId> pool_in_tokens;
+  Amount a;
+  for (size_t i = 0; i < tx.vout.size(); ++i) {
+    const TokenId &oti = tx.vout[i].token_id;
+    const rct::key omega = rct::tokenIdToPoint(oti);
+    if (LpAccount::check_destination_output(tx.vout[i], pub_key, tx.rct_signatures, omega, i, a)) {
+      pool_in_tokens.insert(oti);
+      if (oti == pool_out_token) {
+        token1_change += a;
+      }
+      else {
+        token2_amount += a;
+      }
+    }
+  }
+
+  pool_out_tokens.insert(pool_in_tokens.cbegin(), pool_in_tokens.cend());
+
+  if (pool_out_tokens.size() != 2) {
+    MERROR_VER("Exchange transaction must have 1 inbounding token (into liquidity pool)");
+    return false;
+  }
+
+  const TokenId &token1 = pool_out_token;
+  const TokenId &token2 = (pool_out_token != *pool_out_tokens.cbegin()) ?
+    *pool_out_tokens.cbegin() : *pool_out_tokens.crbegin();
+
+  if (exchange_data.data.empty()) {
+    LOG_PRINT_L2("Could not extract exchange data from 'add liquidity' transaction");
+    return false;
+  }
+
+  // get all pools in the exchange chain
+  std::vector<LiquidityPool> pools;
+  for (const auto &e: exchange_data.data) {
+    liquidity_pool_data_t lp{};
+    if (!get_liquidity_pool(tokens_to_lpname(e.d_token1, e.d_token2), lp)) {
+      return false;
+    }
+    pools.push_back({lp.lptoken,
+                     lp.token1,
+                     lp.token2,
+                     lp.lpamount,
+                     {lp.amount1, lp.amount2}});
+  }
+
+  Amount derived_amount = token1_amount - token1_change;
+
+  std::vector<ExchangeTransfer> exchange_transfers;
+  ExchangeTransfer summary;
+  if (!pools_to_composite_exchange_transfer(exchange_transfers,
+                                            summary,
+                                            token1,
+                                            token2,
+                                            derived_amount,
+                                            config::DEX_FEE_PER_MILLE,
+                                            pools,
+                                            ExchangeSide::buy)) {
+    LOG_PRINT_L2("Incorrect 'buy' transaction");
+    return false;
+  }
+
+  if (exchange_data.data.size() != exchange_transfers.size()) {
+    LOG_PRINT_L2("Wrong number of pools in the exchange transaction");
+    return false;
+  }
+
+  for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+    if (exchange_data.data[i] != exchange_transfers[i]) {
+      LOG_PRINT_L2("Wrong pools in exchange");
+      return false;
+    }
+  }
+
+  Amount real_amount = token2 == summary.d_token2 ? summary.d_new_ratio.d_amount2 - summary.d_old_ratio.d_amount2 :
+                       summary.d_new_ratio.d_amount1 - summary.d_old_ratio.d_amount1;
+
+  if (token2_amount != real_amount) {
+    LOG_PRINT_L2("Exchange ratio is not correct. Probably another exchange transaction just has happened.");
+    return false;
+  }
+
+  if (exchange_transfers.size() != pools.size()) {
+    LOG_PRINT_L2("Something went wrong during buy tx check");
+    return false;
+  }
+
+  if (liquidity_pools_update != nullptr) {
+    for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+      const ExchangeTransfer &et = exchange_transfers[i];
+      const LiquidityPool    &p  = pools[i];
+      liquidity_pools_update->push_back({
+        p.d_lptoken,
+        et.d_token1,
+        et.d_token2,
+        p.d_lp_amount,
+        et.d_new_ratio.d_amount1,
+        et.d_new_ratio.d_amount2
+      });
+    }
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_sell_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
+{
+  if (tx.type.has_flags()) {
+    MERROR_VER("Exchange transaction must have no flags");
+    return false;
+  }
+
+  tx_extra_exchange_data exchange_data{};
+  if (!get_exchange_data(tx, exchange_data)) {
+    LOG_PRINT_L2("Could not extract exchange data from sell transaction");
+    return false;
+  }
+
+  Amount token2_amount = 0;
+
+  std::set<TokenId> pool_out_tokens;
+  for (const auto &in: tx.vin) {
+    if (in.type() == typeid(txin_to_key)) {
+      const txin_to_key &in_to_key = boost::get<txin_to_key>(in);
+      if (in_to_key.s_type == SourceType::lp) {
+        pool_out_tokens.insert(in_to_key.token_id);
+
+        std::vector<uint64_t> absolute_offsets = in_to_key.s_type == SourceType::wallet ?
+                                                 relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                                 lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+        std::vector<lpoutput_data_t> outputs;
+
+        try {
+          m_db->get_output_key_lpool(in_to_key.token_id, absolute_offsets, outputs, true, false);
+          if (absolute_offsets.size() != outputs.size()) {
+            MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+            return false;
+          }
+        }
+        catch (...) {
+          MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+          return false;
+        }
+
+        token2_amount += outputs[0].amount;
+      }
+    }
+  }
+
+  if (pool_out_tokens.size() != 1) {
+    MERROR_VER("Exchange transaction must have 1 token from liquidity pool");
+    return false;
+  }
+
+  const TokenId &pool_out_token = *pool_out_tokens.cbegin();
+  Amount token2_change = 0;
+  Amount token1_amount = 0;
+
+  crypto::public_key pub_key = get_tx_pub_key_from_extra(tx);
+  std::set<TokenId> pool_in_tokens;
+  Amount a;
+  for (size_t i = 0; i < tx.vout.size(); ++i) {
+    const TokenId &oti = tx.vout[i].token_id;
+    const rct::key omega = rct::tokenIdToPoint(oti);
+    if (LpAccount::check_destination_output(tx.vout[i], pub_key, tx.rct_signatures, omega, i, a)) {
+      pool_in_tokens.insert(oti);
+      if (oti == pool_out_token) {
+        token2_change += a;
+      }
+      else {
+        token1_amount += a;
+      }
+    }
+  }
+
+  pool_out_tokens.insert(pool_in_tokens.cbegin(), pool_in_tokens.cend());
+
+  if (pool_out_tokens.size() != 2) {
+    MERROR_VER("Exchange transaction must have 1 token coming into liquidity pool");
+    return false;
+  }
+
+  const TokenId &token1 = pool_out_token;
+  const TokenId &token2 = (pool_out_token != *pool_out_tokens.cbegin()) ?
+                          *pool_out_tokens.cbegin() : *pool_out_tokens.crbegin();
+
+
+  if (exchange_data.data.empty()) {
+    LOG_PRINT_L2("Could not extract exchange data from 'add liquidity' transaction");
+    return false;
+  }
+
+  // get all pools in the exchange chain
+  std::vector<LiquidityPool> pools;
+  for (const auto &e: exchange_data.data) {
+    liquidity_pool_data_t lp{};
+    if (!get_liquidity_pool(tokens_to_lpname(e.d_token1, e.d_token2), lp)) {
+      return false;
+    }
+    pools.push_back({lp.lptoken,
+                     lp.token1,
+                     lp.token2,
+                     lp.lpamount,
+                     {lp.amount1, lp.amount2}});
+  }
+
+
+
+  std::vector<ExchangeTransfer> exchange_transfers;
+  ExchangeTransfer summary;
+  if (!pools_to_composite_exchange_transfer(exchange_transfers,
+                                            summary,
+                                            token1,
+                                            token2,
+                                            token1_amount,
+                                            config::DEX_FEE_PER_MILLE,
+                                            pools,
+                                            ExchangeSide::sell)) {
+    LOG_PRINT_L2("Incorrect 'sell' transaction");
+    return false;
+  }
+
+  if (exchange_data.data.size() != exchange_transfers.size()) {
+    LOG_PRINT_L2("Wrong number of pools in the exchange transaction");
+    return false;
+  }
+
+  for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+    if (exchange_data.data[i] != exchange_transfers[i]) {
+      LOG_PRINT_L2("Wrong pools in exchange");
+      return false;
+    }
+  }
+
+  Amount derived_amount = token2_amount - token2_change;
+
+  Amount real_amount = token1 == summary.d_token2 ? summary.d_old_ratio.d_amount2 - summary.d_new_ratio.d_amount2:
+    summary.d_old_ratio.d_amount1 - summary.d_new_ratio.d_amount1;
+
+  if (derived_amount != real_amount) {
+    LOG_PRINT_L2("Exchange ratio is not correct. Probably another exchange transaction just has happened.");
+    return false;
+  }
+
+  if (exchange_transfers.size() != pools.size()) {
+    LOG_PRINT_L2("Something went wrong during sell tx check");
+    return false;
+  }
+
+  if (liquidity_pools_update != nullptr) {
+    for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+      const ExchangeTransfer &et = exchange_transfers[i];
+      const LiquidityPool    &p  = pools[i];
+      liquidity_pools_update->push_back({
+                                          p.d_lptoken,
+                                          et.d_token1,
+                                          et.d_token2,
+                                          p.d_lp_amount,
+                                          et.d_new_ratio.d_amount1,
+                                          et.d_new_ratio.d_amount2
+                                        });
+    }
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lp_cross_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update)
+{
+  if (tx.type.has_flags()) {
+    MERROR_VER("Cross exchange transaction must have no flags");
+    return false;
+  }
+
+  tx_extra_exchange_data exchange_data{};
+  if (!get_exchange_data(tx, exchange_data)) {
+    LOG_PRINT_L2("Could not extract exchange data from buy transaction");
+    return false;
+  }
+
+  Amount token1_amount = 0;
+
+  std::set<TokenId> pool_out_tokens;
+  for (const auto &in: tx.vin) {
+    if (in.type() != typeid(txin_to_key)) {
+      MERROR_VER("Input must have 'txin_to_key' type");
+      return false;
+    }
+
+    const txin_to_key &in_to_key = boost::get<txin_to_key>(in);
+    if (in_to_key.s_type == SourceType::lp) {
+      pool_out_tokens.insert(in_to_key.token_id);
+
+      std::vector<uint64_t> absolute_offsets = in_to_key.s_type == SourceType::wallet ?
+                                               relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                               lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+      std::vector<lpoutput_data_t> outputs;
+
+      try {
+        m_db->get_output_key_lpool(in_to_key.token_id, absolute_offsets, outputs, true, false);
+        if (absolute_offsets.size() != outputs.size()) {
+          MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+          return false;
+        }
+      }
+      catch (...) {
+        MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+        return false;
+      }
+
+      token1_amount += outputs[0].amount;
+    }
+  }
+
+  if (pool_out_tokens.size() != 1) {
+    MERROR_VER("Exchange transaction must have 1 outbounding token (from liquidity pool)");
+    return false;
+  }
+
+  const TokenId &pool_out_token = *pool_out_tokens.cbegin();
+  Amount token1_change = 0;
+  Amount token2_amount = 0;
+
+  crypto::public_key pub_key = get_tx_pub_key_from_extra(tx);
+
+  std::set<TokenId> pool_in_tokens;
+  Amount a;
+  for (size_t i = 0; i < tx.vout.size(); ++i) {
+    const TokenId &oti = tx.vout[i].token_id;
+    const rct::key omega = rct::tokenIdToPoint(oti);
+    if (LpAccount::check_destination_output(tx.vout[i], pub_key, tx.rct_signatures, omega, i, a)) {
+      pool_in_tokens.insert(oti);
+      if (oti == pool_out_token) {
+        token1_change += a;
+      }
+      else {
+        token2_amount += a;
+      }
+    }
+  }
+
+  pool_out_tokens.insert(pool_in_tokens.cbegin(), pool_in_tokens.cend());
+
+  if (pool_out_tokens.size() != 2) {
+    MERROR_VER("Exchange transaction must have 1 inbounding token (into liquidity pool)");
+    return false;
+  }
+
+  const TokenId &token1 = pool_out_token;
+  const TokenId &token2 = (pool_out_token != *pool_out_tokens.cbegin()) ?
+                          *pool_out_tokens.cbegin() : *pool_out_tokens.crbegin();
+
+  if (exchange_data.data.empty()) {
+    LOG_PRINT_L2("Could not extract exchange data from 'add liquidity' transaction");
+    return false;
+  }
+
+  // get all pools in the exchange chain
+  std::vector<LiquidityPool> pools;
+  for (const auto &e: exchange_data.data) {
+    liquidity_pool_data_t lp{};
+    if (!get_liquidity_pool(tokens_to_lpname(e.d_token1, e.d_token2), lp)) {
+      return false;
+    }
+    pools.push_back({lp.lptoken,
+                     lp.token1,
+                     lp.token2,
+                     lp.lpamount,
+                     {lp.amount1, lp.amount2}});
+  }
+
+  Amount derived_amount = token1_amount - token1_change;
+
+  std::vector<ExchangeTransfer> exchange_transfers;
+  ExchangeTransfer summary;
+  if (!cross_pools_to_composite_exchange_transfer(exchange_transfers,
+                                            summary,
+                                            token1,
+                                            token2,
+                                            derived_amount,
+                                            config::DEX_FEE_PER_MILLE,
+                                            pools)) {
+    LOG_PRINT_L2("Incorrect 'buy' transaction");
+    return false;
+  }
+
+  if (exchange_data.data.size() != exchange_transfers.size()) {
+    LOG_PRINT_L2("Wrong number of pools in the exchange transaction");
+    return false;
+  }
+
+  for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+    if (exchange_data.data[i] != exchange_transfers[i]) {
+      LOG_PRINT_L2("Wrong pools in exchange");
+      return false;
+    }
+  }
+
+  Amount real_amount = token2 == summary.d_token2 ? summary.d_new_ratio.d_amount2 - summary.d_old_ratio.d_amount2 :
+                       summary.d_new_ratio.d_amount1 - summary.d_old_ratio.d_amount1;
+
+  if (token2_amount != real_amount) {
+    LOG_PRINT_L2("Exchange ratio is not correct. Probably another exchange transaction just has happened.");
+    return false;
+  }
+
+  if (exchange_transfers.size() != pools.size()) {
+    LOG_PRINT_L2("Something went wrong during buy tx check");
+    return false;
+  }
+
+  if (liquidity_pools_update != nullptr) {
+    for (size_t i = 0; i < exchange_transfers.size(); ++i) {
+      const ExchangeTransfer &et = exchange_transfers[i];
+      const LiquidityPool    &p  = pools[i];
+      liquidity_pools_update->push_back({
+                                          p.d_lptoken,
+                                          et.d_token1,
+                                          et.d_token2,
+                                          p.d_lp_amount,
+                                          et.d_new_ratio.d_amount1,
+                                          et.d_new_ratio.d_amount2
+                                        });
+    }
+  }
+
   return true;
 }
 
 bool Blockchain::check_tgtx_payment(const transaction &tx)
 {
-  account_base cba = get_coin_burn_account();
-  crypto::public_key pub_key = get_tx_pub_key_from_extra(tx);
+  return validate_amount_burnt(tx, CUTCOIN_ID, config::TOKEN_GENESIS_AMOUNT);
+}
 
-  crypto::key_derivation derivation;
-  if (!generate_key_derivation(pub_key, cba.get_keys().m_view_secret_key, derivation)) {
-    return false;
-  }
+bool Blockchain::check_lpgtx_payment(const transaction &tx)
+{
+  return validate_amount_burnt(tx, CUTCOIN_ID, config::POOL_DEPOSIT_AMOUNT);
+}
 
-  const cryptonote::account_public_address &pub_keys = cba.get_keys().m_account_address;
+bool Blockchain::check_transfer_from_liquidity_pool(const transaction &tx,
+                                                    const TokenId &token_id,
+                                                    const Amount &amount)
+{
+  PERF_TIMER(check_tx_inputs);
+  LOG_PRINT_L3("Blockchain::" << __func__);
 
-  uint64_t           sum_cut{0};
-  uint64_t           output_index{0};
-  crypto::public_key tx_pubkey;
-  rct::key           mask;
+  Amount sum_amount = 0, change = 0;
 
-  rct::keyV omega_v;
-  omega_v.reserve(tx.vout.size());
-  for (const auto &o: tx.vout) {
-    omega_v.push_back(rct::tokenIdToPoint(o.token_id));
-  }
+  for (const auto &in : tx.vin) {
+    // make sure output being spent is of type txin_to_key, rather than
+    // e.g. txin_gen, which is only used for miner transactions
+    if (in.type() == typeid(txin_to_key)) {
+      const txin_to_key &in_to_key = boost::get<txin_to_key>(in);
 
-  for (const auto &o: tx.vout) {
-    derive_public_key(derivation, output_index, pub_keys.m_spend_public_key, tx_pubkey);
-    if (o.target.type() == typeid(txout_to_key)) {
-      const txout_to_key &out_to_key = boost::get<txout_to_key>(o.target);
-      if (out_to_key.key == tx_pubkey) { // burning output
-        crypto::secret_key scalar1;
-        crypto::derivation_to_scalar(derivation, output_index, scalar1);
+      if (in_to_key.s_type == SourceType::lp && in_to_key.token_id == token_id) {
+        // 0. make sure tx output has key offset(s) (is signed to be used)
+        CHECK_AND_ASSERT_MES(in_to_key.key_offsets.size(), false,
+                             "empty in_to_key.key_offsets in transaction with id " << get_transaction_hash(tx));
 
+        // 1. check that  the input is really from liquidity pool and
+        // 2. add its amount in the total sum
+        std::vector<uint64_t> absolute_offsets = in_to_key.s_type == SourceType::wallet ?
+                                                 relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                                 lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+        std::vector<lpoutput_data_t> outputs;
 
-        uint64_t rct_amount = rct::decodeRctSimple(tx.rct_signatures,
-                                                   rct::sk2rct(scalar1),
-                                                   omega_v,
-                                                   output_index,
-                                                   mask,
-                                                   hw::get_device("default"));
-        sum_cut += rct_amount;
-        ++output_index;
+        try {
+          m_db->get_output_key_lpool(in_to_key.token_id, absolute_offsets, outputs, true, false);
+          if (absolute_offsets.size() != outputs.size()) {
+            MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+            return false;
+          }
+        }
+        catch (...) {
+          MERROR_VER("Output does not exist! token_id = " << in_to_key.token_id);
+          return false;
+        }
+
+        sum_amount += outputs[0].amount;
       }
     }
   }
 
-  return (sum_cut >= config::TOKEN_GENESIS_AMOUNT);
+  LOG_PRINT_L2("In tx " << tx.hash
+                        << " for token " << token_id_to_name(token_id)
+                        << " found outgoing from LP " << print_money(sum_amount));
+
+  crypto::public_key pub_key = get_tx_pub_key_from_extra(tx);
+  std::set<TokenId> pool_in_tokens;
+  Amount a;
+  for (size_t i = 0; i < tx.vout.size(); ++i) {
+    const TokenId &oti = tx.vout[i].token_id;
+    const rct::key omega = rct::tokenIdToPoint(oti);
+    if (LpAccount::check_destination_output(tx.vout[i], pub_key, tx.rct_signatures, omega, i, a)) {
+      pool_in_tokens.insert(oti);
+      if (oti == token_id) {
+        change += a;
+      }
+    }
+  }
+
+  LOG_PRINT_L2("In tx " << tx.hash
+                        << " for token " << token_id_to_name(token_id)
+                        << " found change to LP " << print_money(change));
+
+  sum_amount -= change;
+
+  return sum_amount == amount;
 }
 
 bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_data &token_data)
 {
   if (m_db->height() < 571000) {
     return true;
+  }
+
+  if ((token_data.d_supply == 0 && !TokenType::is_hidden(token_data.d_extra1))
+       || token_data.d_supply > MAX_TOKEN_SUPPLY) {
+    return false;
   }
 
   const rct::rctSig rct_sig = tx.rct_signatures;
@@ -3328,8 +4716,16 @@ bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_d
     }
   }
 
+  Amount minted_amount = token_data.d_supply;
+  if (tx.type.has_flag_minting()) {
+    TokenSummary token_summary;
+    if (get_token_info(token_summary, token_data.d_id)) {
+      minted_amount -= token_summary.d_token_supply;
+    }
+  }
+
   rct::key po{};
-  gp_genC(po, rct::identity(), rct::tokenIdToPoint(token_data.d_id), token_data.d_supply * token_data.d_unit);
+  gp_genC(po, rct::identity(), rct::tokenIdToPoint(token_data.d_id), minted_amount * token_data.d_unit);
   pseudoOuts.emplace_back(po);
 
   rct::key sumPseudoOuts = addKeys(pseudoOuts);
@@ -3337,8 +4733,105 @@ bool Blockchain::check_tgtx_supply(const transaction &tx, const tx_extra_token_d
   return token_data.d_supply == 0 ? !sumsEqual: sumsEqual;
 }
 
+bool Blockchain::check_tgtx_hidden_supply(const transaction &tx, const tx_extra_token_data &token_data)
+{
+  if (token_data.d_supply != 0) {
+    return false;
+  }
+
+  return true;
+}
+
+bool Blockchain::check_lptgtx_supply(const transaction &tx, const tx_extra_token_data &token_data)
+{
+  if (!TokenType::is_lptoken(token_data.d_extra1)) {
+    return false;
+  }
+
+  if (!is_valid_lptoken_supply(token_data.d_supply)) {
+    return false;
+  }
+
+  const rct::rctSig rct_sig = tx.rct_signatures;
+  rct::keyV masks(rct_sig.outPk.size());
+
+  for (size_t i = 0; i < rct_sig.outPk.size(); ++i) {
+    masks[i] = rct_sig.outPk[i].mask;
+  }
+
+  rct::key sumOutpks = addKeys(masks);
+
+  const rct::key txnFeeKey = scalarmultH(rct::d2h(rct_sig.txnFee));
+  addKeys(sumOutpks, txnFeeKey, sumOutpks);
+
+  const auto &ins = tx.vin;
+  rct::keyV pseudoOuts;
+  CHECK_AND_ASSERT_MES(ins.size() == rct_sig.p.pseudoOuts.size(), false, "inputs size != pseudoOuts size");
+  for (size_t i = 0; i < rct_sig.p.pseudoOuts.size(); ++i) {
+    const auto &txin = ins[i];
+    CHECK_AND_ASSERT_MES(txin.type() == typeid(txin_to_key),
+                         false,
+                         "wrong type id in tx input at Blockchain::check_tx_inputs");
+    const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+    if (in_to_key.token_id == cryptonote::CUTCOIN_ID) {
+      pseudoOuts.push_back(rct_sig.p.pseudoOuts[i]);
+    }
+  }
+
+  Amount minted_amount = token_data.d_supply;
+  if (tx.type.has_flag_minting()) {
+    TokenSummary token_summary;
+    if (get_token_info(token_summary, token_data.d_id)) {
+      minted_amount -= token_summary.d_token_supply;
+    }
+  }
+
+  rct::key po{};
+  gp_genC(po, rct::identity(), rct::tokenIdToPoint(token_data.d_id), minted_amount * token_data.d_unit);
+  pseudoOuts.emplace_back(po);
+
+  rct::key sumPseudoOuts = addKeys(pseudoOuts);
+  return equalKeys(sumPseudoOuts, sumOutpks);
+}
+
+bool Blockchain::check_token_ownership(const transaction &tx, const tx_extra_token_data &token_data)
+{
+  tx_extra_token_genesis_ownership tgo{};
+  if (!get_token_genesis_ownership(tx, tgo)) {
+    LOG_PRINT_L2("Could not extract token ownership data from token genesis transaction");
+    return false;
+  }
+
+  if (!rct::ver_token_ownership(token_data.d_supply, tgo.pk, tgo.s)) {
+    LOG_PRINT_L2("Token ownership verification failed");
+    return false;
+  }
+  return true;
+}
+
+bool Blockchain::get_token_info(TokenSummary &token_summary, TokenId token_id) const
+{
+  bool res = false;
+  token_data_t td;
+  td.id = token_id;
+  if (m_db->get_token_data(td)) {
+    token_summary.d_token_id = td.id;
+    token_summary.d_token_supply = td.supply;
+    token_summary.d_unit = td.unit;
+    token_summary.d_pkey = td.pkey;
+    token_summary.d_signature = td.signature;
+    token_summary.d_type = td.type;
+    res = true;
+  }
+  return res;
+}
+
 //------------------------------------------------------------------
-void Blockchain::check_ring_signature(const crypto::hash &tx_prefix_hash, const crypto::key_image &key_image, const std::vector<rct::ctkey> &pubkeys, const std::vector<crypto::signature>& sig, uint64_t &result)
+void Blockchain::check_ring_signature(const crypto::hash                   &tx_prefix_hash,
+                                      const crypto::key_image              &key_image,
+                                      const std::vector<rct::ctkey>        &pubkeys,
+                                      const std::vector<crypto::signature> &sig,
+                                      uint64_t                             &result)
 {
   std::vector<const crypto::public_key *> p_output_keys;
   p_output_keys.reserve(pubkeys.size());
@@ -3508,7 +5001,7 @@ bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) const
   else
   {
     //interpret as time
-    uint64_t current_time = static_cast<uint64_t>(time(NULL));
+    uint64_t current_time = static_cast<uint64_t>(time(nullptr));
     if(current_time + (get_current_hard_fork_version() < 2 ? CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V1 : CRYPTONOTE_LOCKED_TX_ALLOWED_DELTA_SECONDS_V2) >= unlock_time)
       return true;
     else
@@ -3516,7 +5009,7 @@ bool Blockchain::is_tx_spendtime_unlocked(uint64_t unlock_time) const
   }
   return false;
 }
-//------------------------------------------------------------------
+
 bool Blockchain::check_tgtx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys)
 {
   tx_extra_token_data td;
@@ -3538,7 +5031,29 @@ bool Blockchain::check_tgtx_input(const transaction &tx, const txin_to_key &txin
 
   return true;
 }
-//------------------------------------------------------------------
+
+bool Blockchain::check_mntx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys)
+{
+  tx_extra_token_data td;
+  get_token_data(tx, td);
+  if (td.d_id != txin.token_id) {
+    return false;
+  }
+
+  output_keys.clear();
+
+  std::vector<crypto::public_key> token_pub_keys = get_tgtx_keys_from_tx_extra(tx);
+  if (token_pub_keys.size() >> 1 << 1 != token_pub_keys.size()) {
+    return false;
+  }
+
+  for (size_t i = 0; i < token_pub_keys.size(); i += 2) {
+    output_keys.emplace_back(rct::ctkey({rct::pk2rct(token_pub_keys[i]), rct::pk2rct(token_pub_keys[i + 1])}));
+  }
+
+  return true;
+}
+
 // This function locates all outputs associated with a given input (mixins)
 // and validates that they exist and are usable.  It also checks the ring
 // signature for each input.
@@ -3581,8 +5096,14 @@ bool Blockchain::check_tx_input(size_t tx_version, const txin_to_key& txin, cons
 
   // collect output keys
   outputs_visitor vi(output_keys, *this);
-  if (!scan_outputkeys_for_indexes(tx_version, txin, vi, tx_prefix_hash, pmax_related_block_height))
-  {
+  bool res = false;
+  if (txin.s_type == SourceType::wallet) {
+    res = scan_outputkeys_for_indexes(tx_version, txin, vi, tx_prefix_hash, pmax_related_block_height);
+  }
+  else {
+    res = scan_lp_outputkeys_for_indexes(tx_version, txin, vi, tx_prefix_hash, pmax_related_block_height);
+  }
+  if (!res) {
     MERROR_VER("Failed to get output keys for tx with amount = " << print_money(txin.amount) << " and count indexes " << txin.key_offsets.size());
     return false;
   }
@@ -3604,7 +5125,7 @@ uint64_t Blockchain::get_adjusted_time() const
 {
   LOG_PRINT_L3("Blockchain::" << __func__);
   //TODO: add collecting median time
-  return time(NULL);
+  return time(nullptr);
 }
 //------------------------------------------------------------------
 //TODO: revisit, has changed a bit on upstream
@@ -3991,14 +5512,14 @@ leave:
   uint64_t t_dblspnd = 0;
   TIME_MEASURE_FINISH(t3);
 
-// XXX old code adds miner tx here
+  size_t special_tx_counter = 0;
+  std::vector<liquidity_pool_data_t> liquidity_pools_update;
 
-  size_t tx_index = 0;
   // Iterate over the block's transaction hashes, grabbing each
   // from the tx_pool and validating them.  Each is then added
   // to txs.  Keys spent in each are added to <keys> by the double spend check.
   txs.reserve(bl.tx_hashes.size());
-  for (const crypto::hash& tx_id : bl.tx_hashes)
+  for (const crypto::hash& tx_id: bl.tx_hashes)
   {
     transaction tx;
     size_t tx_weight = 0;
@@ -4089,10 +5610,110 @@ leave:
     }
 #endif
 
-    if (tx.is_token_genesis()) {
-      tx_verification_context tvc;
-      if (!check_tgtx(tvc, bvc, tx)) {
+    if (tx.type.is_plain() && !check_plain_tx(tx)){
+      MERROR_VER("Block with id: " << id  << " has invalid transaction (id: " << tx_id << ").");
+      bvc.m_verifivation_failed = true;
+      return_tx_to_pool(txs);
+      goto leave;
+    }
+
+    if (tx.type.is_tgtx()) {
+      ++special_tx_counter;
+      if (!check_tgtx(tx)) {
         MERROR_VER("Block with id: " << id  << " has invalid token genesis transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+
+      if (tx.type.has_flag_minting()) {
+        if (!check_mntx(tx)) {
+          MERROR_VER("Block with id: " << id << " has invalid token minting transaction (id: " << tx_id << ").");
+          bvc.m_verifivation_failed = true;
+          return_tx_to_pool(txs);
+          goto leave;
+        }
+      }
+      else if (tx.type.has_flag_lp_token()) {
+        if (!check_lp_tgtx(tx)) {
+          MERROR_VER("Block with id: " << id  << " has invalid lp token genesis transaction (id: " << tx_id << ").");
+          bvc.m_verifivation_failed = true;
+          return_tx_to_pool(txs);
+          goto leave;
+        }
+      }
+      else if (tx.type.has_flag_hidden_supply()) {
+        if (!check_hs_tgtx(tx)) {
+          MERROR_VER("Block with id: " << id
+                                       << " has invalid token genesis transaction with hidden supply (id: " << tx_id
+                                       << ").");
+          bvc.m_verifivation_failed = true;
+          return_tx_to_pool(txs);
+          goto leave;
+        }
+      }
+      else {
+        if (!check_ps_tgtx(tx)) {
+          MERROR_VER("Block with id: " << id
+                                       << " has invalid token genesis transaction with public supply (id: " << tx_id
+                                       << ").");
+          bvc.m_verifivation_failed = true;
+          return_tx_to_pool(txs);
+          goto leave;
+        }
+      }
+    }
+    if (tx.type.is_create_lp()) {
+      ++special_tx_counter;
+      if(!check_lp_gtx(tx, &liquidity_pools_update)) {
+        MERROR_VER("Block with id: " << id << " has invalid liquidity pool genesis transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+    }
+    if (tx.type.is_add_liquidity()) {
+      ++special_tx_counter;
+      if (!check_lp_addtx(tx, &liquidity_pools_update)) {
+        MERROR_VER("Block with id: " << id << " has invalid 'add liquidity' transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+    }
+    if (tx.type.is_take_liquidity()) {
+      ++special_tx_counter;
+      if (!check_lp_taketx(tx, &liquidity_pools_update)) {
+        MERROR_VER("Block with id: " << id << " has invalid 'take liquidity' transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+    }
+    if (tx.type.is_dex_buy()) {
+      ++special_tx_counter;
+      if (!check_lp_buy_tx(tx, &liquidity_pools_update)) {
+        MERROR_VER("Block with id: " << id << " has invalid liquidity pool buy transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+    }
+
+    if (tx.type.is_dex_sell()) {
+      ++special_tx_counter;
+      if (!check_lp_sell_tx(tx, &liquidity_pools_update)) {
+        MERROR_VER("Block with id: " << id << " has invalid liquidity pool sell transaction (id: " << tx_id << ").");
+        bvc.m_verifivation_failed = true;
+        return_tx_to_pool(txs);
+        goto leave;
+      }
+    }
+
+    if (tx.type.is_dex_cross()) {
+      ++special_tx_counter;
+      if (!check_lp_cross_tx(tx, &liquidity_pools_update)) {
+        MERROR_VER("Block with id: " << id << " has invalid liquidity pool cross exchange transaction (id: " << tx_id << ").");
         bvc.m_verifivation_failed = true;
         return_tx_to_pool(txs);
         goto leave;
@@ -4103,6 +5724,14 @@ leave:
     t_checktx += cc;
     fee_summary += fee;
     cumulative_block_weight += tx_weight;
+  }
+
+  if (special_tx_counter > 1) {
+    MERROR_VER("Second 'special' transaction in same block (one of: "
+               "token genesis, minting, pool genesis, liquidity taking, exchange)");
+    bvc.m_verifivation_failed = true;
+    return_tx_to_pool(txs);
+    goto leave;
   }
 
   m_blocks_txs_check.clear();
@@ -4145,6 +5774,9 @@ leave:
     try
     {
       new_height = m_db->add_block(bl, block_weight, cumulative_difficulty, already_generated_coins, txs);
+      for (const auto &lpd: liquidity_pools_update) {
+        m_db->add_liqudity_pool(lpd);
+      }
     }
     catch (const KEY_IMAGE_EXISTS& e)
     {
@@ -4172,7 +5804,7 @@ leave:
   // do this after updating the hard fork state since the weight limit may change due to fork
   update_next_cumulative_weight_limit();
 
-  MINFO("+++++ BLOCK SUCCESSFULLY ADDED" << std::endl << "id:\t" << id << std::endl << "PoW:\t" << proof_of_work << std::endl << "HEIGHT " << new_height-1 << ", difficulty:\t" << current_diffic << std::endl << "block reward: " << print_money(fee_summary + base_reward) << "(" << print_money(base_reward) << " + " << print_money(fee_summary) << "), coinbase_weight: " << coinbase_weight << ", cumulative weight: " << cumulative_block_weight << ", " << block_processing_time << "(" << target_calculating_time << "/" << longhash_calculating_time << ")ms");
+  MINFO("+++++ BLOCK SUCCESSFULLY ADDED" << std::endl << "id:\t" << id << std::endl << (bl.major_version >= HF_VERSION_POS ? "PoS hash:\t" : "PoW:\t") << proof_of_work << std::endl << "HEIGHT " << new_height-1 << ", difficulty:\t" << current_diffic << std::endl << "block reward: " << print_money(fee_summary + base_reward) << "(" << print_money(base_reward) << " + " << print_money(fee_summary) << "), coinbase_weight: " << coinbase_weight << ", cumulative weight: " << cumulative_block_weight << ", " << block_processing_time << "(" << target_calculating_time << "/" << longhash_calculating_time << ")ms");
   if(m_show_time_stats)
   {
     MINFO("Height: " << new_height << " coinbase weight: " << coinbase_weight << " cumm: "
@@ -4407,6 +6039,7 @@ bool Blockchain::cleanup_handle_incoming_blocks(bool force_sync)
   TIME_MEASURE_FINISH(t1);
   m_blocks_longhash_table.clear();
   m_scan_table.clear();
+  m_lp_scan_table.clear();
   m_blocks_txs_check.clear();
   m_check_txin_table.clear();
 
@@ -4424,13 +6057,13 @@ bool Blockchain::cleanup_handle_incoming_blocks(bool force_sync)
   return success;
 }
 
-//------------------------------------------------------------------
-//FIXME: unused parameter txs
-void Blockchain::output_scan_worker(const uint64_t amount, const std::vector<uint64_t> &offsets, std::vector<output_data_t> &outputs, std::unordered_map<crypto::hash, cryptonote::transaction> &txs) const
+void Blockchain::output_scan_worker(const TokenId                token_id,
+                                    const std::vector<uint64_t> &offsets,
+                                    std::vector<output_data_t>  &outputs) const
 {
   try
   {
-    m_db->get_output_key(amount, offsets, outputs, true);
+    m_db->get_output_key(token_id, offsets, outputs, true);
   }
   catch (const std::exception& e)
   {
@@ -4439,6 +6072,26 @@ void Blockchain::output_scan_worker(const uint64_t amount, const std::vector<uin
   catch (...)
   {
 
+  }
+}
+
+void Blockchain::lp_output_scan_worker(const TokenId                token_id,
+                                       const std::vector<uint64_t> &offsets,
+                                       std::vector<output_data_t>  &outputs) const
+{
+  std::vector<lpoutput_data_t> lp_outputs;
+  try {
+    m_db->get_output_key_lpool(token_id, offsets, lp_outputs, true, false);
+  }
+  catch (const std::exception& e) {
+    MERROR_VER("EXCEPTION: " << e.what());
+  }
+  catch (...) {
+
+  }
+
+  for (auto &lpo: lp_outputs) {
+    outputs.push_back({lpo.pubkey, lpo.unlock_time, lpo.height, lpo.commitment});
   }
 }
 
@@ -4671,8 +6324,7 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
       m_blocks_longhash_table.clear();
       uint64_t thread_height = height;
       tools::threadpool::waiter waiter;
-      for (uint64_t i = 0; i < threads; i++)
-      {
+      for (uint64_t i = 0; i < threads; i++) {
         tpool.submit(&waiter, boost::bind(&Blockchain::block_longhash_worker, this, thread_height, std::cref(blocks[i]), std::ref(maps[i])), true);
         thread_height += blocks[i].size();
       }
@@ -4701,7 +6353,6 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
   m_fake_scan_time = 0;
   m_fake_pow_calc_time = 0;
 
-  m_scan_table.clear();
   m_check_txin_table.clear();
 
   TIME_MEASURE_FINISH(prepare);
@@ -4712,172 +6363,274 @@ bool Blockchain::prepare_handle_incoming_blocks(const std::vector<block_complete
 
   TIME_MEASURE_START(scantable);
 
-  // [input] stores all unique tokens found
-  std::vector < TokenId > tokens;
-  // [input] stores all absolute_offsets for each token id
-  std::map<TokenId, std::vector<uint64_t>> offset_map;
-  // [output] stores all output_data_t for each absolute_offset
-  std::map<TokenId, std::vector<output_data_t>> tx_map;
-  std::vector<std::pair<cryptonote::transaction, crypto::hash>> txes(total_txs);
-
 #define SCAN_TABLE_QUIT(m) \
         do { \
             MERROR_VER(m) ;\
             m_scan_table.clear(); \
+            m_lp_scan_table.clear(); \
             return false; \
         } while(0); \
 
-  // generate sorted tables for all tokens and absolute offsets
-  size_t tx_index = 0;
-  for (const auto &entry : blocks_entry)
   {
-    if (m_cancel)
-      return false;
+    m_scan_table.clear();
 
-    for (const auto &tx_blob : entry.txs)
-    {
-      if (tx_index >= txes.size())
-        SCAN_TABLE_QUIT("tx_index is out of sync");
-      transaction &tx = txes[tx_index].first;
-      crypto::hash &tx_prefix_hash = txes[tx_index].second;
-      ++tx_index;
+    // [input] stores all absolute_offsets for each token id
+    std::unordered_map<TokenId, std::vector<uint64_t>> offset_map;
+    // [output] stores all output_data_t for each absolute_offset
+    std::unordered_map<TokenId, std::vector<output_data_t>> tx_map;
+    std::vector<std::pair<cryptonote::transaction, crypto::hash>> txes(total_txs);
 
-      if (!parse_and_validate_tx_base_from_blob(tx_blob, tx))
-        SCAN_TABLE_QUIT("Could not parse tx from incoming blocks.");
-      cryptonote::get_transaction_prefix_hash(tx, tx_prefix_hash);
+    // generate sorted tables for all tokens and absolute offsets
+    size_t tx_index = 0;
+    for (const auto &entry : blocks_entry) {
+      if (m_cancel)
+        return false;
 
-      auto its = m_scan_table.find(tx_prefix_hash);
-      if (its != m_scan_table.end())
-        SCAN_TABLE_QUIT("Duplicate tx found from incoming blocks.");
-
-      m_scan_table.emplace(tx_prefix_hash, std::unordered_map<crypto::key_image, std::vector<output_data_t>>());
-      its = m_scan_table.find(tx_prefix_hash);
-      assert(its != m_scan_table.end());
-
-      // get all tokens from tx.vin(s)
-      for (const auto &txin : tx.vin)
-      {
-        const txin_to_key &in_to_key = boost::get < txin_to_key > (txin);
-
-        // check for duplicate
-        auto it = its->second.find(in_to_key.k_image);
-        if (it != its->second.end())
-          SCAN_TABLE_QUIT("Duplicate key_image found from incoming blocks.");
-
-        tokens.push_back(in_to_key.token_id);
-      }
-
-      // sort and remove duplicate tokens from tokens list
-      std::sort(tokens.begin(), tokens.end());
-      auto last = std::unique(tokens.begin(), tokens.end());
-      tokens.erase(last, tokens.end());
-
-      // add token_id to the offset_map and tx_map
-      for (const TokenId &token_id : tokens)
-      {
-        if (offset_map.find(token_id) == offset_map.end())
-          offset_map.emplace(token_id, std::vector<uint64_t>());
-
-        if (tx_map.find(token_id) == tx_map.end())
-          tx_map.emplace(token_id, std::vector<output_data_t>());
-      }
-
-      // add new absolute_offsets to offset_map
-      for (const auto &txin : tx.vin)
-      {
-        const txin_to_key &in_to_key = boost::get < txin_to_key > (txin);
-        // no need to check for duplicate here.
-        auto absolute_offsets = relative_output_offsets_to_absolute(in_to_key.key_offsets);
-        for (const auto & offset : absolute_offsets)
-          offset_map[in_to_key.token_id].push_back(offset);
-
-      }
-    }
-  }
-
-  // sort and remove duplicate absolute_offsets in offset_map
-  for (auto &offsets : offset_map)
-  {
-    std::sort(offsets.second.begin(), offsets.second.end());
-    auto last = std::unique(offsets.second.begin(), offsets.second.end());
-    offsets.second.erase(last, offsets.second.end());
-  }
-
-  // [output] stores all transactions for each tx_out_index::hash found
-  std::vector<std::unordered_map<crypto::hash, cryptonote::transaction>> transactions(tokens.size());
-
-  threads = tpool.get_max_concurrency();
-  if (!m_db->can_thread_bulk_indices())
-    threads = 1;
-
-  if (threads > 1)
-  {
-    tools::threadpool::waiter waiter;
-
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-      TokenId token_id = tokens[i];
-      tpool.submit(&waiter, boost::bind(&Blockchain::output_scan_worker, this, token_id, std::cref(offset_map[token_id]), std::ref(tx_map[token_id]), std::ref(transactions[i])), true);
-    }
-    waiter.wait(&tpool);
-  }
-  else
-  {
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-      TokenId token_id = tokens[i];
-      output_scan_worker(token_id, offset_map[token_id], tx_map[token_id], transactions[i]);
-    }
-  }
-
-  // now generate a table for each tx_prefix and k_image hashes
-  tx_index = 0;
-  for (const auto &entry : blocks_entry)
-  {
-    if (m_cancel)
-      return false;
-
-    for (const auto &tx_blob : entry.txs)
-    {
-      if (tx_index >= txes.size())
-        SCAN_TABLE_QUIT("tx_index is out of sync");
-      const transaction &tx = txes[tx_index].first;
-      const crypto::hash &tx_prefix_hash = txes[tx_index].second;
-      ++tx_index;
-
-      auto its = m_scan_table.find(tx_prefix_hash);
-      if (its == m_scan_table.end())
-        SCAN_TABLE_QUIT("Tx not found on scan table from incoming blocks.");
-
-      for (const auto &txin : tx.vin)
-      {
-        const txin_to_key &in_to_key = boost::get < txin_to_key > (txin);
-        auto needed_offsets = relative_output_offsets_to_absolute(in_to_key.key_offsets);
-
-        std::vector<output_data_t> outputs;
-        for (const uint64_t & offset_needed : needed_offsets)
-        {
-          size_t pos = 0;
-          bool found = false;
-
-          for (const uint64_t &offset_found : offset_map[in_to_key.token_id])
-          {
-            if (offset_needed == offset_found)
-            {
-              found = true;
-              break;
-            }
-
-            ++pos;
-          }
-
-          if (found && pos < tx_map[in_to_key.token_id].size())
-            outputs.push_back(tx_map[in_to_key.token_id].at(pos));
-          else
-            break;
+      for (const auto &tx_blob: entry.txs) {
+        if (tx_index >= txes.size()) {
+          SCAN_TABLE_QUIT("tx_index is out of sync");
         }
 
-        its->second.emplace(in_to_key.k_image, outputs);
+        transaction &tx              = txes[tx_index].first;
+        crypto::hash &tx_prefix_hash = txes[tx_index].second;
+        ++tx_index;
+
+        if (!parse_and_validate_tx_base_from_blob(tx_blob, tx)) {
+          SCAN_TABLE_QUIT("Could not parse tx from incoming blocks.");
+        }
+        cryptonote::get_transaction_prefix_hash(tx, tx_prefix_hash);
+
+        auto its = m_scan_table.find(tx_prefix_hash);
+        if (its != m_scan_table.end()) {
+          SCAN_TABLE_QUIT("Duplicate tx found from incoming blocks.");
+        }
+
+        m_scan_table.emplace(tx_prefix_hash, std::unordered_map<crypto::key_image, std::vector<output_data_t>>());
+
+        // add new absolute_offsets to offset_map
+        for (const auto &txin: tx.vin) {
+          const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+          if (in_to_key.s_type == SourceType::wallet) {
+            // no need to check for duplicate here.
+            const auto absolute_offsets = in_to_key.s_type == SourceType::wallet ?
+                                          relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                          lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+            // append current offsets with new ones
+            auto &old_offsets = offset_map[in_to_key.token_id];
+            old_offsets.insert(old_offsets.end(), absolute_offsets.begin(), absolute_offsets.end());
+          }
+        }
+      }
+    }
+
+    // sort and remove duplicate absolute_offsets in offset_map and lp_offset_map
+    for (auto &offsets: offset_map) {
+      std::sort(offsets.second.begin(), offsets.second.end());
+      auto last = std::unique(offsets.second.begin(), offsets.second.end());
+      offsets.second.erase(last, offsets.second.end());
+    }
+
+    threads = tpool.get_max_concurrency();
+    if (!m_db->can_thread_bulk_indices())
+      threads = 1;
+
+    if (threads > 1) {
+      tools::threadpool::waiter waiter;
+
+      for (auto it = offset_map.begin(); it != offset_map.end(); ++it) {
+        const TokenId &token_id = it->first;
+        tpool.submit(&waiter, boost::bind(&Blockchain::output_scan_worker, this, token_id, std::cref(it->second), std::ref(tx_map[token_id])), true);
+      }
+      waiter.wait(&tpool);
+    }
+    else {
+      for (auto it = offset_map.begin(); it != offset_map.end(); ++it) {
+        const TokenId &token_id = it->first;
+        output_scan_worker(token_id, it->second, tx_map[token_id]);
+      }
+    }
+
+    // now generate a table for each tx_prefix and k_image hashes
+    tx_index = 0;
+    for (const auto &entry : blocks_entry)
+    {
+      if (m_cancel)
+        return false;
+
+      for (const auto &tx_blob: entry.txs) {
+        if (tx_index >= txes.size())
+          SCAN_TABLE_QUIT("tx_index is out of sync");
+        const transaction &tx = txes[tx_index].first;
+        const crypto::hash &tx_prefix_hash = txes[tx_index].second;
+        ++tx_index;
+
+        auto its = m_scan_table.find(tx_prefix_hash);
+        if (its == m_scan_table.end())
+          SCAN_TABLE_QUIT("Tx not found on scan table from incoming blocks.");
+
+        for (const auto &txin : tx.vin) {
+          const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+          if (in_to_key.s_type == SourceType::wallet) {
+            auto needed_offsets = in_to_key.s_type == SourceType::wallet ?
+                                  relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                  lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+
+            std::vector<output_data_t> outputs;
+            for (const uint64_t &offset_needed : needed_offsets) {
+              size_t pos = 0;
+              bool found = false;
+
+              for (const uint64_t &offset_found : offset_map[in_to_key.token_id]) {
+                if (offset_needed == offset_found) {
+                  found = true;
+                  break;
+                }
+
+                ++pos;
+              }
+
+              if (found && pos < tx_map[in_to_key.token_id].size())
+                outputs.push_back(tx_map[in_to_key.token_id].at(pos));
+              else
+                break;
+            }
+
+            its->second.emplace(in_to_key.k_image, outputs);
+          }
+        }
+      }
+    }
+  }
+
+  {
+    m_lp_scan_table.clear();
+
+    // [input] stores all absolute_offsets for each token id
+    std::unordered_map<TokenId, std::vector<uint64_t>> lp_offset_map;
+    // [output] stores all output_data_t for each absolute_offset
+    std::unordered_map<TokenId, std::vector<output_data_t>> lp_tx_map;
+    std::vector<std::pair<cryptonote::transaction, crypto::hash>> lp_txes(total_txs);
+
+    // generate sorted tables for all tokens and absolute offsets
+    size_t tx_index = 0;
+    for (const auto &entry : blocks_entry)
+    {
+      if (m_cancel)
+        return false;
+
+      for (const auto &tx_blob: entry.txs) {
+        if (tx_index >= lp_txes.size()) {
+          SCAN_TABLE_QUIT("tx_index is out of sync");
+        }
+
+        transaction &tx              = lp_txes[tx_index].first;
+        crypto::hash &tx_prefix_hash = lp_txes[tx_index].second;
+        ++tx_index;
+
+        if (!parse_and_validate_tx_base_from_blob(tx_blob, tx)) {
+          SCAN_TABLE_QUIT("Could not parse tx from incoming blocks.");
+        }
+        cryptonote::get_transaction_prefix_hash(tx, tx_prefix_hash);
+
+        auto lp_its = m_lp_scan_table.find(tx_prefix_hash);
+        if (lp_its != m_lp_scan_table.end()) {
+          SCAN_TABLE_QUIT("Duplicate tx found from incoming blocks.");
+        }
+
+        m_lp_scan_table.emplace(tx_prefix_hash, std::unordered_map<crypto::key_image, std::vector<output_data_t>>());
+
+        // add new absolute_offsets to offset_map
+        for (const auto &txin: tx.vin) {
+          const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+
+          if (in_to_key.s_type == SourceType::lp) {
+            // no need to check for duplicate here.
+            const auto absolute_offsets = in_to_key.s_type == SourceType::wallet ?
+                                          relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                          lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+            // append current offsets with new ones
+            auto &old_offsets = lp_offset_map[in_to_key.token_id];
+            old_offsets.insert(old_offsets.end(), absolute_offsets.begin(), absolute_offsets.end());
+          }
+        }
+      }
+    }
+
+    // sort and remove duplicate absolute_offsets in offset_map and lp_offset_map
+    for (auto &offsets: lp_offset_map) {
+      std::sort(offsets.second.begin(), offsets.second.end());
+      auto last = std::unique(offsets.second.begin(), offsets.second.end());
+      offsets.second.erase(last, offsets.second.end());
+    }
+
+    threads = tpool.get_max_concurrency();
+    if (!m_db->can_thread_bulk_indices())
+      threads = 1;
+
+    if (threads > 1) {
+      tools::threadpool::waiter waiter;
+
+      for (auto it = lp_offset_map.begin(); it != lp_offset_map.end(); ++it) {
+        const TokenId &token_id = it->first;
+        tpool.submit(&waiter, boost::bind(&Blockchain::lp_output_scan_worker, this, token_id, std::cref(it->second), std::ref(lp_tx_map[token_id])), true);
+      }
+      waiter.wait(&tpool);
+    }
+    else {
+      for (auto it = lp_offset_map.begin(); it != lp_offset_map.end(); ++it) {
+        const TokenId &token_id = it->first;
+        lp_output_scan_worker(token_id, it->second, lp_tx_map[token_id]);
+      }
+    }
+
+    // now generate a table for each tx_prefix and k_image hashes
+    tx_index = 0;
+    for (const auto &entry : blocks_entry)
+    {
+      if (m_cancel)
+        return false;
+
+      for (const auto &tx_blob: entry.txs) {
+        if (tx_index >= lp_txes.size())
+          SCAN_TABLE_QUIT("tx_index is out of sync");
+        const transaction &tx = lp_txes[tx_index].first;
+        const crypto::hash &tx_prefix_hash = lp_txes[tx_index].second;
+        ++tx_index;
+
+        auto its = m_lp_scan_table.find(tx_prefix_hash);
+        if (its == m_lp_scan_table.end())
+          SCAN_TABLE_QUIT("Tx not found on lp scan table from incoming blocks.");
+
+        for (const auto &txin: tx.vin) {
+          const txin_to_key &in_to_key = boost::get<txin_to_key>(txin);
+          if (in_to_key.s_type == SourceType::lp) {
+            auto needed_offsets = in_to_key.s_type == SourceType::wallet ?
+                                  relative_output_offsets_to_absolute(in_to_key.key_offsets):
+                                  lp_relative_output_offsets_to_absolute(in_to_key.key_offsets);
+
+            std::vector<output_data_t> outputs;
+            for (const uint64_t &offset_needed: needed_offsets) {
+              size_t pos = 0;
+              bool found = false;
+
+              for (const uint64_t &offset_found : lp_offset_map[in_to_key.token_id]) {
+                if (offset_needed == offset_found) {
+                  found = true;
+                  break;
+                }
+
+                ++pos;
+              }
+
+              if (found && pos < lp_tx_map[in_to_key.token_id].size())
+                outputs.push_back(lp_tx_map[in_to_key.token_id].at(pos));
+              else
+                break;
+            }
+
+            its->second.emplace(in_to_key.k_image, outputs);
+          }
+        }
       }
     }
   }
@@ -5203,4 +6956,39 @@ void Blockchain::cache_block_template(const block &b, const cryptonote::account_
 namespace cryptonote {
 template bool Blockchain::get_transactions(const std::vector<crypto::hash>&, std::vector<transaction>&, std::vector<crypto::hash>&) const;
 template bool Blockchain::get_transactions_blobs(const std::vector<crypto::hash>&, std::vector<cryptonote::blobdata>&, std::vector<crypto::hash>&, bool) const;
+
+int in_to_key_compatator(const txin_to_key *in1, const txin_to_key *in2)
+{
+  if (in1 == nullptr) {
+    return -1;
+  }
+
+  if (in1->s_type < in2->s_type) {
+    return -1;
+  }
+
+  if (in1->s_type > in2->s_type) {
+    return 1;
+  }
+
+  if (in1->token_id < in2->token_id) {
+    return -1;
+  }
+
+  if (in1->token_id > in2->token_id) {
+    return 1;
+  }
+
+  int res = memcmp(&in2->k_image, &in1->k_image, sizeof(crypto::key_image));
+  if (res < 0) {
+    return -1;
+  }
+
+  if (res > 0) {
+    return 1;
+  }
+
+  return 0;
+}
+
 }

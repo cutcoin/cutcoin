@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -88,16 +88,20 @@ struct tx_data_t
   tx_data_t(): coinbase(false) {}
   tx_data_t(const cryptonote::transaction &tx)
   {
-    coinbase = tx.vin.size() == 1 && tx.vin[0].type() == typeid(cryptonote::txin_gen);
+    using namespace cryptonote;
+
+    coinbase = tx.vin.size() == 1 && tx.vin[0].type() == typeid(txin_gen);
     if (!coinbase)
     {
       vin.reserve(tx.vin.size());
       for (size_t ring = 0; ring < tx.vin.size(); ++ring)
       {
-        if (tx.vin[ring].type() == typeid(cryptonote::txin_to_key))
+        if (tx.vin[ring].type() == typeid(txin_to_key))
         {
           const cryptonote::txin_to_key &txin = boost::get<cryptonote::txin_to_key>(tx.vin[ring]);
-          vin.push_back(std::make_pair(txin.amount, cryptonote::relative_output_offsets_to_absolute(txin.key_offsets)));
+          txin.s_type == SourceType::wallet ?
+            vin.push_back(std::make_pair(txin.amount, relative_output_offsets_to_absolute(txin.key_offsets))):
+            vin.push_back(std::make_pair(txin.amount, lp_relative_output_offsets_to_absolute(txin.key_offsets)));
         }
         else
         {
@@ -109,9 +113,9 @@ struct tx_data_t
     vout.reserve(tx.vout.size());
     for (size_t out = 0; out < tx.vout.size(); ++out)
     {
-      if (tx.vout[out].target.type() == typeid(cryptonote::txout_to_key))
+      if (tx.vout[out].target.type() == typeid(txout_to_key))
       {
-        const auto &txout = boost::get<cryptonote::txout_to_key>(tx.vout[out].target);
+        const auto &txout = boost::get<txout_to_key>(tx.vout[out].target);
         vout.push_back(txout.key);
       }
       else
@@ -147,7 +151,7 @@ struct ancestry_state_t
     {
       std::unordered_map<crypto::hash, cryptonote::transaction> old_tx_cache;
       a & old_tx_cache;
-      for (const auto i: old_tx_cache)
+      for (const auto& i: old_tx_cache)
         tx_cache.insert(std::make_pair(i.first, ::tx_data_t(i.second)));
     }
     else
@@ -159,7 +163,7 @@ struct ancestry_state_t
       std::unordered_map<uint64_t, cryptonote::block> old_block_cache;
       a & old_block_cache;
       block_cache.resize(old_block_cache.size());
-      for (const auto i: old_block_cache)
+      for (const auto& i: old_block_cache)
         block_cache[i.first] = i.second;
     }
     else
@@ -674,7 +678,9 @@ int main(int argc, char* argv[])
         {
           const cryptonote::txin_to_key &txin = boost::get<cryptonote::txin_to_key>(tx.vin[ring]);
           const uint64_t amount = txin.amount;
-          auto absolute_offsets = cryptonote::relative_output_offsets_to_absolute(txin.key_offsets);
+          auto absolute_offsets = txin.s_type == SourceType::wallet ?
+                                  cryptonote::relative_output_offsets_to_absolute(txin.key_offsets):
+                                  cryptonote::lp_relative_output_offsets_to_absolute(txin.key_offsets);
           for (uint64_t offset: absolute_offsets)
           {
             add_ancestor(ancestry, amount, offset);

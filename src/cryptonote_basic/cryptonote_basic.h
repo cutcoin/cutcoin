@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -47,6 +47,7 @@
 #include "serialization/variant.h"
 #include "serialization/vector.h"
 #include "tx_extra.h"
+#include "tx_type.h"
 
 #include <boost/functional/hash/hash.hpp>
 #include <boost/variant.hpp>
@@ -66,7 +67,13 @@ enum TxVersion: size_t {
   none            = 0,
   plain           = 1,
   ring_signatures = 2,
-  tokens          = 3
+  tokens          = 3,
+  dex             = 4
+};
+
+enum SourceType: uint8_t {
+  wallet = 0,
+  lp    = 1
 };
 
 /* outputs */
@@ -139,12 +146,16 @@ struct txin_to_key
   Amount                amount;
   std::vector<uint64_t> key_offsets;
   crypto::key_image     k_image;               // double spending protection
-  TokenId               token_id{CUTCOIN_ID};
+  TokenId               token_id{CUTCOIN_ID};  // default value is the coin itself
+  uint8_t               s_type{SourceType::wallet};
 
   BEGIN_CUSTOM_SERIALIZE_OBJECT()
     VARINT_FIELD(amount)
     if (tx_version() >= TxVersion::tokens) {
       VARINT_FIELD(token_id)
+    }
+    if (tx_version() >= TxVersion::dex) {
+      FIELD(s_type);
     }
     FIELD(key_offsets)
     FIELD(k_image)
@@ -177,8 +188,8 @@ class transaction_prefix
 public:
   // tx information
   size_t   version;
-  bool     token_genesis{false};
   uint64_t unlock_time;  //number of block (or time), used as a limitation like: spend this tx not early then block/time
+  TxType   type{TxType::potx};
 
   std::vector<txin_v>  vin;
   std::vector<tx_out>  vout;
@@ -186,8 +197,21 @@ public:
 
   BEGIN_SERIALIZE()
     VARINT_FIELD(version)
-    if (version >= TxVersion::tokens) {
-      FIELD(token_genesis);
+    if (version == TxVersion::tokens) {
+      bool token_genesis;
+      if (typename Archive<W>::is_saving()) {
+        token_genesis = type.is_tgtx();
+        FIELD(token_genesis);
+      }
+      else{
+        FIELD(token_genesis);
+        if (token_genesis) {
+          type = TxType::tgtx;
+        }
+      }
+    }
+    if (version >= TxVersion::dex) {
+      FIELD(type);
     }
     if(version == 0 || CURRENT_TRANSACTION_VERSION < version) return false;
     VARINT_FIELD(unlock_time)
@@ -199,8 +223,6 @@ public:
 
 public:
   transaction_prefix(){}
-  bool is_token_genesis() const { return token_genesis; }
-  void set_token_genesis(bool v) { token_genesis = v; }
 };
 
 class transaction: public transaction_prefix
@@ -376,7 +398,6 @@ void transaction::set_null()
   rct_signatures.type = (uint8_t)rct::RctType::RCTTypeNull;
   set_hash_valid(false);
   set_blob_size_valid(false);
-  set_token_genesis(false);
 }
 
 inline

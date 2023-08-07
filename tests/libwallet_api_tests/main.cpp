@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -679,8 +679,6 @@ TEST_F(WalletTest1, WalletTransactionWithPriority)
     ASSERT_TRUE(wmgr->closeWallet(wallet1));
 }
 
-
-
 TEST_F(WalletTest1, WalletHistory)
 {
     Monero::Wallet * wallet1 = wmgr->openWallet(CURRENT_SRC_WALLET, TESTNET_WALLET_PASS, Monero::NetworkType::TESTNET);
@@ -874,6 +872,10 @@ struct MyWalletListener : public Monero::WalletListener
         cv_refresh.notify_one();
     }
 
+    virtual void posMetricsUpdated()
+    {
+      std::cout << __FUNCTION__ <<  "POS metrics refreshed";
+    }
 };
 
 

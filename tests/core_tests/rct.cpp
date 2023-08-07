@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -91,7 +91,6 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
   transaction rct_txes[4];
   rct::key rct_tx_masks[16];
   cryptonote::block blk_txes[4];
-  rct::keyV omega{rct::H, rct::H, rct::H, rct::H};
   for (size_t n = 0; n < 4; ++n)
   {
     std::vector<crypto::hash> starting_rct_tx_hashes;
@@ -131,7 +130,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
     context.d_subaddresses        = subaddresses;
     context.d_sources             = sources;
     context.d_destinations        = destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_tx_key              = tx_key;
     context.d_additional_tx_keys  = additional_tx_keys;
     bool r = construct_tx_and_get_tx_key(context, rct_txes[n]);
@@ -147,7 +146,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
       crypto::secret_key amount_key;
       crypto::derivation_to_scalar(derivation, o, amount_key);
       if (rct_txes[n].rct_signatures.type == rct::RctType::RCTTypeSimple || rct_txes[n].rct_signatures.type == rct::RctType::RCTTypeBulletproof)
-        rct::decodeRctSimple(rct_txes[n].rct_signatures, rct::sk2rct(amount_key), omega, o, rct_tx_masks[o+n*4], hw::get_device("default"));
+        rct::decodeRctSimple(rct_txes[n].rct_signatures, rct::sk2rct(amount_key), rct::H, o, rct_tx_masks[o+n*4], hw::get_device("default"));
       else
         rct::decodeRct(rct_txes[n].rct_signatures, rct::sk2rct(amount_key), o, rct_tx_masks[o+n*4], hw::get_device("default"));
     }
@@ -240,7 +239,7 @@ bool gen_rct_tx_validation_base::generate_with(std::vector<test_event_entry>& ev
   context.d_subaddresses        = subaddresses;
   context.d_sources             = sources;
   context.d_destinations        = destinations;
-  context.d_change_addr         = cryptonote::account_public_address{};
+//  context.d_change_addr         = cryptonote::account_public_address{};
   context.d_tx_key              = tx_key;
   context.d_additional_tx_keys  = additional_tx_keys;
   bool r = construct_tx_and_get_tx_key(context, tx);

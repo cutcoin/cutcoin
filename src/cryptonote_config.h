@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -44,7 +44,7 @@
 #define CRYPTONOTE_MAX_TX_SIZE                          1000000000
 #define CRYPTONOTE_PUBLIC_ADDRESS_TEXTBLOB_VER          0
 #define CRYPTONOTE_MINED_MONEY_UNLOCK_WINDOW            60
-#define CURRENT_TRANSACTION_VERSION                     3
+#define CURRENT_TRANSACTION_VERSION                     4
 #define CURRENT_BLOCK_MAJOR_VERSION                     1
 #define CURRENT_BLOCK_MINOR_VERSION                     0
 #define CRYPTONOTE_BLOCK_FUTURE_TIME_LIMIT              30
@@ -140,6 +140,7 @@
 #define THREAD_STACK_SIZE                       5 * 1024 * 1024
 
 #define HF_VERSION_ORIGINAL                     1
+#define HF_VERSION_MIX_RING                     2
 #define HF_VERSION_DYNAMIC_FEE                  4
 #define HF_VERSION_MIN_MIXIN_4                  6
 #define HF_VERSION_MIN_MIXIN_6                  7
@@ -148,6 +149,7 @@
 #define HF_VERSION_PER_BYTE_FEE                 8
 #define HF_VERSION_POS                         10
 #define HF_VERSION_TOKENS                      11
+#define HF_VERSION_DEX                         12
 
 #define PER_KB_FEE_QUANTIZATION_DECIMALS        8
 
@@ -179,20 +181,26 @@ namespace config
   std::string const GENESIS_TX = "023c01ff0001808090f89bf986470268d8134071036318f254d6c05b600bea85608b5347029eaf5218b074843ecf3f210183617f51102b3544f2aec3e7d7fd13a1f81f185ebc9903fd08d67673227afe8e00";
   uint32_t const GENESIS_NONCE = 42;
 
-  uint64_t const TOKEN_GENESIS_AMOUNT = 100 * COIN;
+  uint64_t const TOKEN_GENESIS_AMOUNT   = 100 * COIN;
+  uint64_t const POOL_GENESIS_AMOUNT    =  20 * COIN;
+  uint64_t const POOL_DEPOSIT_AMOUNT    =   0 * COIN;
+  uint64_t const POOL_WITHDRAWAL_AMOUNT =   0 * COIN;
+  uint64_t const DEX_FEE_PER_MILLE      =   3;          // 0.3%
+  double const SIGNIFICANT_PRICE_IMPACT =   5.0;        // 5.0%
 
-  uint64_t const TOKEN_UNLOCK_TIME = CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
+
+uint64_t const TOKEN_UNLOCK_TIME = CRYPTONOTE_DEFAULT_TX_SPENDABLE_AGE;
 
   namespace testnet
   {
     uint64_t const CRYPTONOTE_PUBLIC_ADDRESS_BASE58_PREFIX = 0xbd01c;
     uint64_t const CRYPTONOTE_PUBLIC_INTEGRATED_ADDRESS_BASE58_PREFIX = 0x4ad6;
     uint64_t const CRYPTONOTE_PUBLIC_SUBADDRESS_BASE58_PREFIX = 0x4cd6;
-    uint16_t const P2P_DEFAULT_PORT = 25247;
-    uint16_t const RPC_DEFAULT_PORT = 25248;
-    uint16_t const ZMQ_RPC_DEFAULT_PORT = 25249;
+    uint16_t const P2P_DEFAULT_PORT = 25257;
+    uint16_t const RPC_DEFAULT_PORT = 25258;
+    uint16_t const ZMQ_RPC_DEFAULT_PORT = 25259;
     boost::uuids::uuid const NETWORK_ID = { {
-        0x78, 0xc4, 0x4e, 0xd7, 0xdd, 0xff, 0x42, 0x69, 0xaf, 0xc2, 0x38, 0x19, 0xaa, 0x56, 0xc7, 0x69
+        0x78, 0xc4, 0x4e, 0xd7, 0xdd, 0xff, 0x42, 0x69, 0xaf, 0xc2, 0x39, 0x19, 0xaa, 0x56, 0xc7, 0x70
       } };
     std::string const GENESIS_TX = "023c01ff0001808090f89bf98647027dd8525c787c9647ca2e7744fc6a1176fc343152f4cacf70f501b0e41f2f69f02101c7346413d638a3754fd3d336bfec88a61a0f02f24cd4f9ed9014daf686971da900";
     uint32_t const GENESIS_NONCE = 43;

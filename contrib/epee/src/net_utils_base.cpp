@@ -1,3 +1,4 @@
+// Copyright (c) 2018-2022, CUT coin
 
 #include "net/net_utils_base.h"
 #include "string_tools.h"

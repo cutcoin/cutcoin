@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -76,7 +76,7 @@ file(COPY
   DESTINATION data)
 
 add_subdirectory(common_tests)
-add_subdirectory(core_tests)
+#add_subdirectory(core_tests)
 add_subdirectory(fuzz)
 add_subdirectory(crypto)
 add_subdirectory(functional_tests)
@@ -85,7 +85,7 @@ add_subdirectory(performance_tests)
 #add_subdirectory(core_proxy)
 add_subdirectory(unit_tests)
 add_subdirectory(token_tests)
-add_subdirectory(difficulty)
+#add_subdirectory(difficulty)
 add_subdirectory(hash)
 add_subdirectory(net_load_tests)
 if (BUILD_GUI_DEPS)

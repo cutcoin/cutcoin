@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -53,7 +53,7 @@ public:
     m_alice.generate();
 
     std::vector<tx_destination_entry> destinations;
-    destinations.push_back(tx_destination_entry(0, 1, m_alice.get_keys().m_account_address, false));
+    destinations.emplace_back(0, 1, m_alice.get_keys().m_account_address, false, false, false, false);
 
     return construct_tx(this->m_miners[this->real_source_idx].get_keys(), this->m_sources, destinations, boost::none, std::vector<uint8_t>(), m_tx, 0);
   }

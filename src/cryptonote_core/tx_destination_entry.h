@@ -1,4 +1,4 @@
-// Copyright (c) 2021, CUT coin
+// Copyright (c) 2021-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -36,37 +36,133 @@
 
 namespace cryptonote {
 
+const uint8_t f_is_subaddress      = 1;
+const uint8_t f_change_to_myself   = 1 << 1;
+const uint8_t f_lpw_origin         = 1 << 2;
+const uint8_t f_required_splitting = 1 << 3;
+const uint8_t f_fee_destination    = 1 << 4;
+
 struct tx_destination_entry {
   TokenId                token_id;      // token id
   uint64_t               amount;        // money
   account_public_address addr;          // destination address
-  bool                   is_subaddress; // show if the destination is subaddress
+  uint8_t                flags;         // general purpose flags;
 
   tx_destination_entry()
-  : amount(0)
+  : token_id(CUTCOIN_ID)
+  , amount(0)
   , addr(AUTO_VAL_INIT(addr))
-  , is_subaddress(false),
-  token_id(CUTCOIN_ID) {}
+  , flags(0)
+  {}
     // Create this object. Default constructor.
 
-  tx_destination_entry(TokenId id, uint64_t a, const account_public_address &ad, bool is_subaddress)
-  : amount(a)
+  tx_destination_entry(TokenId id,
+                       uint64_t a,
+                       const account_public_address &ad,
+                       u_int8_t f)
+  // Create this object.
+  : token_id(id)
+  , amount(a)
   , addr(ad)
-  , is_subaddress(is_subaddress)
-  , token_id(id) {}
+  , flags(f)
+  {}
+
+
+  tx_destination_entry(TokenId id,
+                       uint64_t a,
+                       const account_public_address &ad,
+                       bool is_subaddress,
+                       bool send_change_to_myself,
+                       bool lpw_origin,
+                       bool required_splitting)
     // Create this object.
+    : token_id(id)
+    , amount(a)
+    , addr(ad)
+    , flags(0)
+  {
+    set_subaddress(is_subaddress);
+    set_send_change_to_myself(send_change_to_myself);
+    set_lpw_origin(lpw_origin);
+    set_required_splitting(required_splitting);
+  }
 
   BEGIN_SERIALIZE_OBJECT()
     VARINT_FIELD(amount)
     FIELD(addr)
-    FIELD(is_subaddress)
     VARINT_FIELD(token_id)
+    VARINT_FIELD(flags)
   END_SERIALIZE()
+
+  inline void set_subaddress(bool val) {
+    if (val) {
+      flags |= f_is_subaddress;
+    }
+    else {
+      flags &= (~f_is_subaddress);
+    }
+  }
+
+  inline bool is_subaddress() const {
+    return flags & f_is_subaddress;
+  }
+
+  inline void set_send_change_to_myself(bool val) {
+    if (val) {
+      flags |= f_change_to_myself;
+    }
+    else {
+      flags &= (~f_change_to_myself);
+    }
+  }
+
+  inline bool is_send_change_to_myself() const {
+    return flags & f_change_to_myself;
+  }
+
+  inline void set_lpw_origin(bool val) {
+    if (val) {
+      flags |= f_lpw_origin;
+    }
+    else {
+      flags &= (~f_lpw_origin);
+    }
+  }
+
+  inline bool is_lpw_origin() const {
+    return flags & f_lpw_origin;
+  }
+
+  inline void set_required_splitting(bool val) {
+    if (val) {
+      flags |= f_required_splitting;
+    }
+    else {
+      flags &= (~f_required_splitting);
+    }
+  }
+
+  inline bool is_required_splitting() const {
+    return flags & f_required_splitting;
+  }
+
+  inline void set_fee_destination(bool val) {
+    if (val) {
+      flags |= f_fee_destination;
+    }
+    else {
+      flags &= (~f_fee_destination);
+    }
+  }
+
+  inline bool is_fee_destination() const {
+    return flags & f_fee_destination;
+  }
 };
 
 }  // namespace cryptonote
 
-BOOST_CLASS_VERSION(cryptonote::tx_destination_entry, 2)
+BOOST_CLASS_VERSION(cryptonote::tx_destination_entry, 3)
 
 namespace boost {
 
@@ -80,12 +176,21 @@ inline void serialize(Archive& a, cryptonote::tx_destination_entry& x, const boo
   if (ver < 1) {
     return;
   }
-  a & x.is_subaddress;
+
   if (ver < 2) {
     x.token_id = cryptonote::CUTCOIN_ID;
     return;
   }
   a & x.token_id;
+
+  if (ver < 3) {
+    bool is_subaddress = x.is_subaddress();
+    a & is_subaddress;
+    x.set_subaddress(is_subaddress);
+    return;
+  }
+
+  a & x.flags;
 }
 
 }  // namespace serialization

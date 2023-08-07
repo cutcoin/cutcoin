@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -64,6 +64,7 @@ target_link_libraries(blockchain_db
   PUBLIC
     common
     cncrypto
+    special_accounts
     ringct
     ${LMDB_LIBRARY}
     ${BDB_LIBRARY}

@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, CUT coin
+// Copyright (c) 2020-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -29,21 +29,12 @@
 #ifndef CUTCOIN_AMOUNT_H
 #define CUTCOIN_AMOUNT_H
 
-#include "token.h"
-
 #include <cinttypes>
-#include <unordered_map>
 
 namespace cryptonote {
 
 using Amount = std::uint64_t;
   // Unified type for coin or token amount representation.
-
-using TokenAmount = std::pair<TokenId, Amount>;
-  // Token amount with the specified id.
-
-using TokenAmounts = std::unordered_map<TokenId, Amount>;
-  // Basic container for different token amounts.
 
 }  // namespace cryptonote
 

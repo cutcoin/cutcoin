@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -394,8 +394,8 @@ namespace nodetool
     std::set<std::string> full_addrs;
     if (nettype == cryptonote::TESTNET)
     {
-      full_addrs.insert("94.130.65.238:25247");
-      full_addrs.insert("23.111.23.171:25247");
+      full_addrs.insert("51.159.16.26:25257");
+      full_addrs.insert("94.130.65.238:25257");
     }
     else if (nettype == cryptonote::STAGENET)
     {

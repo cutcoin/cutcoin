@@ -71,6 +71,7 @@ cmake-build-debug/
 
 
 ### Eclipse ###
+.project
 *.pydevproject
 .metadata
 .gradle

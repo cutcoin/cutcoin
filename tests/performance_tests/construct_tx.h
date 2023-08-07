@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -62,7 +62,7 @@ public:
 
     for (size_t i = 0; i < out_count; ++i)
     {
-      m_destinations.push_back(tx_destination_entry(0, this->m_source_amount / out_count, m_alice.get_keys().m_account_address, false));
+      m_destinations.emplace_back(0, this->m_source_amount / out_count, m_alice.get_keys().m_account_address, false, false, false, false);
     }
 
     return true;
@@ -79,7 +79,7 @@ public:
     context.d_subaddresses        = subaddresses;
     context.d_sources             = this->m_sources;
     context.d_destinations        = m_destinations;
-    context.d_change_addr         = cryptonote::account_public_address{};
+//    context.d_change_addr         = cryptonote::account_public_address{};
     context.d_tx_key              = tx_key;
     context.d_additional_tx_keys  = additional_tx_keys;
     context.d_range_proof_type    = range_proof_type;

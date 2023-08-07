@@ -1,4 +1,4 @@
-# Copyright (c) 2018-2021, CUT coin
+# Copyright (c) 2018-2022, CUT coin
 # Copyright (c) 2014-2018, The Monero Project
 #
 # All rights reserved.
@@ -118,6 +118,7 @@ add_subdirectory(cryptonote_core)
 add_subdirectory(mining)
 add_subdirectory(multisig)
 add_subdirectory(plant)
+add_subdirectory(special_accounts)
 if(NOT IOS)
   add_subdirectory(blockchain_db)
 endif()

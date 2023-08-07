@@ -1,3 +1,5 @@
+// Copyright (c) 2018-2022, CUT coin
+
 #pragma once
 
 #include <streambuf>

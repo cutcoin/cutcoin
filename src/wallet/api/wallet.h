@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -49,12 +49,15 @@
 
 namespace Monero {
 class TransactionHistoryImpl;
+class PendingDexTransactionImpl;
 class PendingTransactionImpl;
 class UnsignedTransactionImpl;
 class AddressBookImpl;
 class SubaddressImpl;
 class SubaddressAccountImpl;
+class TokenBalanceImpl;
 class TokenInfoImpl;
+class LiquidityPoolInfoImpl;
 struct Wallet2CallbackImpl;
 
 class WalletImpl : public Wallet {
@@ -177,6 +180,9 @@ public:
                                                      std::uint64_t      token_supply,
                                                      std::uint64_t      token_type,
                                                      uint32_t           subaddr_account) override;
+
+  PendingTransaction * createLPTokenGenesisTransaction(const std::string &token_name) override;
+
   virtual PendingTransaction * createSweepUnmixableTransaction() override;
   bool submitTransaction(const std::string &fileName) override;
   virtual UnsignedTransaction * loadUnsignedTx(const std::string &unsigned_filename) override;
@@ -189,7 +195,9 @@ public:
   virtual AddressBook * addressBook() override;
   virtual Subaddress * subaddress() override;
   virtual SubaddressAccount * subaddressAccount() override;
+  virtual TokenBalance * tokenBalance() override;
   virtual TokenInfo * tokenInfo() override;
+  LiquidityPoolInfo * liquidityPoolInfo() override;
   virtual void setListener(WalletListener * l) override;
   virtual uint32_t defaultMixin() const override;
   virtual void setDefaultMixin(uint32_t arg) override;
@@ -239,6 +247,30 @@ public:
   virtual bool isStaking() override;
   virtual bool startStaking() override;
   virtual bool stopStaking() override;
+  std::string getMintableTokenKey(const std::string &token_name) override;
+  PendingTransaction * createMintTokenSupplyTransaction(
+                                   const std::string &token_name,
+                                   std::uint64_t      token_supply,
+                                   const std::string &token_key,
+                                   uint32_t           subaddr_account) override;
+  PendingTransaction * createLPGenesisTransaction(const std::string& token1,
+                                                  std::uint64_t      amount1,
+                                                  const std::string& token2,
+                                                  std::uint64_t      amount2,
+                                                  const std::string  lptoken,
+                                                  uint32_t           subaddr_account) override;
+
+  PendingDexTransaction *createExchangeTokensTransaction(const std::string &operation_name,
+                                                         const std::string &pool_name,
+                                                         std::uint64_t      amount) override;
+
+  PendingDexTransaction *createAddLiquidityTransaction(const std::string &pool_name,
+                                                       const std::string &token_name,
+                                                       std::uint64_t      amount) override;
+
+  PendingDexTransaction *createTakeLiquidityTransaction(const std::string &pool_name,
+                                                        const std::string &lptoken_name,
+                                                        std::uint64_t      amount) override;
 
 private:
   void clearStatus() const;
@@ -254,13 +286,16 @@ private:
 
 private:
   friend class PendingTransactionImpl;
+  friend class PendingDexTransactionImpl;
   friend class UnsignedTransactionImpl;
   friend class TransactionHistoryImpl;
   friend struct Wallet2CallbackImpl;
   friend class AddressBookImpl;
   friend class SubaddressImpl;
   friend class SubaddressAccountImpl;
+  friend class TokenBalanceImpl;
   friend class TokenInfoImpl;
+  friend class LiquidityPoolInfoImpl;
 
   std::shared_ptr<tools::wallet2> m_wallet;
   mutable boost::mutex m_statusMutex;
@@ -272,7 +307,9 @@ private:
   std::unique_ptr<AddressBookImpl>  m_addressBook;
   std::unique_ptr<SubaddressImpl>  m_subaddress;
   std::unique_ptr<SubaddressAccountImpl>  m_subaddressAccount;
+  std::unique_ptr<TokenBalanceImpl>  m_tokenBalance;
   std::unique_ptr<TokenInfoImpl>  m_tokenInfo;
+  std::unique_ptr<LiquidityPoolInfoImpl> m_liquidityPoolInfo;
 
   // multi-threaded refresh stuff
   std::atomic<bool> m_refreshEnabled;

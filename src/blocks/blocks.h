@@ -1,3 +1,5 @@
+// Copyright (c) 2018-2022, CUT coin
+
 #ifndef SRC_BLOCKS_BLOCKS_H_
 #define SRC_BLOCKS_BLOCKS_H_
 

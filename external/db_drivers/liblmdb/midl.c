@@ -200,7 +200,7 @@ int mdb_midl_append_range( MDB_IDL *idp, MDB_ID id, unsigned n )
 void mdb_midl_xmerge( MDB_IDL idl, MDB_IDL merge )
 {
 	MDB_ID old_id, merge_id, i = merge[0], j = idl[0], k = i+j, total = k;
-	idl[0] = (MDB_ID)-1;		/* delimiter for idl scan below */
+	idl[0] = (MDB_ID)-1;		/* lp_delimiter for idl scan below */
 	old_id = idl[j];
 	while (i) {
 		merge_id = merge[i--];

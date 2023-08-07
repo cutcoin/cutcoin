@@ -1,22 +1,22 @@
 // Copyright (c) 2018-2021, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
-// 
+//
 // All rights reserved.
-// 
+//
 // Redistribution and use in source and binary forms, with or without modification, are
 // permitted provided that the following conditions are met:
-// 
+//
 // 1. Redistributions of source code must retain the above copyright notice, this list of
 //    conditions and the following disclaimer.
-// 
+//
 // 2. Redistributions in binary form must reproduce the above copyright notice, this list
 //    of conditions and the following disclaimer in the documentation and/or other
 //    materials provided with the distribution.
-// 
+//
 // 3. Neither the name of the copyright holder nor the names of its contributors may be
 //    used to endorse or promote products derived from this software without specific
 //    prior written permission.
-// 
+//
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY
 // EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
 // MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL
@@ -26,7 +26,7 @@
 // INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
 // STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF
 // THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-// 
+//
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
 #pragma once
@@ -89,7 +89,7 @@ struct PendingTransaction {
     Priority_Last
   };
 
-  virtual ~PendingTransaction() = 0;
+  virtual ~PendingTransaction() = default;
 
   virtual int status() const = 0;
 
@@ -143,6 +143,65 @@ struct PendingTransaction {
    * @return vector of base58-encoded signers' public keys
    */
   virtual std::vector<std::string> signersKeys() const = 0;
+};
+
+struct PendingDexTransaction {
+  enum Status {
+    Status_Ok,
+    Status_Error,
+    Status_Critical
+  };
+
+  enum Priority {
+    Priority_Default = 0,
+    Priority_Low = 1,
+    Priority_Medium = 2,
+    Priority_High = 3,
+    Priority_Last
+  };
+
+  virtual ~PendingDexTransaction() = default;
+
+  virtual int status() const = 0;
+
+  virtual std::string errorString() const = 0;
+
+  // commit transaction or save to file if filename is provided.
+  virtual bool commit(const std::string &filename = "", bool overwrite = false) = 0;
+
+  virtual uint64_t fee() const = 0;
+
+  virtual std::vector<std::string> txid() const = 0;
+
+  /*!
+   * \brief txCount - number of transactions current transaction will be splitted to
+   * \return
+   */
+  virtual uint64_t txCount() const = 0;
+
+  virtual void setToken1(const std::string &name) = 0;
+
+  virtual std::string getToken1() = 0;
+
+  virtual void setToken2(const std::string &name) = 0;
+
+  virtual std::string getToken2() = 0;
+
+  virtual void setOldAmount1(uint64_t amount) = 0;
+
+  virtual uint64_t getOldAmount1() = 0;
+
+  virtual void setOldAmount2(uint64_t amount) = 0;
+
+  virtual uint64_t getOldAmount2() = 0;
+
+  virtual void setNewAmount1(uint64_t amount) = 0;
+
+  virtual uint64_t getNewAmount1() = 0;
+
+  virtual void setNewAmount2(uint64_t amount) = 0;
+
+  virtual uint64_t getNewAmount2() = 0;
 };
 
 /**
@@ -291,7 +350,7 @@ public:
 };
 
 /**
- * @brief The AddressBook - interface for 
+ * @brief The AddressBook - interface for
 Book
  */
 struct AddressBook {
@@ -396,7 +455,51 @@ struct SubaddressAccount {
 
 struct TokenInfoRow {
 public:
-  TokenInfoRow(std::size_t _rowId, std::string _token_id, std::string _token_name, std::string _balance, std::string _unlocked_balance) :
+  TokenInfoRow(std::size_t _rowId,
+               std::string _token_id,
+               std::string _token_name,
+               std::string _supply,
+               std::string _type) :
+      m_rowId(_rowId),
+      m_token_id(_token_id),
+      m_token_name(_token_name),
+      m_supply(_supply),
+      m_type(_type) {}
+
+private:
+  std::size_t m_rowId;
+  std::string m_token_id;
+  std::string m_token_name;
+  std::string m_supply;
+  std::string m_type;
+
+public:
+  std::size_t getRowId() const { return m_rowId; }
+
+  std::string getTokenId() const { return m_token_id; }
+
+  std::string getTokenName() const { return m_token_name; }
+
+  std::string getSupply() const { return m_supply; }
+
+  std::string getType() const { return m_type; }
+};
+
+struct TokenInfo {
+  virtual ~TokenInfo() = 0;
+
+  virtual std::vector<TokenInfoRow *> getAll() const = 0;
+
+  virtual void refresh() = 0;
+};
+
+struct TokenBalanceRow {
+public:
+  TokenBalanceRow(std::size_t _rowId,
+                  std::string _token_id,
+                  std::string _token_name,
+                  std::string _balance,
+                  std::string _unlocked_balance) :
       m_rowId(_rowId),
       m_token_id(_token_id),
       m_token_name(_token_name),
@@ -421,12 +524,40 @@ public:
   std::size_t getRowId() const { return m_rowId; }
 };
 
-struct TokenInfo {
-  virtual ~TokenInfo() = 0;
+struct TokenBalance {
+  virtual ~TokenBalance() = default;
 
-  virtual std::vector<TokenInfoRow *> getAll() const = 0;
+  virtual std::vector<TokenBalanceRow *> getAll() const = 0;
 
   virtual void refresh(uint32_t accountIndex) = 0;
+};
+
+struct LiquidityPoolInfoRow {
+  LiquidityPoolInfoRow(size_t      _rowId,
+                       std::string _name,
+                       std::string _lp_token,
+                       uint64_t _amount1,
+                       uint64_t _amount2) :
+    rowId(_rowId),
+    name(std::move(_name)),
+    lp_token(std::move(_lp_token)),
+    amount1(_amount1),
+    amount2(_amount2) {}
+
+  size_t      rowId;
+  std::string name;
+  std::string lp_token;
+  uint64_t    amount1;
+  uint64_t    amount2;
+};
+
+class LiquidityPoolInfo {
+public:
+  virtual ~LiquidityPoolInfo() {}
+
+  virtual const std::vector<LiquidityPoolInfoRow>& getAll() const = 0;
+
+  virtual void refresh() = 0;
 };
 
 struct MultisigState {
@@ -776,6 +907,10 @@ struct Wallet {
 
   static uint64_t maximumAllowedAmount();
 
+  static uint64_t tokenGenesisAmount();
+
+  static uint64_t poolGenesisAmount();
+
   // Easylogger wrapper
   static void init(const char *argv0, const char *default_log_base_name) {
     init(argv0, default_log_base_name, "", true);
@@ -995,11 +1130,18 @@ struct Wallet {
                                                              uint32_t           subaddr_account) = 0;
 
   /*!
+     * \brief createLPTokenGenesisTransaction creates new LP token.
+     * \param token_name        token_name
+     * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+     *                          after object returned
+     */
+    virtual PendingTransaction * createLPTokenGenesisTransaction(const std::string &token_name) = 0;
+
+  /*!
    * \brief createSweepUnmixableTransaction creates transaction with unmixable outputs.
    * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
    *                          after object returned
    */
-
   virtual PendingTransaction *createSweepUnmixableTransaction() = 0;
 
   /*!
@@ -1045,7 +1187,11 @@ struct Wallet {
 
   virtual SubaddressAccount *subaddressAccount() = 0;
 
+  virtual TokenBalance *tokenBalance() = 0;
+
   virtual TokenInfo *tokenInfo() = 0;
+
+  virtual LiquidityPoolInfo *liquidityPoolInfo() = 0;
 
   virtual void setListener(WalletListener *) = 0;
 
@@ -1221,6 +1367,80 @@ struct Wallet {
 
   //! stops staking
   virtual bool stopStaking() = 0;
+
+  //! return mintable token private key for a mintable token with the specified token_name
+  virtual std::string getMintableTokenKey(const std::string &token_name) = 0;
+
+  /*!
+   * \brief createMintTokenSupplyTransaction mint additional token supply.
+   * \param token_name        token name
+   * \param token_supply      new token supply
+   * \param token_key         token private key
+   * \param subaddr_account   subaddress account from which the input funds are taken
+   * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+   *                          after object returned
+   */
+  virtual PendingTransaction * createMintTokenSupplyTransaction(
+                                      const std::string &token_name,
+                                      std::uint64_t      token_supply,
+                                      const std::string &token_key,
+                                      uint32_t           subaddr_account) = 0;
+
+  /*!
+   * \brief createExchangeTokensTransaction exchange 2 tokens (buy or sell).
+   * \param operation_name    operation name ('buy' or 'sell')
+   * \param pool_name         pool name
+   * \param amount            amount
+   * \return                  PendingDexTransaction object. caller is responsible to check PendingTransaction::status()
+   *                          after object returned
+   */
+  virtual PendingDexTransaction *createExchangeTokensTransaction(
+                                    const std::string &operation_name,
+                                    const std::string &pool_name,
+                                    std::uint64_t      amount) = 0;
+  /*!
+  * \brief createLPGenesisTransaction creates new liquidity pool.
+  * \param token1_name       token1_name
+  * \param amount1           token1 amount
+  * \param token2_name       token2_name
+  * \param amount2           token2 amount
+  * \param lptoken           LP token name
+  * \return                  PendingTransaction object. caller is responsible to check PendingTransaction::status()
+  *                          after object returned
+  */
+virtual PendingTransaction * createLPGenesisTransaction(const std::string& token1,
+                                                        std::uint64_t      amount1,
+                                                        const std::string& token2,
+                                                        std::uint64_t      amount2,
+                                                        const std::string  lptoken,
+                                                        uint32_t           subaddr_account) = 0;
+
+  /*!
+   * \brief createAddLiquidityTransaction add liquidity to liquidity pool.
+   * \param pool_name    name of the poll
+   * \param token_name   name of the pool with the specified amount
+   * \param amount       amount
+   * \return             PendingDexTransaction object. caller is responsible to check PendingTransaction::status()
+   *                     after object returned
+   */
+  virtual PendingDexTransaction *createAddLiquidityTransaction(
+    const std::string &pool_name,
+    const std::string &token_name,
+    std::uint64_t      amount) = 0;
+
+  /*!
+     * \brief createTakeLiquidityTransaction add liquidity to liquidity pool.
+     * \param pool_name    name of the poll
+     * \param lptoken_name name of the pool lp token
+     * \param amount       amount
+     * \return             PendingDexTransaction object. caller is responsible to check PendingTransaction::status()
+     *                     after object returned
+     */
+  virtual PendingDexTransaction *createTakeLiquidityTransaction(
+    const std::string &pool_name,
+    const std::string &lptoken_name,
+    std::uint64_t      amount) = 0;
+
 };
 
 /**

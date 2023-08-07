@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 //
 // All rights reserved.
@@ -486,6 +486,33 @@ namespace cryptonote
     bool get_outs(const COMMAND_RPC_GET_OUTPUTS_BIN::request& req, COMMAND_RPC_GET_OUTPUTS_BIN::response& res) const;
 
     /**
+     * @brief gets lp outputs
+     *
+     * This function takes an RPC request for lp outputs with the specified 'id' and specified sum 'amount'.
+     *
+     * @param req the 'id' and 'amount'
+     * @param res return-by-reference the resultant output indices and keys
+     *
+     * @return true
+     */
+    bool get_lpouts(const COMMAND_RPC_GET_LPOUTPUTS_BIN::request& req, COMMAND_RPC_GET_LPOUTPUTS_BIN::response& res) const;
+
+    /**
+     * @brief gets lp outputs for mixing
+     *
+     * This function takes an RPC request for lp outputs with the specified 'id' and return outputs if they don't match
+     * the specified 'selected_transfers'.
+     *
+     * @param req the 'id'
+     * @param res return-by-reference the resultant output indices and keys
+     *
+     * @return true
+     */
+    bool get_mixing_lpouts(const COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::request& req,
+                           COMMAND_RPC_GET_MIXING_LPOUTPUTS_BIN::response& res) const;
+
+
+    /**
      * @brief gets tokens list
      *
      * This function takes all token summaries from lmdb
@@ -497,6 +524,35 @@ namespace cryptonote
      * @return true
      */
     bool get_tokens(const COMMAND_RPC_GET_TOKENS::request& req, COMMAND_RPC_GET_TOKENS::response& res) const;
+
+    /**
+     * @brief get liquidity pool
+     *
+     * Find liquidity pool by its name and return its summary. If liquidity pool is not found fill with '0'
+     * 'lptoken', 'token1' and 'token2'.
+     *
+     * @param name liquidity pool name
+     * @param liquidity_pool liquidity pools structure.
+     *
+     * @return 'true' if the pool is found, otherwise 'false'.
+     */
+    bool get_liquidity_pool(const std::string &name, liquidity_pool_data_t &liquidity_pool) const;
+
+    /**
+     * @brief gets liquidity pools list
+     *
+     * This function takes all liquidity pool summaries from lmdb
+     * and creates an RPC response with list filtered by lp or token name from RPC request
+     *
+     * @param name liqudity pool or token name
+     * @param exact_match search liquidity pool with given name
+     * @param liquidity_pools liquidity pools list
+     *
+     * @return true
+     */
+    bool get_liquidity_pools(const std::string &name,
+                             const bool &exact_match,
+                             std::vector<liquidity_pool_data_t> &liquidity_pools) const;
 
     /**
      * @brief gets an output's key and unlocked state
@@ -635,14 +691,33 @@ namespace cryptonote
     bool check_tx_outputs(const transaction& tx, tx_verification_context &tvc);
 
     /**
-     * @brief check if given token_id exists and return token data if requested
+     * @brief check if a token with the given 'token_id' exists
      *
      * @param token_id token id to check
-     * @param token_summary token data, will be filled on non-null pointer arg
      *
-     * @return true if token_id is present in lmdb
+     * @return true if token_id is presented in lmdb
      */
-    bool check_existing_token_id(cryptonote::TokenId token_id, cryptonote::TokenSummary *token_summary = nullptr) const;
+    bool check_existing_token_id(cryptonote::TokenId token_id) const;
+
+    /**
+     * @brief check if a token with the given 'token_id' exists
+     *
+     * @param token_id token id to check
+     *
+     * @return true if token_id is presented in lmdb
+     */
+    bool check_no_lp_inputs(const transaction &tx) const;
+
+    /**
+     * @brief check if liquidity pool for the specified 'id1', 'id2', 'lp_id' exists
+     *
+     * @param id1 id of the first token in the pair
+     * @param id2 id of the second token in the pair
+     * @param lp_id lp token id
+     *
+     * @return 'true' if liquidity pool with the specified 'name' is presented in lmdb
+     */
+    bool check_existing_liquidity_pool(const TokenId &id1, const TokenId &id2, const TokenId &lp_id) const;
 
     /**
      * @brief validate token genesis transaction
@@ -651,12 +726,141 @@ namespace cryptonote
      *
      * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
      *
-     * @param tvc returned information about tx verification
      * @param tx the transaction to validate
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_tgtx(tx_verification_context &tvc, const transaction &tx);
+    bool check_tgtx(const transaction &tx);
+
+    /**
+     * @brief validate token minting transaction
+     *
+     * This function validates different aspects of a token minting transaction (mntx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_mntx(const transaction &tx);
+
+    /**
+     * @brief validate token genesis transaction for lp tokens
+     *
+     * This function validates different aspects of a lp tokens genesis transaction (lp tgtx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_tgtx(const transaction &tx);
+
+    /**
+     * @brief validate token genesis transaction for tokens with hidden supply
+     *
+     * This function validates different aspects of a hidden supply tokens genesis transaction (hs tgtx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_hs_tgtx(const transaction &tx);
+
+    /**
+     * @brief validate token genesis transaction for tokens with public supply
+     *
+     * This function validates different aspects of a public supply tokens genesis transaction (ps tgtx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_ps_tgtx(const transaction &tx);
+
+    /**
+     * @brief validate liquidity pool genesis transaction
+     *
+     * This function validates different aspects of a liquidity pool genesis transaction (lp gtx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_gtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
+
+    /**
+     * @brief validate add liquidity transaction
+     *
+     * This function validates different aspects of a transaction that adds liquidity to a liquidity pool (add tx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_addtx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
+
+    /**
+     * @brief validate take liquidity transaction
+     *
+     * This function validates different aspects of a transaction that takes liquidity from a liquidity pool (take tx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_taketx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
+
+    /**
+     * @brief validate buy DEX transaction
+     *
+     * This function validates different aspects of a buy DEX transaction (buy tx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_buy_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
+
+    /**
+     * @brief validate sell DEX transaction
+     *
+     * This function validates different aspects of a sell DEX transaction (sell tx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_sell_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
+
+    /**
+     * @brief validate cross exchange DEX transaction
+     *
+     * This function validates different aspects of a cross exchange DEX transaction (cross tx).
+     *
+     * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
+     *
+     * @param tx the transaction to validate
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lp_cross_tx(const transaction &tx, std::vector<liquidity_pool_data_t> *liquidity_pools_update);
 
     /**
      * @brief gets the block weight limit based on recent blocks
@@ -881,7 +1085,7 @@ namespace cryptonote
      *
      * @return a set of amount/instances
      */
-    std::map<uint64_t, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
+    std::map<cryptonote::TokenId, std::tuple<uint64_t, uint64_t, uint64_t>> get_output_histogram(
                                                                      cryptonote::TokenId          token_id,
                                                                      const std::vector<uint64_t> &amounts,
                                                                      bool                         unlocked,
@@ -965,9 +1169,13 @@ namespace cryptonote
      * @param outputs return-by-reference the outputs collected
      * @param txs unused, candidate for removal
      */
-    void output_scan_worker(const uint64_t amount,const std::vector<uint64_t> &offsets,
-        std::vector<output_data_t> &outputs, std::unordered_map<crypto::hash,
-        cryptonote::transaction> &txs) const;
+    void output_scan_worker(const TokenId                token_id,
+                            const std::vector<uint64_t> &offsets,
+                            std::vector<output_data_t>  &outputs) const;
+
+    void lp_output_scan_worker(const TokenId                token_id,
+                               const std::vector<uint64_t> &offsets,
+                               std::vector<output_data_t>  &outputs) const;
 
     /**
      * @brief computes the "short" and "long" hashes for a set of blocks
@@ -1042,6 +1250,7 @@ namespace cryptonote
 
     // metadata containers
     std::unordered_map<crypto::hash, std::unordered_map<crypto::key_image, std::vector<output_data_t>>> m_scan_table;
+    std::unordered_map<crypto::hash, std::unordered_map<crypto::key_image, std::vector<output_data_t>>> m_lp_scan_table;
     std::unordered_map<crypto::hash, crypto::hash> m_blocks_longhash_table;
     std::unordered_map<crypto::hash, std::unordered_map<crypto::key_image, bool>> m_check_txin_table;
 
@@ -1122,9 +1331,50 @@ namespace cryptonote
      * @return false if any keys are not found or any inputs are not unlocked, otherwise true
      */
     template<class visitor_t>
-    inline bool scan_outputkeys_for_indexes(size_t tx_version, const txin_to_key& tx_in_to_key, visitor_t &vis, const crypto::hash &tx_prefix_hash, uint64_t* pmax_related_block_height = NULL) const;
+    inline bool scan_outputkeys_for_indexes(size_t              tx_version,
+                                            const txin_to_key  &tx_in_to_key,
+                                            visitor_t          &vis,
+                                            const crypto::hash &tx_prefix_hash,
+                                            uint64_t           *pmax_related_block_height = nullptr) const;
 
+    template<class visitor_t>
+    inline bool scan_lp_outputkeys_for_indexes(size_t              tx_version,
+                                               const txin_to_key  &tx_in_to_key,
+                                               visitor_t          &vis,
+                                               const crypto::hash &tx_prefix_hash,
+                                               uint64_t           *pmax_related_block_height = nullptr) const;
+
+    /**
+     * @brief check correctness of a token genesis transaction input set
+     *
+     * This function operates with the dummy inputs
+     * and validates that they exist and are usable
+     * (unlocked, unspent is checked elsewhere).
+     *
+     * @param tx the transaction
+     * @param txin the transaction input
+     * @param output_keys return-by-reference the public keys of the outputs in the input set
+     *
+     * @return false if the dummy input is corrupted
+     */
     bool check_tgtx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys);
+
+    /**
+     * @brief check correctness of a token minting transaction input set
+     *
+     * This function operates with the dummy inputs
+     * and validates that they exist and are usable
+     * (unlocked, unspent is checked elsewhere).
+     *
+     * @param tx the transaction
+     * @param txin the transaction input
+     * @param output_keys return-by-reference the public keys of the outputs in the input set
+     *
+     * @return false if the dummy input is corrupted
+     *
+     * @return false if any output is not yet unlocked, or is missing, otherwise true
+     */
+    bool check_mntx_input(const transaction &tx, const txin_to_key &txin, std::vector<rct::ctkey> &output_keys);
 
     /**
      * @brief collect output public keys of a transaction input set
@@ -1168,24 +1418,21 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_tx_inputs(transaction& tx, tx_verification_context &tvc, uint64_t* pmax_used_block_height = NULL);
+    bool check_tx_inputs(transaction& tx, tx_verification_context &tvc, uint64_t* pmax_used_block_height = nullptr);
 
     /**
-     * @brief validate token genesis transaction
+     * @brief validate old style transaction
      *
-     * This function validates different aspects of a token genesis transaction (tgtx).
-     * If tgtx passes these checks it is accepted as a valid
-     * and when it is added to the blockchain the new token is created.
+     * This function validates different aspects of old style (pre-tokens) transaction.
      *
      * The return value is 'true' if 'tx' passes the verification, the detailed result is returned via 'tvc'.
      *
      * @param tvc returned information about tx verification
-     * @param bvc metadata concerning the block's validity
      * @param tx the transaction to validate
      *
      * @return false if any validation step fails, otherwise true
      */
-    bool check_tgtx(tx_verification_context &tvc, block_verification_context &bvc, const transaction &tx);
+    bool check_plain_tx(const transaction &tx);
 
     /**
      * @brief validate correctness of the payment in token genesis transaction
@@ -1202,11 +1449,9 @@ namespace cryptonote
     bool check_tgtx_payment(const transaction &tx);
 
     /**
-     * @brief validate correctness of the token supply. Return 'true' if the token type is 'hidden_supply',
-     * otherwise check that tokens output contain summary amount tat exactly equals to the declared amount.
-     * Return true if it is correct.
+     * @brief validate correctness of the payment in liquidity pool genesis transaction
      *
-     * This function validates correctness of the payment in token genesis transaction.
+     * This function validates correctness of the payment in liquidity pool genesis transaction.
      * Required amount in cutcoins must be burnt.
      *
      * The return value is 'true' if the coin burn payment is correct.
@@ -1215,7 +1460,55 @@ namespace cryptonote
      *
      * @return false if any validation step fails, otherwise true
      */
+    bool check_lpgtx_payment(const transaction &tx);
+
+    bool check_transfer_from_liquidity_pool(const transaction &tx, const TokenId &token_id, const Amount &amount);
+
+    /**
+     * @brief validate correctness of the token supply. Return 'true' if the token type is 'hidden_supply',
+     * otherwise check that tokens output contain summary amount that exactly equals to the declared amount.
+     * Return true if it is correct.
+     *
+     * @param tx the transaction to validate
+     * @param token_data the transaction extra token data
+     *
+     * @return false if any validation step fails, otherwise true
+     */
     bool check_tgtx_supply(const transaction &tx, const tx_extra_token_data &token_data);
+
+    bool check_tgtx_hidden_supply(const transaction &tx, const tx_extra_token_data &token_data);
+
+    /**
+     * @brief validate correctness of lptoken supply.
+     *
+     * @param tx the transaction to validate
+     * @param token_data the transaction extra token data
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_lptgtx_supply(const transaction &tx, const tx_extra_token_data &token_data);
+
+    /**
+     * @brief validate correctness of the commitment that proves token ownership.
+     * Return 'true' if the commitment is correct.
+     *
+     * @param tx the transaction to validate
+     * @param token_data the transaction extra token data
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool check_token_ownership(const transaction &tx, const tx_extra_token_data &token_data);
+
+    /**
+     * @brief try to find a token using the specified 'token_id'.
+     * Return 'true' if the token is found.
+     *
+     * @param token_summary the structure with the token data
+     * @param token_id the id of the token
+     *
+     * @return false if any validation step fails, otherwise true
+     */
+    bool get_token_info(TokenSummary &token_summary, TokenId token_id) const;
 
     /**
      * @brief performs a blockchain reorganization according to the longest chain rule
@@ -1503,4 +1796,15 @@ namespace cryptonote
      */
     void cache_block_template(const block &b, const cryptonote::account_public_address &address, const blobdata &nonce, const difficulty_type &diff, uint64_t expected_reward, uint64_t pool_cookie);
   };
+
+/**
+ * @brief compare two transaction inputs and return the result
+ *
+ * @param in1 First input to compare
+ * @param in2 Second input to compare
+ *
+ * @return '-1' if in1 < in2, '0' if in1 = in2, '1' if in1 > in2.
+ */
+int in_to_key_compatator(const txin_to_key *in1, const txin_to_key *in2);
+
 }  // namespace cryptonote

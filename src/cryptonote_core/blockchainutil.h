@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2021, CUT coin
+// Copyright (c) 2020-2022, CUT coin
 //
 // All rights reserved.
 //
@@ -32,7 +32,7 @@
 
 #include <cryptonote_basic/cryptonote_basic.h>
 
-namespace tools {
+namespace cryptonote {
 
 TxVersion get_tx_version(size_t hard_fork_version);
   // Return tx version for the specified 'hard_fork_version'.

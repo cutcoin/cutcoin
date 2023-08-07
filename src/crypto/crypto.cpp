@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -29,10 +29,7 @@
 // 
 // Parts of this file are originally copyright (c) 2012-2013 The Cryptonote developers
 
-#include <unistd.h>
 #include <cassert>
-#include <cstddef>
-#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>

@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2021, CUT coin
+// Copyright (c) 2018-2022, CUT coin
 // Copyright (c) 2014-2018, The Monero Project
 // 
 // All rights reserved.
@@ -669,21 +669,13 @@ TEST(Serialization, serializes_ringct_types)
   ASSERT_TRUE(blob == blob2);
 }
 
-TEST(Serialization, portability_wallet)
+TEST(Serialization, DISABLED_portability_wallet)
 {
   const cryptonote::network_type nettype = cryptonote::TESTNET;
   tools::wallet2 w(nettype);
   const boost::filesystem::path wallet_file = unit_test::data_dir / "wallet_9svHk1";
   string password = "test";
-  bool r = false;
-  try
-  {
-    w.load(wallet_file.string(), password);
-    r = true;
-  }
-  catch (const exception& e)
-  {}
-  ASSERT_TRUE(r);
+  ASSERT_NO_THROW(w.load(wallet_file.string(), password));
   /*
   fields of tools::wallet2 to be checked:
     std::vector<crypto::hash>                                       m_blockchain

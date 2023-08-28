@@ -121,7 +121,7 @@ static const struct {
   { 9, 1, 0, 1533297600 },       // and version 9 for the rest of blocks
   { 10, 10000, 0, 1566213210 },  // enabled POS
   { 11, 373000, 0, 1592911000 }, // enabled tokens
-  { 12, 940000, 0, 1692320400 }  // enabled DEX
+  { 12, 1185000, 0, 1692320400 } // enabled DEX
 };
 static const uint64_t testnet_hard_fork_version_1_till = 1;
 
